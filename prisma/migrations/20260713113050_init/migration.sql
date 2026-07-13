@@ -1,0 +1,8 @@
+-- CreateTable
+CREATE TABLE "EmailLog" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "to" TEXT NOT NULL,
+    "subject" TEXT NOT NULL,
+    "messageId" TEXT NOT NULL,
+    "sentAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
