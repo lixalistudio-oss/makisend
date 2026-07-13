@@ -16,7 +16,7 @@ type Bindings = {
 
 const app = new Hono<{ Bindings: Bindings }>()
 
-// --- SINGLETON PRISMA ---
+// Singleton pattern to reuse the Prisma instance across requests and avoid connection overhead
 let prisma: PrismaClient | null = null
 
 const getPrisma = (db: D1Database) => {
@@ -27,7 +27,7 @@ const getPrisma = (db: D1Database) => {
   return prisma
 }
 
-// --- ROUTE 1: Send Email & Save to DB ---
+// --- ROUTE: Send Email & Log Transaction ---
 app.post('/send-email', async (c) => {
   const db = getPrisma(c.env.makisend_db)
 
@@ -46,76 +46,81 @@ app.post('/send-email', async (c) => {
 
     const mailOptions = {
       from: c.env.SENDER_EMAIL,
-      to: to,
-      subject: subject,
-      text: text,
-      html: html,
+      to,
+      subject,
+      text,
+      html,
     }
 
-    // 1. Tenter d'envoyer l'email
     const info = await transporter.sendMail(mailOptions)
 
-    // 2. Sauvegarder le succès dans la DB
+    // Log the successful operation in the unified audit table
+    await db.logs.create({
+      data: {
+        endpoint: '/send-email',
+        message: 'Email sent successfully',
+        details: JSON.stringify({ to, messageId: info.messageId }),
+      }
+    })
+
+    // Log the specific email details in the dedicated table
     await db.emailLog.create({
       data: {
-        to: to,
-        subject: subject,
+        to,
+        subject,
         messageId: info.messageId,
       }
     })
 
     return c.json({ 
       success: true, 
-      message: "Email successfully sent and logged to D1!",
+      message: 'Email successfully sent and logged to D1',
       messageId: info.messageId 
     })
 
   } catch (err: any) {
-    console.error("Error during email process:", err)
+    console.error('Error during email process:', err)
     
-    // 3. TENTER DE LOGGER L'ERREUR DANS D1 (Observabilité)
+    // Attempt to log the failure in the unified audit table
     try {
-      await db.errorLog.create({
+      await db.logs.create({
         data: {
           endpoint: '/send-email',
-          errorMessage: err.message || 'Unknown error occurred',
-          errorDetails: err.stack || JSON.stringify(err),
+          message: err.message || 'Unknown error occurred',
+          details: err.stack || JSON.stringify(err),
         }
       })
-      console.log("Error successfully logged to D1.")
     } catch (dbErr) {
-      // Si la DB est aussi en panne, on le logue juste en console pour éviter un crash en cascade
-      console.error("CRITICAL: Failed to log error to D1:", dbErr)
+      console.error('CRITICAL: Failed to log error to D1:', dbErr)
     }
 
-    // 4. Retourner une réponse propre au client
     return c.json({ 
       success: false, 
-      error: "Failed to send email. The issue has been logged for review." 
+      error: 'Failed to send email. The issue has been logged for review.' 
     }, 500)
   }
 })
 
-// --- ROUTE 2: Read the Database (Email Logs) ---
+// --- ROUTE: Read Unified Logs (Successes and Errors) ---
 app.get('/logs', async (c) => {
   const db = getPrisma(c.env.makisend_db)
   
-  const logs = await db.emailLog.findMany({
-    orderBy: { sentAt: 'desc' }
-  })
-  
-  return c.json({ success: true, data: logs })
-})
-
-// --- ROUTE 3: Read Error Logs (Pour le superviseur/debug) ---
-app.get('/errors', async (c) => {
-  const db = getPrisma(c.env.makisend_db)
-  
-  const errors = await db.errorLog.findMany({
+  const allLogs = await db.logs.findMany({
     orderBy: { timestamp: 'desc' }
   })
   
-  return c.json({ success: true, data: errors })
+  return c.json({ success: true, data: allLogs })
+})
+
+// --- ROUTE: Read Specific Email Logs ---
+app.get('/email-logs', async (c) => {
+  const db = getPrisma(c.env.makisend_db)
+  
+  const emailLogs = await db.emailLog.findMany({
+    orderBy: { sentAt: 'desc' }
+  })
+  
+  return c.json({ success: true, data: emailLogs })
 })
 
 export default app

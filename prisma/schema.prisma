@@ -21,10 +21,10 @@ model EmailLog {
   sentAt    DateTime @default(now())
 }
 
-model ErrorLog {
+model Logs {
   id           Int      @id @default(autoincrement())
   endpoint     String   // Ex: "/send-email"
-  errorMessage String   // Ex: "queryA ENOTFOUND localhost"
-  errorDetails String?  // Stack trace ou détails JSON (optionnel)
+  message String   // Ex: "queryA ENOTFOUND localhost"
+  details String?  // Stack trace ou détails JSON (optionnel)
   timestamp    DateTime @default(now())
 }

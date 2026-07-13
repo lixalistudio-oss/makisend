@@ -1,5 +1,5 @@
 -- CreateTable
-CREATE TABLE "ErrorLog" (
+CREATE TABLE "Logs" (
     "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     "endpoint" TEXT NOT NULL,
     "errorMessage" TEXT NOT NULL,
