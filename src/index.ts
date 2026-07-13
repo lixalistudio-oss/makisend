@@ -1,11 +1,10 @@
-/// <reference types="@cloudflare/workers-types" /> // Provides Cloudflare-specific types (like D1Database) to TypeScript
+/// <reference types="@cloudflare/workers-types" />
 
 import { Hono } from 'hono'
 import * as nodemailer from 'nodemailer'
 import { PrismaD1 } from '@prisma/adapter-d1'
 import { PrismaClient } from '@prisma/client'
 
-// Defines the shape of Cloudflare environment variables and bindings available at runtime
 type Bindings = {
   SMTP_USER: string
   SMTP_PASSWORD: string
@@ -17,22 +16,33 @@ type Bindings = {
 
 const app = new Hono<{ Bindings: Bindings }>()
 
+// --- SINGLETON PRISMA ---
+// Variable globale qui stockera l'instance unique de Prisma
+let prisma: PrismaClient | null = null
+
+// Fonction qui retourne l'instance existante, ou la crée si c'est la première requête
+const getPrisma = (db: D1Database) => {
+  if (!prisma) {
+    const adapter = new PrismaD1(db)
+    prisma = new PrismaClient({ adapter })
+  }
+  return prisma
+}
+
 // --- ROUTE 1: Send Email & Save to DB ---
 app.post('/send-email', async (c) => {
-  // Initialize Prisma using the D1 adapter to connect to Cloudflare's serverless database
-  const adapter = new PrismaD1(c.env.makisend_db)
-  const prisma = new PrismaClient({ adapter })
+  // Réutilise l'instance unique de Prisma
+  const db = getPrisma(c.env.makisend_db)
 
-  // Configure the SMTP transporter using environment variables for security
   const transporter = nodemailer.createTransport({
     host: c.env.HOST,
     port: c.env.PORT,
-    secure: false, // Uses STARTTLS
+    secure: false,
     auth: {
       user: c.env.SMTP_USER,
       pass: c.env.SMTP_PASSWORD,
     },
-  } as any) // 'as any' bypasses strict TS checks for nodemailer's Cloudflare compatibility
+  } as any)
 
   try {
     const { to, subject, text, html } = await c.req.json()
@@ -45,11 +55,10 @@ app.post('/send-email', async (c) => {
       html: html,
     }
 
-    // Attempt to send the email via SMTP
     const info = await transporter.sendMail(mailOptions)
 
-    // Persist the successful email transaction to the D1 database
-    await prisma.emailLog.create({
+    // Sauvegarde dans la DB via l'instance unique
+    await db.emailLog.create({
       data: {
         to: to,
         subject: subject,
@@ -70,12 +79,10 @@ app.post('/send-email', async (c) => {
 
 // --- ROUTE 2: Read the Database ---
 app.get('/logs', async (c) => {
-  // Re-initialize Prisma for this specific request context
-  const adapter = new PrismaD1(c.env.makisend_db)
-  const prisma = new PrismaClient({ adapter })
+  // Réutilise la même instance unique de Prisma
+  const db = getPrisma(c.env.makisend_db)
   
-  // Fetch all email logs, ordered by most recent first
-  const logs = await prisma.emailLog.findMany({
+  const logs = await db.emailLog.findMany({
     orderBy: { sentAt: 'desc' }
   })
   
