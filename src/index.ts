@@ -17,10 +17,8 @@ type Bindings = {
 const app = new Hono<{ Bindings: Bindings }>()
 
 // --- SINGLETON PRISMA ---
-// Variable globale qui stockera l'instance unique de Prisma
 let prisma: PrismaClient | null = null
 
-// Fonction qui retourne l'instance existante, ou la crée si c'est la première requête
 const getPrisma = (db: D1Database) => {
   if (!prisma) {
     const adapter = new PrismaD1(db)
@@ -31,7 +29,6 @@ const getPrisma = (db: D1Database) => {
 
 // --- ROUTE 1: Send Email & Save to DB ---
 app.post('/send-email', async (c) => {
-  // Réutilise l'instance unique de Prisma
   const db = getPrisma(c.env.makisend_db)
 
   const transporter = nodemailer.createTransport({
@@ -55,9 +52,10 @@ app.post('/send-email', async (c) => {
       html: html,
     }
 
+    // 1. Tenter d'envoyer l'email
     const info = await transporter.sendMail(mailOptions)
 
-    // Sauvegarde dans la DB via l'instance unique
+    // 2. Sauvegarder le succès dans la DB
     await db.emailLog.create({
       data: {
         to: to,
@@ -71,15 +69,35 @@ app.post('/send-email', async (c) => {
       message: "Email successfully sent and logged to D1!",
       messageId: info.messageId 
     })
+
   } catch (err: any) {
-    console.error("Error:", err)
-    return c.json({ success: false, error: err.message }, 500)
+    console.error("Error during email process:", err)
+    
+    // 3. TENTER DE LOGGER L'ERREUR DANS D1 (Observabilité)
+    try {
+      await db.errorLog.create({
+        data: {
+          endpoint: '/send-email',
+          errorMessage: err.message || 'Unknown error occurred',
+          errorDetails: err.stack || JSON.stringify(err),
+        }
+      })
+      console.log("Error successfully logged to D1.")
+    } catch (dbErr) {
+      // Si la DB est aussi en panne, on le logue juste en console pour éviter un crash en cascade
+      console.error("CRITICAL: Failed to log error to D1:", dbErr)
+    }
+
+    // 4. Retourner une réponse propre au client
+    return c.json({ 
+      success: false, 
+      error: "Failed to send email. The issue has been logged for review." 
+    }, 500)
   }
 })
 
-// --- ROUTE 2: Read the Database ---
+// --- ROUTE 2: Read the Database (Email Logs) ---
 app.get('/logs', async (c) => {
-  // Réutilise la même instance unique de Prisma
   const db = getPrisma(c.env.makisend_db)
   
   const logs = await db.emailLog.findMany({
@@ -87,6 +105,17 @@ app.get('/logs', async (c) => {
   })
   
   return c.json({ success: true, data: logs })
+})
+
+// --- ROUTE 3: Read Error Logs (Pour le superviseur/debug) ---
+app.get('/errors', async (c) => {
+  const db = getPrisma(c.env.makisend_db)
+  
+  const errors = await db.errorLog.findMany({
+    orderBy: { timestamp: 'desc' }
+  })
+  
+  return c.json({ success: true, data: errors })
 })
 
 export default app
