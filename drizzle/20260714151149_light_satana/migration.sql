@@ -1,4 +1,4 @@
-CREATE TABLE `logs` (
+CREATE TABLE IF NOT EXISTS `logs` (
 	`id` integer PRIMARY KEY AUTOINCREMENT,
 	`endpoint` text NOT NULL,
 	`message` text NOT NULL,
@@ -6,7 +6,7 @@ CREATE TABLE `logs` (
 	`sent_at` text NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `email_log` (
+CREATE TABLE IF NOT EXISTS `email_log` (
 	`id` integer PRIMARY KEY AUTOINCREMENT,
 	`to` text NOT NULL,
 	`subject` text NOT NULL,

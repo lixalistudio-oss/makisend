@@ -5,7 +5,7 @@ import * as nodemailer from 'nodemailer'
 import { drizzle } from "drizzle-orm/d1"; // <-- The D1 specific driver
 import { desc } from "drizzle-orm";
 import { emailLogs} from "./db/schema";
-import {Logs} from "./db/schema";
+import {logs} from "./db/schema";
 
 
 type Bindings = {
@@ -56,13 +56,13 @@ app.post('/send-email', async (c) => {
 
     const info = await transporter.sendMail(mailOptions)
      
-     const log: typeof Logs.$inferInsert = {
+     const log: typeof logs.$inferInsert = {
       endpoint : "/send-email",
       message : "Email sent successfully" ,
       message_details : JSON.stringify({ to, messageId: info.messageId }),
       sentAt: new Date().toISOString()
   };
-     await db.insert(Logs).values(log);
+     await db.insert(logs).values(log);
 
      const emailLog : typeof emailLogs.$inferInsert = 
      {
@@ -85,13 +85,13 @@ app.post('/send-email', async (c) => {
     
     // Attempt to log the failure in the unified audit table
     try {
-     const log: typeof Logs.$inferInsert = {
+     const log: typeof logs.$inferInsert = {
       endpoint : "/send-email",
       message : err.message || 'Unknown error occurred',
       message_details : err.stack || JSON.stringify(err),
       sentAt: new Date().toISOString()
   };
-     await db.insert(Logs).values(log);
+     await db.insert(logs).values(log);
     } catch (dbErr) {
       console.error('CRITICAL: Failed to log error to D1:', dbErr)
     }

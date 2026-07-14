@@ -12,7 +12,7 @@ export const emailLogs = sqliteTable("email_log", {
    sentAt: text("sent_at").notNull()
 });
 
-export const Logs = sqliteTable("logs",{
+export const logs = sqliteTable("logs",{
   id : integer("id").primaryKey({autoIncrement: true}),
   endpoint : text("endpoint").notNull(),
   message : text("message").notNull(),
