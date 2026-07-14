@@ -107,7 +107,7 @@ app.post('/send-email', async (c) => {
 app.get('/logs', async (c) => {
   const db = getDrizzle(c.env.makisend_db)
   
-  const allLogs = await db.select().from(Logs).orderBy(desc(Logs.sentAt));
+  const allLogs = await db.select().from(logs).orderBy(desc(logs.sentAt));
   
   return c.json({ success: true, data: allLogs })
 })
