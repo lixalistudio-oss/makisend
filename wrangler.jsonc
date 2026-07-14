@@ -45,7 +45,9 @@
 			"binding": "makisend_db",
 			"database_name": "makisend-db",
 			"database_id": "fb679c0f-7a52-46c3-a859-0035767c06d2",
-			"remote": true
+			"remote": true,
+			    "migrations_dir": "./drizzle",                 // Matches the 'out' dir in Drizzle config
+      			"migrations_pattern": "drizzle/*/migration.sql" // Tells Wrangler how to read nested Drizzle files
 		}
 	]
 }
