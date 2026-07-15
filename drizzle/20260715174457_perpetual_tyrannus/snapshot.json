@@ -1,13 +1,13 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "fd679f2c-2f30-4d38-bc3a-443138df38f8",
+  "id": "a1dcae38-8e15-4968-af11-ff89ee06288c",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
   "ddl": [
     {
-      "name": "email_log",
+      "name": "email_logs",
       "entityType": "tables"
     },
     {
@@ -22,7 +22,7 @@
       "generated": null,
       "name": "internalId",
       "entityType": "columns",
-      "table": "email_log"
+      "table": "email_logs"
     },
     {
       "type": "text",
@@ -32,7 +32,7 @@
       "generated": null,
       "name": "to",
       "entityType": "columns",
-      "table": "email_log"
+      "table": "email_logs"
     },
     {
       "type": "text",
@@ -42,7 +42,7 @@
       "generated": null,
       "name": "subject",
       "entityType": "columns",
-      "table": "email_log"
+      "table": "email_logs"
     },
     {
       "type": "text",
@@ -52,7 +52,7 @@
       "generated": null,
       "name": "smtp_id",
       "entityType": "columns",
-      "table": "email_log"
+      "table": "email_logs"
     },
     {
       "type": "text",
@@ -62,7 +62,7 @@
       "generated": null,
       "name": "sent_at",
       "entityType": "columns",
-      "table": "email_log"
+      "table": "email_logs"
     },
     {
       "type": "text",
@@ -70,7 +70,7 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "internalId",
+      "name": "id",
       "entityType": "columns",
       "table": "logs"
     },
@@ -96,11 +96,11 @@
     },
     {
       "type": "text",
-      "notNull": false,
+      "notNull": true,
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "details",
+      "name": "message_details",
       "entityType": "columns",
       "table": "logs"
     },
@@ -119,13 +119,13 @@
         "internalId"
       ],
       "nameExplicit": false,
-      "name": "email_log_pk",
-      "table": "email_log",
+      "name": "email_logs_pk",
+      "table": "email_logs",
       "entityType": "pks"
     },
     {
       "columns": [
-        "internalId"
+        "id"
       ],
       "nameExplicit": false,
       "name": "logs_pk",

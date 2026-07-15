@@ -1,4 +1,4 @@
-CREATE TABLE `email_log` (
+CREATE TABLE `email_logs` (
 	`internalId` text PRIMARY KEY,
 	`to` text NOT NULL,
 	`subject` text NOT NULL,
@@ -7,9 +7,9 @@ CREATE TABLE `email_log` (
 );
 --> statement-breakpoint
 CREATE TABLE `logs` (
-	`internalId` text PRIMARY KEY,
+	`id` text PRIMARY KEY,
 	`endpoint` text NOT NULL,
 	`message` text NOT NULL,
-	`details` text,
+	`message_details` text NOT NULL,
 	`sent_at` text NOT NULL
 );

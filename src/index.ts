@@ -7,7 +7,7 @@ import { desc, eq } from "drizzle-orm";
 import { emailLogs, logs } from "./db/schema";
 import { encrypt, decrypt } from '../crypto';
 
-type Bindings = {
+type Bindings = { // Used to initialize the env variables with their types
   AES_256_KEY: string;
   SMTP_USER: string;
   SMTP_PASSWORD: string;
@@ -20,7 +20,7 @@ type Bindings = {
 const app = new Hono<{ Bindings: Bindings }>();
 
 // Reuse Drizzle instance to avoid re-initialization overhead per request
-let drizzleClient: ReturnType<typeof drizzle> | null = null;
+let drizzleClient: ReturnType<typeof drizzle> | null = null;// On start up can either be typeof drizzle or null depending on the if the drizzle instance is called
 
 const getDrizzle = (db: D1Database) => {
   if (!drizzleClient) {
@@ -42,6 +42,8 @@ app.post('/send-email', async (c) => {
       user: c.env.SMTP_USER,
       pass: c.env.SMTP_PASSWORD,
     },
+     // CRITICAL: Force IPv4 to bypass the local workerd network warning
+    family: 4,
     tls: {
       rejectUnauthorized: true // Prevents Man-in-the-Middle attacks
     }
@@ -102,7 +104,7 @@ app.post('/send-email', async (c) => {
       await db.insert(logs).values({
         endpoint: "/send-email",
         message: err.message || 'Unknown error occurred',
-        message_details: err.stack || JSON.stringify(err),
+        message_details: JSON.stringify({ error: err.message, stack: err.stack }),//used this way because the decrypt function in crypto.ts expects a json string
         sentAt: new Date().toISOString()
       });
     } catch (dbErr) {
@@ -126,15 +128,16 @@ app.get('/logs', async (c) => {
   // Decrypt message_details safely (handles the object structure saved in POST route)
   const decryptedLogs = await Promise.all(
     allLogs.map(async (log) => {
-       // 1. Directly parse (guaranteed NOT NULL and valid JSON by your schema)
-      const parsedDetails = JSON.parse(log.message_details);
-
-      // 2. Decrypt the encrypted field directly
-      // Note: Use 'encryptedTo' or 'to' depending on the exact key name you used in your POST route
-      if (parsedDetails.to) {
-        parsedDetails.to = await decrypt(parsedDetails.to, secretKey);
-      }
-
+      
+    
+       const  parsedDetails = JSON.parse(log.message_details);
+        
+        // FIX: parsedDetails.to is a STRING containing JSON, not an object.
+        // We check if it's a string that starts with '{' (our encrypted format)
+        if (typeof parsedDetails.to === 'string' && parsedDetails.to.startsWith('{')) {
+          parsedDetails.to = await decrypt(parsedDetails.to, secretKey);
+        }
+  
       return {
         ...log,
         message_details: parsedDetails,
