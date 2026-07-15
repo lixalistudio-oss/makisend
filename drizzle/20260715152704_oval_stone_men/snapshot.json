@@ -1,26 +1,76 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "a7608487-6852-4c9f-9b09-8d7552872cc4",
+  "id": "fd679f2c-2f30-4d38-bc3a-443138df38f8",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
   "ddl": [
     {
-      "name": "logs",
-      "entityType": "tables"
-    },
-    {
       "name": "email_log",
       "entityType": "tables"
     },
     {
-      "type": "integer",
+      "name": "logs",
+      "entityType": "tables"
+    },
+    {
+      "type": "text",
       "notNull": false,
-      "autoincrement": true,
+      "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "id",
+      "name": "internalId",
+      "entityType": "columns",
+      "table": "email_log"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "to",
+      "entityType": "columns",
+      "table": "email_log"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "subject",
+      "entityType": "columns",
+      "table": "email_log"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "smtp_id",
+      "entityType": "columns",
+      "table": "email_log"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "sent_at",
+      "entityType": "columns",
+      "table": "email_log"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "internalId",
       "entityType": "columns",
       "table": "logs"
     },
@@ -65,71 +115,21 @@
       "table": "logs"
     },
     {
-      "type": "integer",
-      "notNull": false,
-      "autoincrement": true,
-      "default": null,
-      "generated": null,
-      "name": "id",
-      "entityType": "columns",
-      "table": "email_log"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "to",
-      "entityType": "columns",
-      "table": "email_log"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "subject",
-      "entityType": "columns",
-      "table": "email_log"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "message_id",
-      "entityType": "columns",
-      "table": "email_log"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "sent_at",
-      "entityType": "columns",
-      "table": "email_log"
-    },
-    {
       "columns": [
-        "id"
-      ],
-      "nameExplicit": false,
-      "name": "logs_pk",
-      "table": "logs",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
-        "id"
+        "internalId"
       ],
       "nameExplicit": false,
       "name": "email_log_pk",
       "table": "email_log",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "internalId"
+      ],
+      "nameExplicit": false,
+      "name": "logs_pk",
+      "table": "logs",
       "entityType": "pks"
     }
   ],

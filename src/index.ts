@@ -1,37 +1,38 @@
 /// <reference types="@cloudflare/workers-types" />
 
-import { Hono } from 'hono'
-import * as nodemailer from 'nodemailer'
-import { drizzle } from "drizzle-orm/d1"; // <-- The D1 specific driver
-import { desc } from "drizzle-orm";
-import { emailLogs} from "./db/schema";
-import {logs} from "./db/schema";
-
+import { Hono } from 'hono';
+import * as nodemailer from 'nodemailer';
+import { drizzle } from "drizzle-orm/d1";
+import { desc, eq } from "drizzle-orm";
+import { emailLogs, logs } from "./db/schema";
+import { encrypt, decrypt } from '../crypto';
 
 type Bindings = {
-  SMTP_USER: string
-  SMTP_PASSWORD: string
-  makisend_db: D1Database 
-  SENDER_EMAIL: string
-  HOST: string
-  PORT: number
-}
+  AES_256_KEY: string;
+  SMTP_USER: string;
+  SMTP_PASSWORD: string;
+  makisend_db: D1Database;
+  SENDER_EMAIL: string;
+  HOST: string;
+  PORT: number;
+};
 
-const app = new Hono<{ Bindings: Bindings }>()
+const app = new Hono<{ Bindings: Bindings }>();
 
-// Singleton pattern to reuse the Prisma instance across requests and avoid connection overhead
-let drizzle_client: ReturnType <typeof drizzle> | null = null // Connection pooling used to avoid undefined values for db_client at software startup 
- 
+// Reuse Drizzle instance to avoid re-initialization overhead per request
+let drizzleClient: ReturnType<typeof drizzle> | null = null;
+
 const getDrizzle = (db: D1Database) => {
-  if (!drizzle_client) {
-    drizzle_client = drizzle(db)
-  }
-  return drizzle_client
-}
+  if (!drizzleClient) {
+    drizzleClient = drizzle(db);
+    }
+  return drizzleClient;
+};
 
 // --- ROUTE: Send Email & Log Transaction ---
 app.post('/send-email', async (c) => {
-  const db = getDrizzle(c.env.makisend_db)
+  const db = getDrizzle(c.env.makisend_db);
+  const secretKey = c.env.AES_256_KEY;
 
   const transporter = nodemailer.createTransport({
     host: c.env.HOST,
@@ -41,89 +42,126 @@ app.post('/send-email', async (c) => {
       user: c.env.SMTP_USER,
       pass: c.env.SMTP_PASSWORD,
     },
-      // Extra security: Force TLS and reject unauthorized certificates
     tls: {
-        rejectUnauthorized: true // Prevents Man-in-the-Middle attacks
+      rejectUnauthorized: true // Prevents Man-in-the-Middle attacks
     }
-  } as any)
+  } as any);
 
   try {
-    const { to, subject, text, html } = await c.req.json()
+    const { to, subject, text, html } = await c.req.json();
+    const encryptedTo = await encrypt(to, secretKey);
 
-    const mailOptions = {
+    // 1. Log initialization (PENDING state)
+    const [insertedRow] = await db.insert(logs).values({
+      endpoint: "/send-email",
+      message: "Email record initialized. Delivery status set to PENDING.",
+      message_details: JSON.stringify({ to: encryptedTo }),
+      sentAt: new Date().toISOString()
+    }).returning();//Used to access the last inserted row in the database
+
+    // 2. Send the email
+    const info = await transporter.sendMail({
       from: c.env.SENDER_EMAIL,
       to,
       subject,
       text,
       html,
-    }
+    });
 
-    const info = await transporter.sendMail(mailOptions);
-    
-     
-     const log: typeof logs.$inferInsert = {
-      endpoint : "/send-email",
-      message : "Email sent successfully" ,
-      message_details : JSON.stringify({ to, messageId: info.messageId }),
-      sentAt: new Date().toISOString()
-  };
-     await db.insert(logs).values(log);
+    // 3. Update log with success details and SMTP receipt
+    await db.update(logs)
+      .set({
+        message: "Email sent successfully",
+        message_details: JSON.stringify({ 
+          to: encryptedTo, 
+          messageId: info.messageId 
+        }),
+        sentAt: new Date().toISOString()
+      })
+      .where(eq(logs.id, insertedRow.id));
 
-     const emailLog : typeof emailLogs.$inferInsert = 
-     {
-      to,
-      subject,
-      messageId: info.messageId,
+    // 4. Insert dedicated email log record
+    await db.insert(emailLogs).values({
+      to: encryptedTo,
+      subject: subject,
+      smtpId: info.messageId,
       sentAt: new Date().toISOString()
-     }
-     await db.insert(emailLogs).values(emailLog);
+    });
 
     return c.json({ 
       success: true, 
       message: 'Email successfully sent and logged to D1',
       messageId: info.messageId 
-    })
+    });
 
   } catch (err: any) {
-    console.error('Error during email process:', err)
+    console.error('Error during email process:', err);
     
-    
-    // Attempt to log the failure in the unified audit table
+    // Fallback: Log the failure to the unified audit table
     try {
-     const log: typeof logs.$inferInsert = {
-      endpoint : "/send-email",
-      message : err.message || 'Unknown error occurred',
-      message_details : err.stack || JSON.stringify(err),
-      sentAt: new Date().toISOString()
-  };
-     await db.insert(logs).values(log);
+      await db.insert(logs).values({
+        endpoint: "/send-email",
+        message: err.message || 'Unknown error occurred',
+        message_details: err.stack || JSON.stringify(err),
+        sentAt: new Date().toISOString()
+      });
     } catch (dbErr) {
-      console.error('CRITICAL: Failed to log error to D1:', dbErr)
+      console.error('CRITICAL: Failed to log error to D1:', dbErr);
     }
 
     return c.json({ 
       success: false, 
       error: 'Failed to send email. The issue has been logged for review.' 
-    }, 500)
+    }, 500);
   }
-})
+});
 
 // --- ROUTE: Read Unified Logs (Successes and Errors) ---
 app.get('/logs', async (c) => {
-  const db = getDrizzle(c.env.makisend_db)
+  const db = getDrizzle(c.env.makisend_db);
+  const secretKey = c.env.AES_256_KEY;
   
   const allLogs = await db.select().from(logs).orderBy(desc(logs.sentAt));
-  
-  return c.json({ success: true, data: allLogs })
-})
+
+  // Decrypt message_details safely (handles the object structure saved in POST route)
+  const decryptedLogs = await Promise.all(
+    allLogs.map(async (log) => {
+       // 1. Directly parse (guaranteed NOT NULL and valid JSON by your schema)
+      const parsedDetails = JSON.parse(log.message_details);
+
+      // 2. Decrypt the encrypted field directly
+      // Note: Use 'encryptedTo' or 'to' depending on the exact key name you used in your POST route
+      if (parsedDetails.to) {
+        parsedDetails.to = await decrypt(parsedDetails.to, secretKey);
+      }
+
+      return {
+        ...log,
+        message_details: parsedDetails,
+      };
+    })
+  );
+
+  return c.json({ success: true, data: decryptedLogs });
+});
 
 // --- ROUTE: Read Specific Email Logs ---
 app.get('/email-logs', async (c) => {
-  const db = getDrizzle(c.env.makisend_db)
+  const db = getDrizzle(c.env.makisend_db);
+  const secretKey = c.env.AES_256_KEY;
   
   const allLogs = await db.select().from(emailLogs).orderBy(desc(emailLogs.sentAt));
-  
-  return c.json({ success: true, data: emailLogs })
-})
 
-export default app
+  const decryptedLogs = await Promise.all(
+    allLogs.map(async (emailLog) => {
+      return {
+        ...emailLog,
+        to: await decrypt(emailLog.to, secretKey),
+      };
+    })
+  );
+
+  return c.json({ success: true, data: decryptedLogs });
+});
+
+export default app;

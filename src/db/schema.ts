@@ -2,32 +2,18 @@
 import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
-
-// Create a read-only object mapping
-export const EmailStatus = {
-  Pending: 'pending',
-  Sent: 'sent',
-  Failed: 'failed',
-} as const;
-
-// // Create a type out of that object ('pending' | 'sent' | 'failed')
- export type EmailStatusType = typeof EmailStatus[keyof typeof EmailStatus];
-
-// export const emailLogs = sqliteTable("email_log", {
-//   id: integer("id").primaryKey({ autoIncrement: true }),
-//   to: text("to").notNull(),
-//   subject: text("subject").notNull(),
-//   messageId: text("message_id").notNull(),
-//   sentAt: text("sent_at").notNull()
-// });
-
-export const logs = sqliteTable("logs",{
-  //id : integer("id").primaryKey({autoIncrement: true}),
-  id: text('id').primaryKey(),
-  smtpMessageId : text("smpt_message_id"),
+export const emailLogs = sqliteTable("email_log", {
+  internalId: text('internalId').primaryKey().$defaultFn(() => crypto.randomUUID()),
   to: text("to").notNull(),
   subject: text("subject").notNull(),
-  logMessage : text("log_message").notNull(),
+  smtpId: text("smtp_id").notNull(),
+  sentAt: text("sent_at").notNull()
+});
+
+export const logs = sqliteTable("logs",{
+  id : text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  endpoint : text("endpoint").notNull(),
+  message : text("message").notNull(),
+  message_details : text("details").notNull(),
   sentAt: text("sent_at").notNull(), 
-  status: text('status').$type<EmailStatusType>().default(EmailStatus.Pending),
 });
