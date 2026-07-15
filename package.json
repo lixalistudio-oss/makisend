@@ -1,0 +1,22 @@
+{
+  "name": "makisend-poc",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy --minify",
+    "cf-typegen": "wrangler types --env-interface CloudflareBindings"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.17.4",
+    "dotenv": "^17.4.2",
+    "drizzle-orm": "^1.0.0-rc.4",
+    "hono": "^4.12.27",
+    "nodemailer": "^9.0.3"
+  },
+  "devDependencies": {
+    "@types/nodemailer": "^8.0.1",
+    "drizzle-kit": "^1.0.0-rc.4",
+    "tsx": "^4.23.1",
+    "wrangler": "^4.4.0"
+  }
+}
