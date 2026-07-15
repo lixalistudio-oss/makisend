@@ -36,11 +36,15 @@ app.post('/send-email', async (c) => {
   const transporter = nodemailer.createTransport({
     host: c.env.HOST,
     port: c.env.PORT,
-    secure: false,
+    secure: true,
     auth: {
       user: c.env.SMTP_USER,
       pass: c.env.SMTP_PASSWORD,
     },
+      // Extra security: Force TLS and reject unauthorized certificates
+    tls: {
+        rejectUnauthorized: true // Prevents Man-in-the-Middle attacks
+    }
   } as any)
 
   try {
@@ -54,7 +58,8 @@ app.post('/send-email', async (c) => {
       html,
     }
 
-    const info = await transporter.sendMail(mailOptions)
+    const info = await transporter.sendMail(mailOptions);
+    
      
      const log: typeof logs.$inferInsert = {
       endpoint : "/send-email",
