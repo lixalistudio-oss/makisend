@@ -11,7 +11,7 @@ export const EmailStatus = {
 } as const;
 
 // // Create a type out of that object ('pending' | 'sent' | 'failed')
-// export type EmailStatusType = typeof EmailStatus[keyof typeof EmailStatus];
+ export type EmailStatusType = typeof EmailStatus[keyof typeof EmailStatus];
 
 // export const emailLogs = sqliteTable("email_log", {
 //   id: integer("id").primaryKey({ autoIncrement: true }),
