@@ -6,6 +6,16 @@ import { drizzle } from "drizzle-orm/d1";
 import { desc, eq } from "drizzle-orm";
 import { emailLogs, logs } from "./db/schema";
 import { encrypt, decrypt } from '../crypto';
+import { zValidator } from '@hono/zod-validator';
+import { z } from 'zod'; // Ensure z is imported
+import { EmailSchema } from '../email_schema';
+import DOMPurifyFromPackage from 'dompurify';
+
+import { parseHTML } from 'linkedom';
+
+// Generate a mock window instance using linkedom's parser utility
+const { window } = parseHTML('<!doctype html><html><body></body></html>');
+const DOMPurify = DOMPurifyFromPackage(window as any);
 
 type Bindings = { // Used to initialize the env variables with their types
   AES_256_KEY: string;
@@ -30,7 +40,18 @@ const getDrizzle = (db: D1Database) => {
 };
 
 // --- ROUTE: Send Email & Log Transaction ---
-app.post('/send-email', async (c) => {
+app.post('/send-email',  zValidator('json', EmailSchema, (result, c) => {
+    if (!result.success) {
+      const errors = z.flattenError(result.error); 
+      return c.json({
+        error: 'Validation échouée',
+        details: {
+          fieldErrors: errors.fieldErrors, // Errors on specific fields
+          formErrors: errors.formErrors     // Errors on the whole object
+        }
+      }, 400); // <-- HTTP 400 Bad Request
+    }
+  }), async (c) => {
   const db = getDrizzle(c.env.makisend_db);
   const secretKey = c.env.AES_256_KEY;
 
@@ -51,8 +72,13 @@ app.post('/send-email', async (c) => {
 
   try {
     const { to, subject, text, html } = await c.req.json();
-    const encryptedTo = await encrypt(to, secretKey);
+    
+    
+    // 3. Apply your server-side sanitization on the valid HTML string
+    const cleanHtml = DOMPurify.sanitize(html);
 
+    const encryptedTo = await encrypt(to, secretKey);
+ 
     // 1. Log initialization (PENDING state)
     const [insertedRow] = await db.insert(logs).values({
       endpoint: "/send-email",
@@ -67,7 +93,7 @@ app.post('/send-email', async (c) => {
       to,
       subject,
       text,
-      html,
+      html : cleanHtml,
     });
 
     // 3. Update log with success details and SMTP receipt
