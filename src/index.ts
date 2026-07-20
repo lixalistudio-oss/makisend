@@ -124,7 +124,7 @@ app.post('/send-email',  zValidator('json', EmailSchema, (result, c) => {
     // 3. Update log with success details and SMTP receipt
     await db.update(logs)
       .set({
-        message: cleanHtml,
+        message: "Email sent successfully",
         message_details: JSON.stringify({ 
           to: encryptedTo, 
           messageId: info.messageId 
