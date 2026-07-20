@@ -17,4 +17,5 @@ export const logs = sqliteTable("logs",{
   message : text("message").notNull(),
   message_details : text("message_details").notNull(),
   sentAt: text("sent_at").notNull(), 
+  emailProcessingTimeMs: integer('email_processing_time'),
 });

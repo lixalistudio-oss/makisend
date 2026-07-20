@@ -47,6 +47,7 @@ app.post('/send-email',  zValidator('json', EmailSchema, (result, c) => {
       }, 400); // <-- HTTP 400 Bad Request
     }
   }), async (c) => {
+  const startTime = performance.now(); //  1. Démarrage du chronomètre ici
   const db = getDrizzle(c.env.makisend_db);
   const secretKey = c.env.AES_256_KEY;
 
@@ -120,6 +121,7 @@ app.post('/send-email',  zValidator('json', EmailSchema, (result, c) => {
       text,
       html : cleanHtml,
     });
+    const durationMs = Math.round(performance.now() - startTime);
 
     // 3. Update log with success details and SMTP receipt
     await db.update(logs)
@@ -129,7 +131,8 @@ app.post('/send-email',  zValidator('json', EmailSchema, (result, c) => {
           to: encryptedTo, 
           messageId: info.messageId 
         }),
-        sentAt: new Date().toISOString()
+        sentAt: new Date().toISOString(),
+        emailProcessingTimeMs: durationMs // <-- Stockage de la durée ici
       })
       .where(eq(logs.id, insertedRow.id));
 

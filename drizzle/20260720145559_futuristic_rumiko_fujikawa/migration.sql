@@ -11,5 +11,6 @@ CREATE TABLE `logs` (
 	`endpoint` text NOT NULL,
 	`message` text NOT NULL,
 	`message_details` text NOT NULL,
-	`sent_at` text NOT NULL
+	`sent_at` text NOT NULL,
+	`email_processing_time` integer
 );

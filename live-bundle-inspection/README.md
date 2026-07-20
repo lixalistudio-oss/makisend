@@ -1,1 +1,0 @@
-This folder contains the built output assets for the worker "makisend-poc" generated at 2026-07-10T12:19:31.690Z.

@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "a1dcae38-8e15-4968-af11-ff89ee06288c",
+  "id": "4509ec65-fd30-49c1-82cb-5daa53f3966e",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
@@ -111,6 +111,16 @@
       "default": null,
       "generated": null,
       "name": "sent_at",
+      "entityType": "columns",
+      "table": "logs"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "email_processing_time",
       "entityType": "columns",
       "table": "logs"
     },
