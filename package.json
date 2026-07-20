@@ -10,6 +10,7 @@
     "@hono/standard-validator": "^0.3.0",
     "@hono/zod-validator": "^0.9.0",
     "@libsql/client": "^0.17.4",
+    "@paralleldrive/cuid2": "^3.3.0",
     "dompurify": "^3.4.12",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^1.0.0-rc.4",
