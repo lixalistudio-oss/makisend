@@ -11,8 +11,7 @@ import { z } from 'zod'; // Ensure z is imported
 import { EmailSchema } from '../email_schema';
 import sanitizeHtml from 'sanitize-html';
 
-
-type Bindings = { // Used to initialize the env variables with their types
+type Bindings = { // Used to map and define environment variable types
   AES_256_KEY: string;
   SMTP_USER: string;
   SMTP_PASSWORD: string;
@@ -25,29 +24,29 @@ type Bindings = { // Used to initialize the env variables with their types
 const app = new Hono<{ Bindings: Bindings }>();
 
 // Reuse Drizzle instance to avoid re-initialization overhead per request
-let drizzleClient: ReturnType<typeof drizzle> | null = null;// On start up can either be typeof drizzle or null depending on the if the drizzle instance is called
+let drizzleClient: ReturnType<typeof drizzle> | null = null; // Evaluates to the Drizzle instance or null depending on whether it has been initialized yet
 
 const getDrizzle = (db: D1Database) => {
   if (!drizzleClient) {
     drizzleClient = drizzle(db);
-    }
+  }
   return drizzleClient;
 };
 
 // --- ROUTE: Send Email & Log Transaction ---
-app.post('/send-email',  zValidator('json', EmailSchema, (result, c) => {
-    if (!result.success) {
-      const errors = z.flattenError(result.error); 
-      return c.json({
-        error: 'Validation échouée',
-        details: {
-          fieldErrors: errors.fieldErrors, // Errors on specific fields
-          formErrors: errors.formErrors     // Errors on the whole object
-        }
-      }, 400); // <-- HTTP 400 Bad Request
-    }
-  }), async (c) => {
-  const startTime = performance.now(); //  1. Démarrage du chronomètre ici
+app.post('/send-email', zValidator('json', EmailSchema, (result, c) => {
+  if (!result.success) {
+    const errors = z.flattenError(result.error); 
+    return c.json({
+      error: 'Validation failed',
+      details: {
+        fieldErrors: errors.fieldErrors, // Errors on specific properties
+        formErrors: errors.formErrors     // Errors on the overall payload object
+      }
+    }, 400); // <-- HTTP 400 Bad Request
+  }
+}), async (c) => {
+  const startTime = performance.now(); // 1. Start a high-resolution timer the exact moment the request processing begins
   const db = getDrizzle(c.env.makisend_db);
   const secretKey = c.env.AES_256_KEY;
 
@@ -59,7 +58,7 @@ app.post('/send-email',  zValidator('json', EmailSchema, (result, c) => {
       user: c.env.SMTP_USER,
       pass: c.env.SMTP_PASSWORD,
     },
-     // CRITICAL: Force IPv4 to bypass the local workerd network warning
+    // CRITICAL: Force IPv4 to bypass the local workerd network warning
     family: 4,
     tls: {
       rejectUnauthorized: true // Prevents Man-in-the-Middle attacks
@@ -69,39 +68,38 @@ app.post('/send-email',  zValidator('json', EmailSchema, (result, c) => {
   try {
     const { to, subject, text, html } = await c.req.json();
     
-    
-    //Set the different allowed email tags for the email sending
-      const allowedEmailTags = [
-  // Typography & Headings
-  "h1", "h2", "h3", "h4", "h5", "h6", "p", "br", "hr", "pre", "code",
-  
-  // Layout & Container Elements
-  "div", "address", "blockquote",
-  
-  // Table Elements (Crucial for Email Layouts)
-  "table", "tbody", "thead", "tfoot", "tr", "td", "th", "col", "colgroup", "caption",
-  
-  // Links
-  "a",
-  
-  // Lists
-  "ul", "ol", "li", "dl", "dt", "dd",
-  
-  // Inline Formatting & Semantic Emphasis
-  "span", "strong", "b", "em", "i", "u", "s", "small", "sub", "sup", 
-  "abbr", "cite", "data", "dfn", "kbd", "mark", "q", "samp", "time", "var",
+    // Set the different allowed email tags for the email sending
+    const allowedEmailTags = [
+      // Typography & Headings
+      "h1", "h2", "h3", "h4", "h5", "h6", "p", "br", "hr", "pre", "code",
+      
+      // Layout & Container Elements
+      "div", "address", "blockquote",
+      
+      // Table Elements (Crucial for Email Layouts)
+      "table", "tbody", "thead", "tfoot", "tr", "td", "th", "col", "colgroup", "caption",
+      
+      // Links
+      "a",
+      
+      // Lists
+      "ul", "ol", "li", "dl", "dt", "dd",
+      
+      // Inline Formatting & Semantic Emphasis
+      "span", "strong", "b", "em", "i", "u", "s", "small", "sub", "sup", 
+      "abbr", "cite", "data", "dfn", "kbd", "mark", "q", "samp", "time", "var",
 
-  // Semantic Modern Structural Elements (Supported by modern webmail, falls back gracefully to div-like behavior in Outlook)
-  "article", "aside", "footer", "header", "main", "section"
-  ];
+      // Semantic Modern Structural Elements (Supported by modern webmail, falls back gracefully to div-like behavior in Outlook)
+      "article", "aside", "footer", "header", "main", "section"
+    ];
+
     const cleanHtml = sanitizeHtml(html, {
-  allowedTags: allowedEmailTags ,
-  allowedAttributes: {
-    'a': [ 'href' ]
-  },
-  allowedIframeHostnames: ['www.youtube.com']
-});//Sanitize and purify the dirty html from the request
-  
+      allowedTags: allowedEmailTags,
+      allowedAttributes: {
+        'a': [ 'href' ]
+      },
+      allowedIframeHostnames: ['www.youtube.com']
+    }); // Sanitize and scrub untrusted HTML from the incoming request payload
 
     const encryptedTo = await encrypt(to, secretKey);
  
@@ -111,7 +109,7 @@ app.post('/send-email',  zValidator('json', EmailSchema, (result, c) => {
       message: "Email record initialized. Delivery status set to PENDING.",
       message_details: JSON.stringify({ to: encryptedTo }),
       sentAt: new Date().toISOString()
-    }).returning();//Used to access the last inserted row in the database
+    }).returning(); // Used to fetch the auto-generated ID of the newly inserted row
 
     // 2. Send the email
     const info = await transporter.sendMail({
@@ -119,9 +117,11 @@ app.post('/send-email',  zValidator('json', EmailSchema, (result, c) => {
       to,
       subject,
       text,
-      html : cleanHtml,
+      html: cleanHtml,
     });
-    const durationMs = Math.round(performance.now() - startTime);
+
+    // Email delivery duration: total execution time minus startup baseline
+    const durationMs = Math.round(performance.now() - startTime);  
 
     // 3. Update log with success details and SMTP receipt
     await db.update(logs)
@@ -132,7 +132,7 @@ app.post('/send-email',  zValidator('json', EmailSchema, (result, c) => {
           messageId: info.messageId 
         }),
         sentAt: new Date().toISOString(),
-        emailProcessingTimeMs: durationMs // <-- Stockage de la durée ici
+        emailProcessingTimeMs: durationMs // <-- Storage of execution duration here
       })
       .where(eq(logs.id, insertedRow.id));
 
@@ -158,7 +158,7 @@ app.post('/send-email',  zValidator('json', EmailSchema, (result, c) => {
       await db.insert(logs).values({
         endpoint: "/send-email",
         message: err.message || 'Unknown error occurred',
-        message_details: JSON.stringify({ error: err.message, stack: err.stack }),//used this way because the decrypt function in crypto.ts expects a json string
+        message_details: JSON.stringify({ error: err.message, stack: err.stack }), // Formatted as JSON because the decrypt utility function expects a JSON string structure
         sentAt: new Date().toISOString()
       });
     } catch (dbErr) {
@@ -182,15 +182,13 @@ app.get('/logs', async (c) => {
   // Decrypt message_details safely (handles the object structure saved in POST route)
   const decryptedLogs = await Promise.all(
     allLogs.map(async (log) => {
-      
-    
-       const  parsedDetails = JSON.parse(log.message_details);
+      const parsedDetails = JSON.parse(log.message_details);
         
-        // FIX: parsedDetails.to is a STRING containing JSON, not an object.
-        // We check if it's a string that starts with '{' (our encrypted format)
-        if (typeof parsedDetails.to === 'string' && parsedDetails.to.startsWith('{')) {
-          parsedDetails.to = await decrypt(parsedDetails.to, secretKey);
-        }
+      // FIX: parsedDetails.to is a STRING containing JSON, not an object.
+      // We check if it's a string that starts with '{' (our encrypted format)
+      if (typeof parsedDetails.to === 'string' && parsedDetails.to.startsWith('{')) {
+        parsedDetails.to = await decrypt(parsedDetails.to, secretKey);
+      }
   
       return {
         ...log,
