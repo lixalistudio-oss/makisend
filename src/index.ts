@@ -9,13 +9,8 @@ import { encrypt, decrypt } from '../crypto';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod'; // Ensure z is imported
 import { EmailSchema } from '../email_schema';
-import DOMPurifyFromPackage from 'dompurify';
+import sanitizeHtml from 'sanitize-html';
 
-import { parseHTML } from 'linkedom';
-
-// Generate a mock window instance using linkedom's parser utility
-const { window } = parseHTML('<!doctype html><html><body></body></html>');
-const DOMPurify = DOMPurifyFromPackage(window as any);
 
 type Bindings = { // Used to initialize the env variables with their types
   AES_256_KEY: string;
@@ -74,8 +69,38 @@ app.post('/send-email',  zValidator('json', EmailSchema, (result, c) => {
     const { to, subject, text, html } = await c.req.json();
     
     
-    // 3. Apply your server-side sanitization on the valid HTML string
-    const cleanHtml = DOMPurify.sanitize(html);
+    //Set the different allowed email tags for the email sending
+      const allowedEmailTags = [
+  // Typography & Headings
+  "h1", "h2", "h3", "h4", "h5", "h6", "p", "br", "hr", "pre", "code",
+  
+  // Layout & Container Elements
+  "div", "address", "blockquote",
+  
+  // Table Elements (Crucial for Email Layouts)
+  "table", "tbody", "thead", "tfoot", "tr", "td", "th", "col", "colgroup", "caption",
+  
+  // Links
+  "a",
+  
+  // Lists
+  "ul", "ol", "li", "dl", "dt", "dd",
+  
+  // Inline Formatting & Semantic Emphasis
+  "span", "strong", "b", "em", "i", "u", "s", "small", "sub", "sup", 
+  "abbr", "cite", "data", "dfn", "kbd", "mark", "q", "samp", "time", "var",
+
+  // Semantic Modern Structural Elements (Supported by modern webmail, falls back gracefully to div-like behavior in Outlook)
+  "article", "aside", "footer", "header", "main", "section"
+  ];
+    const cleanHtml = sanitizeHtml(html, {
+  allowedTags: allowedEmailTags ,
+  allowedAttributes: {
+    'a': [ 'href' ]
+  },
+  allowedIframeHostnames: ['www.youtube.com']
+});//Sanitize and purify the dirty html from the request
+  
 
     const encryptedTo = await encrypt(to, secretKey);
  
@@ -99,7 +124,7 @@ app.post('/send-email',  zValidator('json', EmailSchema, (result, c) => {
     // 3. Update log with success details and SMTP receipt
     await db.update(logs)
       .set({
-        message: "Email sent successfully",
+        message: cleanHtml,
         message_details: JSON.stringify({ 
           to: encryptedTo, 
           messageId: info.messageId 
