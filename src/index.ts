@@ -5,10 +5,10 @@ import * as nodemailer from 'nodemailer';
 import { drizzle } from "drizzle-orm/d1";
 import { desc, eq } from "drizzle-orm";
 import { emailLogs, logs } from "./db/schema";
-import { encrypt, decrypt } from '../crypto';
+import { encrypt, decrypt } from './common/crypto';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod'; // Ensure z is imported
-import { EmailSchema } from '../email_schema';
+import { EmailSchema } from './email_schema';
 import sanitizeHtml from 'sanitize-html';
 
 type Bindings = { // Used to map and define environment variable types
