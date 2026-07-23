@@ -8,14 +8,14 @@ export const emailLogs = sqliteTable("email_logs", {
   to: text("to").notNull(),
   subject: text("subject").notNull(),
   smtpId: text("smtp_id").notNull(),
-  sentAt: text("sent_at").notNull()
-});
-
-export const logs = sqliteTable("logs",{
-  id : text('id').primaryKey().$defaultFn(() => createId()),
-  endpoint : text("endpoint").notNull(),
-  message : text("message").notNull(),
-  message_details : text("message_details").notNull(),
   sentAt: text("sent_at").notNull(), 
   emailProcessingTimeMs: integer('email_processing_time'),
 });
+
+// export const logs = sqliteTable("logs",{
+//   id : text('id').primaryKey().$defaultFn(() => createId()),
+//   endpoint : text("endpoint").notNull(),
+//   message : text("message").notNull(),
+//   message_details : text("message_details").notNull(),
+//   sentAt: text("sent_at").notNull(), 
+// });

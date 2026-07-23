@@ -1,17 +1,13 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "4509ec65-fd30-49c1-82cb-5daa53f3966e",
+  "id": "4e161d94-4a01-4bb1-9018-ee1eb56dd252",
   "prevIds": [
     "00000000-0000-0000-0000-000000000000"
   ],
   "ddl": [
     {
       "name": "email_logs",
-      "entityType": "tables"
-    },
-    {
-      "name": "logs",
       "entityType": "tables"
     },
     {
@@ -65,56 +61,6 @@
       "table": "email_logs"
     },
     {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "id",
-      "entityType": "columns",
-      "table": "logs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "endpoint",
-      "entityType": "columns",
-      "table": "logs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "message",
-      "entityType": "columns",
-      "table": "logs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "message_details",
-      "entityType": "columns",
-      "table": "logs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "sent_at",
-      "entityType": "columns",
-      "table": "logs"
-    },
-    {
       "type": "integer",
       "notNull": false,
       "autoincrement": false,
@@ -122,7 +68,7 @@
       "generated": null,
       "name": "email_processing_time",
       "entityType": "columns",
-      "table": "logs"
+      "table": "email_logs"
     },
     {
       "columns": [
@@ -131,15 +77,6 @@
       "nameExplicit": false,
       "name": "email_logs_pk",
       "table": "email_logs",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
-        "id"
-      ],
-      "nameExplicit": false,
-      "name": "logs_pk",
-      "table": "logs",
       "entityType": "pks"
     }
   ],
