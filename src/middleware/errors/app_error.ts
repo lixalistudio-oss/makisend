@@ -1,6 +1,8 @@
+import { StatusCode } from "hono/utils/http-status"
+
 export class AppError extends Error
 {
-    constructor (public statusCode : number , message : string)
+    constructor (public statusCode : StatusCode , message : string)
     {
         super(message) // Call the proper JS Error class to fire the object actual implementation and giving it a proper message 
 
