@@ -65,7 +65,7 @@ export class SendEmailService {
 
       // Log the success details of the message 
       pinoLogger.info(
-        { smtpId: info.messageId, receiver: data.to }, 
+        { smtpId: info.messageId, EncryptedReceiver: encryptedReceiver }, 
         'Email successfully dispatched through nodemailer'
       );
 
