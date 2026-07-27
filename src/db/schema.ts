@@ -19,3 +19,4 @@ export const emailLogs = sqliteTable("email_logs", {
 //   message_details : text("message_details").notNull(),
 //   sentAt: text("sent_at").notNull(), 
 // });
+

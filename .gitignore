@@ -39,3 +39,7 @@ lerna-debug.log*
 #database
 .sql
 /src/generated/prisma
+
+# Ignore local development logs
+local-logs.txt
+local-errors.txt

@@ -14,16 +14,16 @@ export interface EmailInput {
 
 export class SendEmailService {
   private bindings: Bindings;
-  private repo: SendEmailRepository;
 
-  constructor(bindings: Bindings, repo: SendEmailRepository) {
+  constructor(bindings: Bindings) {
     this.bindings = bindings;
-    this.repo = repo;
+
   }
 
   async sendEmail(data: EmailInput): Promise<{ message: string }> {
     // Start stopwatch to track performance
     const startTime = performance.now(); 
+    let sendEmailRepo: SendEmailRepository | null = null; 
     pinoLogger.info({ receiver: data.to }, "Email sending request pending");
 
     // Configure the mail transporter
@@ -43,13 +43,14 @@ export class SendEmailService {
     } as any);
 
     try {
+      sendEmailRepo = new SendEmailRepository(this.bindings.makisend_db);
       const { to, subject, text, html } = data;
       
       // Sanitize dirty HTML from the request
       const cleanedHtml = utils.cleanHtml(html);
 
       // Encrypt the email address of the receiver
-      const encryptedReceiver = await utils.encrypt(to, this.bindings.AES_256_KEY);
+    const encryptedReceiver = await utils.encrypt(to, this.bindings.AES_256_KEY);
 
       // Dispatch the email via SMTP
       const info = await transporter.sendMail({
@@ -70,7 +71,7 @@ export class SendEmailService {
       );
 
       // Save important email transaction data to the D1 database through the Repository
-      await this.repo.saveEmailLog(
+      await sendEmailRepo.saveEmailLog(
         encryptedReceiver,
         subject,
         info.messageId,

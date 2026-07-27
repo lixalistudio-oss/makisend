@@ -29,7 +29,6 @@ export function sendEmailRoute(SendEmailRouter: Hono<{ Bindings: Bindings }>) {
   
   // Lazy-loaded dependencies initialized as null because c.env is only available during request runtime
   let sendEmailService: SendEmailService | null = null;
-  let sendEmailRepo: SendEmailRepository | null = null; 
 
   SendEmailRouter.post(
     '', 
@@ -51,8 +50,8 @@ export function sendEmailRoute(SendEmailRouter: Hono<{ Bindings: Bindings }>) {
     // Step 2: Core route execution handler (runs if schema validation passes)
     async (c) => {
       // Dynamic Dependency Injection: Instantiate repo and service using runtime bindings (c.env)
-      sendEmailRepo = new SendEmailRepository(c.env.makisend_db);
-      sendEmailService = new SendEmailService(c.env, sendEmailRepo);
+      
+      sendEmailService = new SendEmailService(c.env);
       
       // Parse out the request body JSON
       const body = await c.req.json();
@@ -60,7 +59,7 @@ export function sendEmailRoute(SendEmailRouter: Hono<{ Bindings: Bindings }>) {
       // Final schema alignment parsing 
       const data = EmailSchema.parse(body);
       
-      // Execute the business logic layer to handle cryptography, delivery, and DB logging
+    
       const result = await sendEmailService.sendEmail(data);
       
       // Return successful response package with a 201 Created status

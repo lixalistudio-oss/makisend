@@ -17,12 +17,12 @@ export class SendEmailRepository implements EmailRepository {
   // Use ReturnType helper utility to strictly type the Drizzle connection handle
   private dbDrizzle: ReturnType<typeof drizzle>;
 
-  constructor(db: D1Database) {
+  constructor(db: any) {
     // Turn Cloudflare's raw D1 adapter into a functional Drizzle instance at initialization
     this.dbDrizzle = drizzle(db);
   }
  
-  async saveEmailLog(
+async saveEmailLog(
     to: string, 
     subject: string, 
     smtpId: string, 

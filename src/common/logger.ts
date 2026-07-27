@@ -1,20 +1,26 @@
-import {pino} from "pino"
+import { pino } from "pino";
 
-const isProduction = typeof process !== "undefined" && process.env?.NODE_ENV === "production";
-//Line so set up logging environment and knowing whether we're are working of Cloudfare servers or in local
-//
+/**
+ * Custom logging destination for edge environments (e.g., Cloudflare Workers).
+ * Routes Pino output directly to the console to avoid Node.js-specific 
+ * features (like worker_threads or fs) that are incompatible with Wrangler.
+ */
+const edgeDestination = {
+  write: (message: string) => {
+    console.log(message);
+  },
+};
 
-export const pinoLogger =  pino({
-  level: 'info',
-  transport: !isProduction  ? undefined :
-  //Used to decide how the logs will be display in local environment based on the value of the isProduction variable
-    {
-        // Pretty logs for your Fedora terminal during local Hono dev
-        target: 'pino-pretty',
-        options: {
-          colorize: true,
-          ignore: 'pid,hostname',
-          translateTime: 'SYS:standard',
-        },
-    },
-});
+/**
+ * Pino logger instance configured for edge environments.
+ * 
+ * Note: The `transport` option is intentionally omitted. Transports like 
+ * `pino-pretty` or `pino/file` rely on unsupported Node.js APIs and will 
+ * cause Wrangler to crash.
+ */
+export const pinoLogger = pino(
+  {
+    level: "info",
+  },
+  edgeDestination
+);
