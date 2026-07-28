@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 import { error_handler } from "./common/error_handler";
-import SendEmailRouter from "./send-email/send_email.routes";
-import { sendEmailRoute } from "./send-email/send_email.routes";
+import SendEmailController from "./send-email/send_email.routes";
 import { loggerMiddleware } from "./middleware/middleware_logger";
 const app = new Hono()
 
@@ -19,8 +18,8 @@ export type Bindings = { // Used to map and define environment variable types
   PORT: number;
 };
 
-sendEmailRoute(SendEmailRouter);
-app.route('/send-email', SendEmailRouter)
+// sendEmailRoute(SendEmailRouter);
+app.route('/send-email', SendEmailController)
 
 // // --- ROUTE: Read Specific Email Logs ---
 // app.get('/email-logs', async (c) => {

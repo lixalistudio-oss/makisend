@@ -2,7 +2,8 @@ import { describe, it, vi, expect } from "vitest";
 import { Hono } from "hono";
 
 import { error_handler } from "@/common/error_handler";
-import SendEmailRouter, { sendEmailRoute } from "@/send-email/send_email.routes";
+import   sendEmailController  from "@/send-email/send_email.routes";
+import SendEmailController from "@/send-email/send_email.routes";
 
 // -----------------------------------------------------------------------------
 // Application Setup
@@ -27,8 +28,8 @@ vi.mock("@/send-email/send_email.service", () => {
 // -----------------------------------------------------------------------------
 // Route Registration
 // -----------------------------------------------------------------------------
-sendEmailRoute(SendEmailRouter);
-app.route("/send-email", SendEmailRouter);
+// sendEmailRoute(SendEmailRouter);
+app.route("/send-email", SendEmailController);
 
 // -----------------------------------------------------------------------------
 // Tests

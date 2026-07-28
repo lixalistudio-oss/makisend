@@ -2,7 +2,7 @@
   "name": "makisend-poc",
   "type": "module",
   "scripts": {
-    "dev": "node dev_logger.cjs",
+    "dev": "wrangler dev --local",
     "deploy": "wrangler deploy --minify",
     "cf-typegen": "wrangler types --env-interface CloudflareBindings",
     "test": "vitest",

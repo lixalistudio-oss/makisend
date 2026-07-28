@@ -2,13 +2,12 @@
 
 import { Hono } from 'hono';
 import { SendEmailService } from './send_email.service';
-import { SendEmailRepository } from './send_email.repository';
 import z from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import { Bindings } from '..';
 
 // Initialize the main router instance with the Cloudflare Workers Bindings type
-const SendEmailRouter = new Hono<{ Bindings: Bindings }>();
+const SendEmailController = new Hono<{ Bindings: Bindings }>();
 
 // Define and enforce the expected payload format for sending emails
 const EmailSchema = z.object({
@@ -22,15 +21,7 @@ const EmailSchema = z.object({
   html: z.string().trim().min(1, { message: "HTML content cannot be empty." }),
 }).strict(); // Block extra properties not explicitly declared in the schema
 
-/**
- * Attaches the email dispatch POST route to the provided Hono router.
- */
-export function sendEmailRoute(SendEmailRouter: Hono<{ Bindings: Bindings }>) {
-  
-  // Lazy-loaded dependencies initialized as null because c.env is only available during request runtime
-  let sendEmailService: SendEmailService | null = null;
-
-  SendEmailRouter.post(
+SendEmailController.post(
     '', 
     // Step 1: Request payload validation middleware using Zod
     zValidator('json', EmailSchema, (result, c) => {
@@ -49,9 +40,9 @@ export function sendEmailRoute(SendEmailRouter: Hono<{ Bindings: Bindings }>) {
     }), 
     // Step 2: Core route execution handler (runs if schema validation passes)
     async (c) => {
-      // Dynamic Dependency Injection: Instantiate repo and service using runtime bindings (c.env)
-      
-      sendEmailService = new SendEmailService(c.env);
+
+      // Dynamic Dependency Injection: Instantiate service using runtime bindings (c.env)
+      let sendEmailService = new SendEmailService(c.env);
       
       // Parse out the request body JSON
       const body = await c.req.json();
@@ -66,6 +57,6 @@ export function sendEmailRoute(SendEmailRouter: Hono<{ Bindings: Bindings }>) {
       return c.json({ success: true, data: result }, 201);
     }
   );
-}
 
-export default SendEmailRouter;
+
+export default SendEmailController;
