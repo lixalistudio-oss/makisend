@@ -10,7 +10,7 @@
     ],
     "jsx": "react-jsx",
     "jsxImportSource": "hono/jsx",
-    "types": ["vitest/globals"],
+    "types": ["vitest/globals", "@cloudflare/workers-types"],
     "paths": {
       "@/*": ["./src/*"]
     }

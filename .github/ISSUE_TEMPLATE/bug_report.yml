@@ -1,0 +1,44 @@
+name: Bug report
+ description: Report a bug
+ title: "[BUG] "
+ labels: ["bug"]
+ body:
+   - type: markdown
+     attributes:
+       value: |
+         Thanks for taking the time to report a bug. Please be as specific as possible.
+   - type: textarea
+     id: description
+     attributes:
+       label: Bug description
+       description: What is happening?
+       placeholder: Describe the bug in a few sentences.
+     validations:
+       required: true
+   - type: textarea
+     id: reproduction
+     attributes:
+       label: Steps to reproduce
+       description: How can we reproduce the bug?
+       placeholder: |
+         1. Run `pnpm dev`
+         2. Call `POST /send-email` with ...
+         3. Observe the error ...
+     validations:
+       required: true
+   - type: textarea
+     id: expected
+     attributes:
+       label: Expected behavior
+       description: What should happen?
+     validations:
+       required: true
+   - type: textarea
+     id: environment
+     attributes:
+       label: Environment
+       description: Node.js version, OS, etc.
+       placeholder: |
+         - Node.js: 22.x
+         - OS: macOS / Linux / Windows
+         - Commit: abc123

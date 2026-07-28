@@ -1,14 +1,11 @@
 import { Hono } from "hono";
-import { error_handler } from "./common/error_handler";
-import SendEmailController from "./send-email/send_email.routes";
-import { loggerMiddleware } from "./middleware/middleware_logger";
-const app = new Hono()
+import { errorHandler } from "@/middleware/error.handler";
+import { requestLoggerMiddleware } from "@/middleware/request_logger.middleware";
+import { apiKeyMiddleware } from "@/middleware/api_key.middleware";
+import { configMiddleware } from "@/middleware/config.middleware";
+import { createSendEmailController, createSendEmailModule } from "@/send-email";
 
-app.use('*',loggerMiddleware())
-app.onError(error_handler)
-
-
-export type Bindings = { // Used to map and define environment variable types
+export type Bindings = {
   AES_256_KEY: string;
   SMTP_USER: string;
   SMTP_PASSWORD: string;
@@ -16,28 +13,28 @@ export type Bindings = { // Used to map and define environment variable types
   SENDER_EMAIL: string;
   HOST: string;
   PORT: number;
+  API_KEY: string;
 };
 
-// sendEmailRoute(SendEmailRouter);
-app.route('/send-email', SendEmailController)
+const app = new Hono<{ Bindings: Bindings }>();
+const sendEmailController = createSendEmailController();
 
-// // --- ROUTE: Read Specific Email Logs ---
-// app.get('/email-logs', async (c) => {
-//   const db = getDrizzle(c.env.makisend_db);
-//   const secretKey = c.env.AES_256_KEY;
-  
-//   const allLogs = await db.select().from(emailLogs).orderBy(desc(emailLogs.sentAt));
+app.use("*", requestLoggerMiddleware());
+app.onError(errorHandler);
+app.use(configMiddleware());
 
-//   const decryptedLogs = await Promise.all(
-//     allLogs.map(async (emailLog) => {
-//       return {
-//         ...emailLog,
-//         to: await decrypt(emailLog.to, secretKey),
-//       };
-//     })
-//   );
+app.use("/send-email/*", async (c, next) => {
+  const config = c.get("appConfig");
+  await apiKeyMiddleware(config.apiKey)(c, next);
+});
 
-//   return c.json({ success: true, data: decryptedLogs });
-// });
+app.use("/send-email/*", async (c, next) => {
+  const config = c.get("appConfig");
+  const { service } = createSendEmailModule(config);
+  c.set("sendEmailService", service);
+  await next();
+});
 
- export default app;
+app.route("/send-email", sendEmailController);
+
+export default app;
