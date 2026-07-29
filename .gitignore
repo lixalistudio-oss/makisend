@@ -43,3 +43,6 @@ lerna-debug.log*
 # Ignore local development logs
 local-logs.txt
 local-errors.txt
+
+# Kimi Code local config (MCP servers, personal tokens)
+.kimi-code/
