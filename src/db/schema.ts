@@ -1,21 +1,12 @@
-// src/db/schema.ts
 import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
-import { sql } from "drizzle-orm";
+import { createId } from "@paralleldrive/cuid2";
 
-export const emailLogs = sqliteTable("email_log", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const emailLogs = sqliteTable("email_logs", {
+  internalId: text("internalId").primaryKey().$defaultFn(() => createId()),
   to: text("to").notNull(),
   subject: text("subject").notNull(),
-  messageId: text("message_id").notNull(),
-  // D1 uses SQLite, so we store timestamps as integers. 
-  // Drizzle will automatically convert this to a JS Date object.
-   sentAt: text("sent_at").notNull()
+  smtpId: text("smtp_id").notNull(),
+  sentAt: text("sent_at").notNull(),
+  emailProcessingTimeMs: integer("email_processing_time"),
 });
 
-export const logs = sqliteTable("logs",{
-  id : integer("id").primaryKey({autoIncrement: true}),
-  endpoint : text("endpoint").notNull(),
-  message : text("message").notNull(),
-  message_details : text("details"),
-  sentAt: text("sent_at").notNull(), 
-});

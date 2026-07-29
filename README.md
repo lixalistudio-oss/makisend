@@ -1,22 +1,27 @@
 ```txt
-npm install
-npm run dev
+pnpm install
+pnpm run dev
 ```
 
 ```txt
-npm run deploy
+pnpm run deploy
 ```
 
-[For generating/synchronizing types based on your Worker configuration run](https://developers.cloudflare.com/workers/wrangler/commands/#types):
+[For generating / synchronizing types based on your Worker configuration, run](https://developers.cloudflare.com/workers/wrangler/commands/#types):
 
 ```txt
-npm run cf-typegen
+pnpm run cf-typegen
 ```
 
-Pass the `CloudflareBindings` as generics when instantiating `Hono`:
+Pass `CloudflareBindings` as generics when instantiating `Hono`:
 
 ```ts
 // src/index.ts
-const app = new Hono<{ Bindings: CloudflareBindings }>()
+const app = new Hono<{ Bindings: CloudflareBindings }>();
 ```
+
 # makisend
+
+MakiSend is a Proof of Concept for a serverless transactional email API built on Cloudflare Workers.
+
+See `AGENTS.md` for the full project context, architecture, conventions, and development workflow.

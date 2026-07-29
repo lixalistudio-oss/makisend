@@ -36,4 +36,13 @@ lerna-debug.log*
 # misc
 .DS_Store
 
+#database
+.sql
 /src/generated/prisma
+
+# Ignore local development logs
+local-logs.txt
+local-errors.txt
+
+# Kimi Code local config (MCP servers, personal tokens)
+.kimi-code/
