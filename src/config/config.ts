@@ -1,3 +1,4 @@
+import { AppError } from "@/core/errors";
 import type { Bindings } from "@/index";
 
 export interface SmtpConfig {
@@ -16,6 +17,14 @@ export interface Config {
 }
 
 export function createConfig(env: Bindings): Config {
+  if (!env.AES_256_KEY) {
+    throw new AppError(500, "AES_256_KEY environment variable is required");
+  }
+
+  if (!env.makisend_db) {
+    throw new AppError(500, "makisend_db environment variable is required");
+  }
+
   return {
     smtp: {
       host: env.HOST,
