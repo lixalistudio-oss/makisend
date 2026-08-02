@@ -1,9 +1,8 @@
 import { Hono } from "hono";
 import { errorHandler } from "@/middleware/error.handler";
-import { requestLoggerMiddleware } from "@/middleware/request_logger.middleware";
-import { apiKeyMiddleware } from "@/middleware/api_key.middleware";
+import { requestLoggerMiddleware } from "@/middleware/request-logger.middleware";
 import { configMiddleware } from "@/middleware/config.middleware";
-import { createSendEmailController, createSendEmailModule } from "@/send-email";
+import { createSendEmailController } from "@/send-email";
 
 export type Bindings = {
   AES_256_KEY: string;
@@ -17,24 +16,11 @@ export type Bindings = {
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
-const sendEmailController = createSendEmailController();
 
 app.use("*", requestLoggerMiddleware());
 app.onError(errorHandler);
 app.use(configMiddleware());
 
-app.use("/send-email/*", async (c, next) => {
-  const config = c.get("appConfig");
-  await apiKeyMiddleware(config.apiKey)(c, next);
-});
-
-app.use("/send-email/*", async (c, next) => {
-  const config = c.get("appConfig");
-  const { service } = createSendEmailModule(config);
-  c.set("sendEmailService", service);
-  await next();
-});
-
-app.route("/send-email", sendEmailController);
+app.route("/send-email", createSendEmailController());
 
 export default app;

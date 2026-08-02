@@ -2,6 +2,9 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import type { Bindings } from "@/index";
+import { createConfig } from "@/config/config";
+import { apiKeyMiddleware } from "@/middleware/api-key.middleware";
+import { createSendEmailModule } from "./send-email.module";
 import { SendEmailDto } from "./send-email.dto";
 import type { SendEmailService } from "./send-email.service";
 
@@ -13,6 +16,20 @@ declare module "hono" {
 
 export function createSendEmailController(): Hono<{ Bindings: Bindings }> {
   const controller = new Hono<{ Bindings: Bindings }>();
+
+  controller.use("*", async (c, next) => {
+    const existing = c.get("sendEmailService" as never) as
+      | SendEmailService
+      | undefined;
+    if (!existing) {
+      const config = createConfig(c.env);
+      const { service } = createSendEmailModule(config);
+      c.set("sendEmailService", service);
+      await apiKeyMiddleware(config.apiKey)(c, next);
+      return;
+    }
+    await next();
+  });
 
   controller.post(
     "",
