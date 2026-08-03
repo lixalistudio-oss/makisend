@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { Hono } from "hono";
 import { apiKeyMiddleware } from "@/middleware/api-key.middleware";
 import { errorHandler } from "@/middleware/error.handler";
