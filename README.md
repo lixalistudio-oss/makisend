@@ -98,7 +98,7 @@ Envoie un email transactionnel au destinataire spécifié.
 | Header | Valeur |
 |--------|--------|
 | `Content-Type` | `application/json` |
-| `x-api-key` ou `Authorization` | `Bearer <API_KEY>` *(authentification actuellement en TODO)* |
+| `x-makisend-key` | `*** *(authentification actuellement en TODO)* |
 
 #### Body
 

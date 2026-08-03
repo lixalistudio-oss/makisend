@@ -12,19 +12,10 @@ const createApp = (apiKey: string) => {
 };
 
 describe("apiKeyMiddleware", () => {
-  it("should allow request with valid x-api-key header", async () => {
+  it("should allow request with valid x-makisend-key header", async () => {
     const app = createApp("valid-key");
     const res = await app.request("/protected", {
-      headers: { "x-api-key": "valid-key" },
-    });
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ success: true });
-  });
-
-  it("should allow request with valid Authorization Bearer header", async () => {
-    const app = createApp("valid-key");
-    const res = await app.request("/protected", {
-      headers: { Authorization: "Bearer valid-key" },
+      headers: { "x-makisend-key": "valid-key" },
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ success: true });
@@ -39,7 +30,7 @@ describe("apiKeyMiddleware", () => {
   it("should reject request with invalid API key", async () => {
     const app = createApp("valid-key");
     const res = await app.request("/protected", {
-      headers: { "x-api-key": "wrong-key" },
+      headers: { "x-makisend-key": "wrong-key" },
     });
     expect(res.status).toBe(401);
   });
@@ -47,7 +38,7 @@ describe("apiKeyMiddleware", () => {
   it("should reject all requests when API key is empty", async () => {
     const app = createApp("");
     const res = await app.request("/protected", {
-      headers: { "x-api-key": "" },
+      headers: { "x-makisend-key": "" },
     });
     expect(res.status).toBe(401);
   });

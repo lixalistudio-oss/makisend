@@ -141,7 +141,7 @@ Even though the runtime remains **Hono** (not NestJS), the code organization is 
 
 ## Security
 
-- **API key authentication**: `src/middleware/api-key.middleware.ts` validates the `x-api-key` header or an `Authorization: Bearer <key>` header against the configured `API_KEY`.
+- **API key authentication**: `src/middleware/api-key.middleware.ts` validates the `x-makisend-key` header against the configured `API_KEY`.
 - **Encryption**: recipient email address is encrypted with AES-256-GCM before database storage.
 - **HTML sanitization**: HTML content is cleaned with `sanitize-html` before sending.
 - **Verified TLS**: SMTP connections use `rejectUnauthorized: true`.
