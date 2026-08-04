@@ -13,13 +13,17 @@
     "lint:fix": "eslint src test drizzle.config.ts vitest.config.ts --fix"
   },
   "dependencies": {
+    "@better-auth/api-key": "^1.6.25",
+    "@better-auth/drizzle-adapter": "^1.6.25",
     "@hono/standard-validator": "^0.3.0",
     "@hono/zod-validator": "^0.9.0",
     "@libsql/client": "^0.17.4",
     "@paralleldrive/cuid2": "^3.3.0",
+    "better-auth": "^1.6.25",
     "dompurify": "^3.4.12",
     "dotenv": "^17.4.2",
-    "drizzle-orm": "^1.0.0-rc.4",
+    "drizzle-orm": "^0.45.2",
+    "generate-api-key": "^1.0.2",
     "hono": "^4.12.27",
     "htmlparser2": "^12.0.0",
     "linkedom": "^0.18.13",
@@ -37,7 +41,7 @@
     "@types/sanitize-html": "^2.16.1",
     "@vitest/ui": "^4.1.10",
     "better-sqlite3": "^13.0.1",
-    "drizzle-kit": "^1.0.0-rc.4",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^10.8.0",
     "pino-pretty": "^13.1.3",
     "pino-tee": "^0.4.0",
@@ -45,9 +49,16 @@
     "typescript-eslint": "^8.65.0",
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^4.1.10",
-    "wrangler": "^4.4.0"
+    "wrangler": "^4.115.0"
   },
   "overrides": {
     "sharp": "^0.35.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild",
+      "workerd"
+    ]
   }
 }

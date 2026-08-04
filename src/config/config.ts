@@ -14,6 +14,8 @@ export interface Config {
   aesKey: string;
   apiKey: string;
   db: D1Database;
+  better_auth_secret: string;
+  better_auth_url: string;
 }
 
 export function createConfig(env: Bindings): Config {
@@ -36,5 +38,7 @@ export function createConfig(env: Bindings): Config {
     aesKey: env.AES_256_KEY,
     apiKey: env.API_KEY,
     db: env.makisend_db,
+    better_auth_secret: env.BETTER_AUTH_SECRET,
+    better_auth_url: env.BETTER_AUTH_URL
   };
 }

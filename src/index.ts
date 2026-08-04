@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { errorHandler } from "@/middleware/error.handler";
-import { requestLoggerMiddleware } from "@/middleware/request_logger.middleware";
-import { apiKeyMiddleware } from "@/middleware/api_key.middleware";
+import { requestLoggerMiddleware } from "@/middleware/request-logger.middleware";
+import { apiKeyMiddleware } from "@/middleware/api-key.middleware";
 import { configMiddleware } from "@/middleware/config.middleware";
 import { createSendEmailController, createSendEmailModule } from "@/send-email";
 
@@ -14,6 +14,8 @@ export type Bindings = {
   HOST: string;
   PORT: number;
   API_KEY: string;
+  BETTER_AUTH_SECRET: string;
+  BETTER_AUTH_URL : string
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
