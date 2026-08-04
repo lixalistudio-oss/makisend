@@ -28,7 +28,7 @@ async function main() {
   const prefix = "mk";
   
 
-  console.log('⏳ Provisioning system admin user and generating API key...');
+  console.log(' Provisioning system admin user and generating API key...');
 
   try {
     const config = createConfig(env);
@@ -52,13 +52,13 @@ async function main() {
         updatedAt: now,
       });
 
-      console.log('✅ Account successfully provisioned!');
-      console.log(`👤 User ID:   ${userId}`);
-      console.log(`📧 Email:     ${uniqueEmail}`);
-      console.log(`🔑 API Key:   ${fullKey}`);
+      console.log('Account successfully provisioned!');
+      console.log(`User ID:   ${userId}`);
+      console.log(`Email:     ${uniqueEmail}`);
+      console.log(`API Key:   ${fullKey}`);
 
   } catch (error) {
-    console.error('❌ Script execution failed:', error);
+    console.error('Script execution failed:', error);
     process.exit(1);
   }
 }
