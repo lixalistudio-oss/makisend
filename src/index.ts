@@ -27,7 +27,7 @@ app.use(configMiddleware());
 
 app.use("/send-email/*", async (c, next) => {
   const config = c.get("appConfig");
-  await apiKeyMiddleware(config.apiKey)(c, next);
+  await apiKeyMiddleware(config)(c, next);
 });
 
 app.use("/send-email/*", async (c, next) => {
