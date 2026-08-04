@@ -10,7 +10,7 @@ export function apiKeyMiddleware(config: Config) {
   return createMiddleware(async (c, next) => {
     const authHeader = c.req.header("Authorization");
 
-    // Expect: "Bmk.xxxx-xxxx-xxxx"
+    // Expect: "mk.xxxx-xxxx-xxxx"
     if (!authHeader?.startsWith("mk.")) {
       pinoLogger.error({ err: Error }, "Missing or invalid Authorization header");
       throw new AppError(401, "Email delivery failed");
@@ -25,7 +25,8 @@ export function apiKeyMiddleware(config: Config) {
     const apiKeyRecord = result[0];
 
     if (!apiKeyRecord) {
-      return c.json({ error: "Invalid API key" }, 403);
+      pinoLogger.error({ err: Error }, "Missing or invalid Authorization header");
+      throw new AppError(403, "Invalid API Key");
     }
 
     // Attach user/key info to context for downstream handlers
