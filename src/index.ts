@@ -14,6 +14,7 @@ export type Bindings = {
   HOST: string;
   PORT: number;
   API_KEY: string;
+  USER_ID: string;
   BETTER_AUTH_SECRET: string;
   BETTER_AUTH_URL : string
 };

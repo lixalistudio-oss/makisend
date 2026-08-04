@@ -46,7 +46,7 @@ export function createSendEmailModule(config: Config) {
   const db = createDatabase(config.db);
   const transport = new SmtpEmailTransport(config.smtp, config.senderEmail);
   const repository = new SendEmailRepository(db);
-  const service = new SendEmailService(transport, repository, config.aesKey);
+  const service = new SendEmailService(transport, repository, config.aesKey,);
 
   return {
     controller: createSendEmailController(),

@@ -11,6 +11,7 @@ export interface EmailSendResult {
 
 export interface IEmailRepository {
   saveEmailLog(
+    userId: string,
     to: string,
     subject: string,
     smtpId: string,

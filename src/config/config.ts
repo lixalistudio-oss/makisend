@@ -37,8 +37,10 @@ export function createConfig(env: Bindings): Config {
     senderEmail: env.SENDER_EMAIL,
     aesKey: env.AES_256_KEY,
     apiKey: env.API_KEY,
+    
     db: env.makisend_db,
     better_auth_secret: env.BETTER_AUTH_SECRET,
     better_auth_url: env.BETTER_AUTH_URL
+
   };
 }

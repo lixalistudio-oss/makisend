@@ -33,8 +33,9 @@ export function createSendEmailController(): Hono<{ Bindings: Bindings }> {
     }),
     async (c) => {
       const data = c.req.valid("json");
+      const userId = c.get("userId");  
       const service = c.get("sendEmailService");
-      const result = await service.sendEmail(data);
+      const result = await service.sendEmail(data,userId);
       return c.json({ success: true, data: result }, 201);
     },
   );

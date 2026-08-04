@@ -6,6 +6,14 @@ import { createDatabase } from "@/db/connection";
 import { apikey } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
+
+// src/types/hono.d.ts (or any .d.ts file)
+declare module "hono" {
+  interface ContextVariableMap {
+    userId: string;
+    apiKey: string;
+  }
+}
 export function apiKeyMiddleware(config: Config) {
   return createMiddleware(async (c, next) => {
     const authHeader = c.req.header("Authorization");
@@ -13,7 +21,7 @@ export function apiKeyMiddleware(config: Config) {
     // Expect: "mk.xxxx-xxxx-xxxx"
     if (!authHeader?.startsWith("mk.")) {
       pinoLogger.error({ err: Error }, "Missing or invalid Authorization header");
-      throw new AppError(401, "Email delivery failed");
+      throw new AppError(401, "Missing or invalid Authorization header");
     }
     const db = createDatabase(config.db);
     const result = await db
@@ -25,7 +33,7 @@ export function apiKeyMiddleware(config: Config) {
     const apiKeyRecord = result[0];
 
     if (!apiKeyRecord) {
-      pinoLogger.error({ err: Error }, "Missing or invalid Authorization header");
+      pinoLogger.error({ err: Error }, "Invalid API Key");
       throw new AppError(403, "Invalid API Key");
     }
 

@@ -6,6 +6,7 @@ export class SendEmailRepository implements IEmailRepository {
   constructor(private readonly db: Database) {}
 
   async saveEmailLog(
+    userId: string,
     to: string,
     subject: string,
     smtpId: string,
@@ -13,6 +14,7 @@ export class SendEmailRepository implements IEmailRepository {
     emailProcessingTimeMs: number,
   ): Promise<void> {
     await this.db.insert(emailLogs).values({
+      userId,
       to,
       subject,
       smtpId,

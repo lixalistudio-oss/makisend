@@ -46,6 +46,7 @@ CREATE INDEX `apikey_referenceId_idx` ON `apikey` (`reference_id`);--> statement
 CREATE INDEX `apikey_key_idx` ON `apikey` (`key`);--> statement-breakpoint
 CREATE TABLE `email_logs` (
 	`internalId` text PRIMARY KEY NOT NULL,
+	`user_id` text NOT NULL,
 	`to` text NOT NULL,
 	`subject` text NOT NULL,
 	`smtp_id` text NOT NULL,

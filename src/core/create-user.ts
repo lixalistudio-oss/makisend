@@ -19,9 +19,7 @@ async function main() {
   // Generate required unique values using your functions
   const userId = createId();
   const fullKey = generateApiKey({
-  method: 'uuidv5',
-  name: 'production app',
-  namespace: '0f3819f3-b417-4c4c-b674-853473800265',
+  method: 'uuidv4',
   prefix: 'mk'
 }) as unknown as string
   const uniqueEmail = `admin_${createId()}@makisend.local`;
