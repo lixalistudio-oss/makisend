@@ -7,30 +7,29 @@ import type {
   IEmailRepository,
   IEmailTransport,
 } from "./send-email.types";
-import { userInfo } from "node:os";
 
+import { UserConfig } from "@/config/config";
 export class SendEmailService {
   constructor(
     private readonly emailTransport: IEmailTransport,
     private readonly emailRepository: IEmailRepository,
     private readonly aesKey: string,
-    
+    private readonly userConfig : UserConfig
   ) {}
 
-  async sendEmail(data: EmailInput,userId: string): Promise<{ message: string }> {
+  async sendEmail(data: EmailInput): Promise<{ message: string }> {
     const startTime = performance.now();
     pinoLogger.info({ receiver: data.to }, "Email sending request pending");
 
     try {
       const cleanedHtml = cleanHtml(data.html);
       const encryptedReceiver = await encrypt(data.to, this.aesKey);
-
+ 
       const { messageId } = await this.emailTransport.send({
         to: data.to,
         subject: data.subject,
         text: data.text,
         html: cleanedHtml ,
-        
       });
 
       const durationMs = Math.round(performance.now() - startTime);
@@ -40,9 +39,9 @@ export class SendEmailService {
         "Email successfully dispatched",
       );
 
-      const encryptedUserId = await encrypt(userId,this.aesKey);//Encrypt UserID before saving it
+
       await this.emailRepository.saveEmailLog(
-        encryptedUserId,
+        this.userConfig.userId,
         encryptedReceiver,
         data.subject,
         messageId,

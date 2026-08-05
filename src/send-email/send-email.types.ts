@@ -23,3 +23,4 @@ export interface IEmailRepository {
 export interface IEmailTransport {
   send(input: EmailInput): Promise<EmailSendResult>;
 }
+

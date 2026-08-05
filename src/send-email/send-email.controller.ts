@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import type { Bindings } from "@/index";
+import { UserInfoVariables } from "@/index";
 import { SendEmailDto } from "./send-email.dto";
 import type { SendEmailService } from "./send-email.service";
 
@@ -11,8 +12,8 @@ declare module "hono" {
   }
 }
 
-export function createSendEmailController(): Hono<{ Bindings: Bindings }> {
-  const controller = new Hono<{ Bindings: Bindings }>();
+export function createSendEmailController(): Hono<{ Bindings: Bindings , Variables : UserInfoVariables }> {
+  const controller = new Hono<{ Bindings: Bindings ,Variables : UserInfoVariables}>();
 
   controller.post(
     "",
@@ -33,9 +34,8 @@ export function createSendEmailController(): Hono<{ Bindings: Bindings }> {
     }),
     async (c) => {
       const data = c.req.valid("json");
-      const userId = c.get("userId");  
       const service = c.get("sendEmailService");
-      const result = await service.sendEmail(data,userId);
+      const result = await service.sendEmail(data);
       return c.json({ success: true, data: result }, 201);
     },
   );
