@@ -4,7 +4,6 @@ import { requestLoggerMiddleware } from "@/middleware/request-logger.middleware"
 import { apiKeyMiddleware } from "@/middleware/api-key.middleware";
 import { configMiddleware } from "@/middleware/config.middleware";
 import { createSendEmailController, createSendEmailModule } from "@/send-email";
-import { User } from "better-auth";
 import type { SmtpConfig,UserConfig } from "./config/config";
 
 

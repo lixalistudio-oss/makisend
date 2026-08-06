@@ -11,7 +11,7 @@ import { decrypt } from "@/core/crypto";
 declare module "hono" {
   interface ContextVariableMap {
     smptConfig : SmtpConfig,
-    userConfgi: UserConfig
+    userConfig: UserConfig
   }
 }
 export function apiKeyMiddleware(config: Config) {
