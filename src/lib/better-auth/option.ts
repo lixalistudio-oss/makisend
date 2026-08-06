@@ -1,16 +1,3 @@
-import { BetterAuthOptions } from 'better-auth';
-import { apiKey } from "@better-auth/api-key"
-
-export const betterAuthOptions: BetterAuthOptions = {
-  appName: 'YOUR_APP_NAME',
-  /**
-   * Base path for Better Auth.
-   * @default "/api/auth"
-   */
-  basePath: '/api',
-   plugins: [
-        apiKey() 
-    ]
-
-  // .... More options
-};
+// Better Auth options — currently unused scaffolding.
+// TODO: implement when Better Auth integration is ready.
+// See: https://www.better-auth.com/docs

@@ -1,6 +1,6 @@
 import { createMiddleware } from "hono/factory";
 import { pinoLogger } from "@/core/logger";
-import { Config,SmtpConfig,UserConfig } from "@/config/config";
+import type { Config, SmtpConfig, UserConfig } from "@/config/config";
 import { AppError } from "@/core/errors";
 import { createDatabase } from "@/db/connection";
 import { apikey,user } from "@/db/schema";
@@ -10,7 +10,7 @@ import { decrypt } from "@/core/crypto";
 // src/types/hono.d.ts (or any .d.ts file)
 declare module "hono" {
   interface ContextVariableMap {
-    smptConfig : SmtpConfig,
+    smtpConfig: SmtpConfig,
     userConfig: UserConfig
   }
 }

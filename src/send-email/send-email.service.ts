@@ -8,7 +8,7 @@ import type {
   IEmailTransport,
 } from "./send-email.types";
 
-import { UserConfig } from "@/config/config";
+import type { UserConfig } from "@/config/config";
 export class SendEmailService {
   constructor(
     private readonly emailTransport: IEmailTransport,

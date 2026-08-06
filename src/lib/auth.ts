@@ -1,17 +1,4 @@
-import { betterAuth } from "better-auth";
-import { drizzleAdapter } from "@better-auth/drizzle-adapter";
-import { drizzle } from "drizzle-orm/d1"; // Or your preferred driver
-import { Config } from "@/config/config";
-
-export const getAuth = (config: Config) => {
-  const db = drizzle(config.db);
-
-  return betterAuth({
-    database: drizzleAdapter(db, { 
-      provider: "sqlite", 
-    }),
-    secret: config.better_auth_secret,
-    baseURL: config.better_auth_url,
-   
-  });
-};
+// Better Auth integration — currently unused scaffolding.
+// TODO: implement when Better Auth integration is ready.
+// Requires: better_auth_secret and better_auth_url in Config
+// See: https://www.better-auth.com/docs

@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import type { Bindings } from "@/index";
-import { UserInfoVariables } from "@/index";
+import type { UserInfoVariables } from "@/index";
 import { SendEmailDto } from "./send-email.dto";
 import type { SendEmailService } from "./send-email.service";
 

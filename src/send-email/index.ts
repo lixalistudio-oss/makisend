@@ -12,7 +12,7 @@ class SmtpEmailTransport implements IEmailTransport {
   private readonly senderEmail: string;
 
   constructor(config : Config,smtpConfig:SmtpConfig) {
-    this.senderEmail = smtpConfig.senderEmail,
+    this.senderEmail = smtpConfig.senderEmail;
     this.transporter = nodemailer.createTransport({
       host: smtpConfig.smtpHostName,
       port: config.port,
@@ -58,4 +58,3 @@ return {
 
 export { createSendEmailController } from "./send-email.controller";
 export * from "./send-email.types";
-export * from "./send-email.dto";

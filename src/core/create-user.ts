@@ -1,4 +1,4 @@
-import { drizzle } from 'drizzle-orm/d1';
+// drizzle-orm/d1 used indirectly via createDatabase
 import { user, apikey } from '@/db/schema';
 import { createId } from "@paralleldrive/cuid2";
 import { generateApiKey } from 'generate-api-key';
@@ -7,7 +7,7 @@ import type { Bindings } from "@/index";
 import { createDatabase } from "@/db/connection";
 import { createConfig } from '@/config/config';
 import * as readline from 'node:readline/promises';
-import { encrypt,decrypt } from './crypto';
+import { encrypt } from './crypto';
 
 async function prompt(rl: readline.Interface, question: string): Promise<string> {
   const answer = await rl.question(question);
@@ -102,7 +102,7 @@ async function main() {
 
   } catch (error) {
     rl.close();
-    console.error('Script execution failed:', error);
+    console.log('Script execution failed:', error);
     process.exit(1);
   } finally {
     await dispose();

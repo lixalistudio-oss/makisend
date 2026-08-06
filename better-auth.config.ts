@@ -12,8 +12,6 @@ export const getAuth = (config: Config) => {
     database: drizzleAdapter(db, { 
       provider: "sqlite", 
     }),
-    secret: config.better_auth_secret,
-    baseURL: config.better_auth_url,
   });
 };
 
