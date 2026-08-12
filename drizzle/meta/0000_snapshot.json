@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "1f192cdf-31eb-43f6-8561-436e9b6c307e",
+  "id": "95eb6261-875a-4935-b3c2-fae166951d89",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "account": {
@@ -320,6 +320,51 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
+    "email_histories": {
+      "name": "email_histories",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "email_id": {
+          "name": "email_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "error": {
+          "name": "error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
     "email_logs": {
       "name": "email_logs",
       "columns": {
@@ -520,8 +565,8 @@
           "notNull": true,
           "autoincrement": false
         },
-        "sendder_email": {
-          "name": "sendder_email",
+        "sender_email": {
+          "name": "sender_email",
           "type": "text",
           "primaryKey": false,
           "notNull": true,

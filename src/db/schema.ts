@@ -4,13 +4,27 @@ import { relations, sql } from "drizzle-orm";
 
 
 export const emailLogs = sqliteTable("email_logs", {
-  internalId: text("internalId").primaryKey().$defaultFn(() => createId()),
+  internalId: text("internalId").primaryKey(),
   userId : text("user_id").notNull(),
   to: text("to").notNull(),
   subject: text("subject").notNull(),
   smtpId: text("smtp_id").notNull(),
   sentAt: text("sent_at").notNull(),
   emailProcessingTimeMs: integer("email_processing_time"),
+});
+
+// Table to track the lifecycle status of each email
+export const emailHistories = sqliteTable("email_histories", {
+  // Unique identifier for each status entry
+  id: text("id").primaryKey().$defaultFn(() => createId()),
+  // Links to email_logs.internalId (no FK constraint so we can insert before emailLogs)
+  emailId: text("email_id").notNull(),
+  // Current status: received | processing | cleaned | sent | failed
+  status: text("status").notNull(),
+  // Error message if status is "failed", null otherwise
+  error: text("error"),
+  // Timestamp of when this status was recorded
+  createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
 });
 
 export const user = sqliteTable("user", {

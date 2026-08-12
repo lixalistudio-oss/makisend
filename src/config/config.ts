@@ -16,6 +16,7 @@ export interface Config {
   port: number;
   aesKey: string;
   db: D1Database;
+  inngestConfig : number
 }
 
 
@@ -41,5 +42,6 @@ export function createConfig(env: Bindings): Config {
 
     
     db: env.makisend_db,
+    inngestConfig : env.INNGEST_DEV
   };
 }
