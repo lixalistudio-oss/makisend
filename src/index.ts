@@ -6,7 +6,7 @@ import { configMiddleware } from "@/middleware/config.middleware";
 import { createSendEmailController, createSendEmailModule } from "@/send-email";
 import type { SmtpConfig,UserConfig } from "./config/config";
 import { serve } from "inngest/hono";
-import { inngest , functions} from "./inngest";
+import { inngest} from "./inngest";
 
 
 export type Bindings = {
@@ -22,14 +22,14 @@ export type UserInfoVariables = {
 const app = new Hono<{ Bindings: Bindings,Variables: UserInfoVariables }>();
 const sendEmailController = createSendEmailController();
 
-app.on(
-  ["GET", "PUT", "POST"],
-  "/api/inngest",
-  serve({
-    client: inngest,
-    functions,
-  })
-);
+// app.on(
+//   ["GET", "PUT", "POST"],
+//   "/api/inngest",
+//   serve({
+//     client: inngest,
+//     functions,
+//   })
+// );
 app.use("*", requestLoggerMiddleware());
 app.onError(errorHandler);
 app.use(configMiddleware());
