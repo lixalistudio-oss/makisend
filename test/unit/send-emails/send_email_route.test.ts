@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import { errorHandler } from "@/middleware/error.handler";
 import { createSendEmailController } from "@/send-email/send-email.controller";
 
-vi.mock("@/inngest", () => ({
+vi.mock("@/inngest/send-email", () => ({
   inngest: {
     send: vi.fn().mockResolvedValue(undefined),
   },
@@ -15,6 +15,10 @@ import { inngest } from "@/inngest/send-email";
 function buildApp() {
   const app = new Hono();
   app.onError(errorHandler);
+  app.use("*", async (c, next) => {
+    c.set("userConfig", { userId: "test-user-id" });
+    await next();
+  });
   app.route("/send-email", createSendEmailController());
   return app;
 }

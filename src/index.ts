@@ -101,7 +101,6 @@ app.use("*", async (c, next) => {
 // API key auth middleware for send-email routes
 app.use("/send-email/*", async (c, next) => {
   const config = c.get("appConfig");
-  const userconfig = c.get("userConfig");
   await apiKeyMiddleware(config)(c, next);
 });
 
