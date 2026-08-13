@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { Bindings } from "@/index";
 import type { UserInfoVariables } from "@/index";
 import { SendEmailDto } from "./send-email.dto";
-import { inngest } from "@/inngest";
+import { inngest } from "@/inngest/send-email";
 import { createId } from "@paralleldrive/cuid2";
 
 export function createSendEmailController(): Hono<{ Bindings: Bindings , Variables : UserInfoVariables }> {
@@ -30,7 +30,8 @@ export function createSendEmailController(): Hono<{ Bindings: Bindings , Variabl
     async (c) => {
       const data = c.req.valid("json");
       const emailId = createId();
-      await inngest.send({ name: "app/user.authenticated", data: { ...data, emailId } });
+      const { userId } = c.get("userConfig");
+      await inngest.send({ name: "app/user.authenticated", data: { ...data,userId,emailId } });
       return c.json({ success: true, message: "Email queued" }, 202);   },
   );
 

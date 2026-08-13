@@ -4,7 +4,7 @@ import { relations, sql } from "drizzle-orm";
 
 
 export const emailLogs = sqliteTable("email_logs", {
-  internalId: text("internalId").primaryKey(),
+  internalId: text("internalId").primaryKey().notNull(),
   userId : text("user_id").notNull(),
   to: text("to").notNull(),
   subject: text("subject").notNull(),

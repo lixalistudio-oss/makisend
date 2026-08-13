@@ -18,6 +18,7 @@ export const SendEmailDto = z
       .string()
       .trim()
       .min(1, { message: "HTML content cannot be empty." }),
+
   })
   .strict();
 

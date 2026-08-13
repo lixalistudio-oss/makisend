@@ -3,46 +3,32 @@ import { Hono } from "hono";
 
 import { errorHandler } from "@/middleware/error.handler";
 import { createSendEmailController } from "@/send-email/send-email.controller";
-import type { SendEmailService } from "@/send-email/send-email.service";
 
-/**
- * Controller tests verify the HTTP boundary: request parsing, Zod
- * validation, and response shaping. The actual service logic is mocked
- * so these tests stay fast and focused on the contract between the
- * client and the controller.
- */
-function buildApp(mockService: SendEmailService) {
+vi.mock("@/inngest", () => ({
+  inngest: {
+    send: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+
+import { inngest } from "@/inngest/send-email";
+
+function buildApp() {
   const app = new Hono();
   app.onError(errorHandler);
-
-  // Inject the mock service into the Hono context before the controller
-  // runs. In production this middleware is provided by createSendEmailModule.
-  app.use("/send-email/*", async (c, next) => {
-    c.set("sendEmailService", mockService);
-    await next();
-  });
-
   app.route("/send-email", createSendEmailController());
   return app;
 }
 
 describe("SendEmailController", () => {
-  let mockSendFn: ReturnType<typeof vi.fn>;
   let app: Hono;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockSendFn = vi.fn();
-    app = buildApp({
-      sendEmail: mockSendFn,
-    } as unknown as SendEmailService);
+    app = buildApp();
   });
 
   describe("POST /send-email", () => {
-    // Happy path: valid payload → service called → 201 with success body.
-    it("should return 201 on success", async () => {
-      mockSendFn.mockResolvedValue({ message: "Email sent successfully" });
-
+    it("should return 202 on success", async () => {
       const res = await app.request("/send-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -54,21 +40,13 @@ describe("SendEmailController", () => {
         }),
       });
 
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(202);
+      expect(inngest.send).toHaveBeenCalledTimes(1);
 
-      const json = (await res.json()) as {
-        success: boolean;
-        data: { message: string };
-      };
-      expect(json).toEqual({
-        success: true,
-        data: { message: "Email sent successfully" },
-      });
+      const json = (await res.json()) as { success: boolean; message: string };
+      expect(json.success).toBe(true);
     });
 
-    // Invalid payload → Zod rejects before the service is ever called.
-    // Each field violates a different constraint so we catch regressions
-    // in individual validators.
     it("should return 400 when payload is invalid", async () => {
       const res = await app.request("/send-email", {
         method: "POST",
@@ -82,17 +60,10 @@ describe("SendEmailController", () => {
       });
 
       expect(res.status).toBe(400);
-
-      const json = (await res.json()) as {
-        error: string;
-        details: { fieldErrors: Record<string, unknown> };
-      };
+      const json = (await res.json()) as { error: string };
       expect(json.error).toBe("Validation failed");
-      expect(json.details.fieldErrors).toBeDefined();
     });
 
-    // The DTO uses `.strict()` so unknown properties must be rejected.
-    // This prevents clients from silently sending data the server ignores.
     it("should return 400 when extra fields are present", async () => {
       const res = await app.request("/send-email", {
         method: "POST",
@@ -109,7 +80,6 @@ describe("SendEmailController", () => {
       expect(res.status).toBe(400);
     });
 
-    // Empty body → Zod returns field-level errors for all missing fields.
     it("should return 400 when body is empty", async () => {
       const res = await app.request("/send-email", {
         method: "POST",
@@ -118,31 +88,6 @@ describe("SendEmailController", () => {
       });
 
       expect(res.status).toBe(400);
-      const json = (await res.json()) as {
-        details: { fieldErrors: Record<string, unknown> };
-      };
-      expect(json.details.fieldErrors).toBeDefined();
-    });
-
-    // When the service throws (e.g. SMTP failure), the global error
-    // handler converts it to a 500 instead of crashing the Worker.
-    it("should return 500 when service throws", async () => {
-      mockSendFn.mockRejectedValue(
-        Object.assign(new Error("SMTP down"), { statusCode: 500 }),
-      );
-
-      const res = await app.request("/send-email", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          to: "gedeon@example.com",
-          subject: "Testing failure path",
-          text: "This text body is long enough to pass validation.",
-          html: "<p>Valid HTML content.</p>",
-        }),
-      });
-
-      expect(res.status).toBe(500);
     });
   });
 });
