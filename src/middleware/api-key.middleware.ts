@@ -60,7 +60,7 @@ export function apiKeyMiddleware(config: Config) {
     }
     //Decrypt all sensitive infos about the user
     const [
-        decryptedSmtpUsername,
+        decryptedSmtpUsername,//d
         decryptedSmtpPassword,
         decryptedSmtpHostName,
         decryptedSenderEmail,
