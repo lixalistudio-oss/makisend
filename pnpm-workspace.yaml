@@ -1,5 +1,0 @@
-allowBuilds:
-  better-sqlite3: false
-  esbuild: false
-  protobufjs: false
-  workerd: false
