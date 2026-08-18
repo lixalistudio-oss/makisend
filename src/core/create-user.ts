@@ -36,7 +36,6 @@ async function main() {
     
     rl.close();
 
-    const fixedName = "Maki Admin";
     const now = new Date();
 
     const userId = createId();
