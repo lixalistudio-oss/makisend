@@ -4,10 +4,10 @@ import { z } from "zod";
 import type { Bindings } from "@/index";
 import type { UserInfoVariables } from "@/index";
 import { SendEmailDto } from "./send-email.dto";
-import { inngest } from "@/inngest/send-email";
+import type { Inngest } from "inngest";
 import { createId } from "@paralleldrive/cuid2";
 
-export function createSendEmailController(): Hono<{ Bindings: Bindings , Variables : UserInfoVariables }> {
+export function createSendEmailController(getInngest: () => Inngest): Hono<{ Bindings: Bindings , Variables : UserInfoVariables }> {
   const controller = new Hono<{ Bindings: Bindings ,Variables : UserInfoVariables}>();
 
   controller.post(
@@ -31,7 +31,7 @@ export function createSendEmailController(): Hono<{ Bindings: Bindings , Variabl
       const data = c.req.valid("json");
       const emailId = createId();
       const { userId } = c.get("userConfig");
-      await inngest.send({ name: "app/user.authenticated", data: { ...data,userId,emailId } });
+      await getInngest().send({ name: "app/send-email", data: { ...data,userId,emailId } });
       return c.json({ success: true, message: "Email queued" }, 202);   },
   );
 

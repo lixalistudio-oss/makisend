@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "3ed335cf-f56e-4249-acc0-7db46de789cb",
+  "id": "fcc8df7a-c879-47a8-88ff-808b0d4ff99f",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "account": {
@@ -110,10 +110,10 @@
         }
       },
       "foreignKeys": {
-        "account_user_id_user_id_fk": {
-          "name": "account_user_id_user_id_fk",
+        "account_user_id_smpt_credentials_id_fk": {
+          "name": "account_user_id_smpt_credentials_id_fk",
           "tableFrom": "account",
-          "tableTo": "user",
+          "tableTo": "smpt_credentials",
           "columnsFrom": [
             "user_id"
           ],
@@ -502,10 +502,10 @@
         }
       },
       "foreignKeys": {
-        "session_user_id_user_id_fk": {
-          "name": "session_user_id_user_id_fk",
+        "session_user_id_smpt_credentials_id_fk": {
+          "name": "session_user_id_smpt_credentials_id_fk",
           "tableFrom": "session",
-          "tableTo": "user",
+          "tableTo": "smpt_credentials",
           "columnsFrom": [
             "user_id"
           ],
@@ -520,20 +520,13 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "user": {
-      "name": "user",
+    "smpt_credentials": {
+      "name": "smpt_credentials",
       "columns": {
         "id": {
           "name": "id",
           "type": "text",
           "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
@@ -580,13 +573,6 @@
           "autoincrement": false,
           "default": false
         },
-        "image": {
-          "name": "image",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "integer",
@@ -605,8 +591,8 @@
         }
       },
       "indexes": {
-        "user_email_unique": {
-          "name": "user_email_unique",
+        "smpt_credentials_email_unique": {
+          "name": "smpt_credentials_email_unique",
           "columns": [
             "email"
           ],

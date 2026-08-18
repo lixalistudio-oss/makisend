@@ -1,5 +1,5 @@
 // drizzle-orm/d1 used indirectly via createDatabase
-import { user, apikey } from '@/db/schema';
+import { smpt_credentials, apikey } from '@/db/schema';
 import { createId } from "@paralleldrive/cuid2";
 import { generateApiKey } from 'generate-api-key';
 import { getPlatformProxy } from "wrangler";
@@ -67,11 +67,10 @@ async function main() {
     encrypt(senderEmail, aesKey),
 ]);
 
-    console.log('\n Provisioning system admin user and generating API key...\n');
+    console.log('\n Provisioning system admin smpt_credentials and generating API key...\n');
     // 1. Create the Better Auth User
-    await db.insert(user).values({
+    await db.insert(smpt_credentials).values({
       id: userId,
-      name: fixedName,
       email: encryptedUniqueEmail,
       smtpUsername : encryptedSmtpUsername,
       smtpPassword : encryptedSmtpPassword,

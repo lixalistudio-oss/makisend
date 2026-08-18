@@ -1,5 +1,5 @@
 import { describe, it, vi, expect, beforeEach, type Mocked } from "vitest";
-import { sendEmailFunction, setInngestDeps } from "@/inngest/send-email";
+import { createInngestModule } from "@/inngest/send-email";
 import type { IEmailRepository, IEmailTransport } from "@/send-email/send-email.types";
 import { encrypt } from "@/core/crypto";
 import { cleanHtml } from "@/core/html-sanitizer";
@@ -57,6 +57,7 @@ function createMockLogger() {
 describe("sendEmailFunction", () => {
   let mockRepository: Mocked<IEmailRepository>;
   let mockTransport: Mocked<IEmailTransport>;
+  let sendEmailFunction: ReturnType<typeof createInngestModule>["functions"][0];
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -76,22 +77,18 @@ describe("sendEmailFunction", () => {
       send: vi.fn().mockResolvedValue({ messageId: "<mock-id@gmail.com>" }),
     };
 
-    // Inject dependencies — same pattern used in src/index.ts at startup.
-    // This avoids importing the real SMTP transport or D1 repository.
-    setInngestDeps(mockTransport, mockRepository, "test-aes-key");
+    // Create the Inngest module with mocked dependencies
+    const mod = createInngestModule(mockTransport, mockRepository, "test-aes-key");
+    sendEmailFunction = mod.functions[0];
   });
 
   it("should call all lifecycle statuses in order", async () => {
     const step = createMockStep();
     const logger = createMockLogger();
 
-    // The function is created via inngest.createFunction() which wraps
-    // the handler. `.fn` exposes the inner async function for direct invocation.
     const handler = (sendEmailFunction as any).fn;
-    await handler({ event: mockEvent, step, logger });
+    await handler({ event: mockEvent, step, logger, transport: mockTransport, repository: mockRepository, aesKey: "test-aes-key" });
 
-    // Each step writes a status row to email_histories. The order matters
-    // because it reflects the email lifecycle progression.
     const calls = mockRepository.saveEmailHistory.mock.calls.map(
       (call: any[]) => call[1],
     );
@@ -103,10 +100,8 @@ describe("sendEmailFunction", () => {
     const logger = createMockLogger();
 
     const handler = (sendEmailFunction as any).fn;
-    await handler({ event: mockEvent, step, logger });
+    await handler({ event: mockEvent, step, logger, transport: mockTransport, repository: mockRepository, aesKey: "test-aes-key" });
 
-    // The cleaned HTML is wrapped by our cleanHtml mock, so the transport
-    // receives the sanitized + wrapped version, not the raw input.
     expect(mockTransport.send).toHaveBeenCalledWith({
       to: mockEvent.data.to,
       subject: mockEvent.data.subject,
@@ -120,10 +115,8 @@ describe("sendEmailFunction", () => {
     const logger = createMockLogger();
 
     const handler = (sendEmailFunction as any).fn;
-    await handler({ event: mockEvent, step, logger });
+    await handler({ event: mockEvent, step, logger, transport: mockTransport, repository: mockRepository, aesKey: "test-aes-key" });
 
-    // saveEmailLog persists the final send record to D1. The `to` field
-    // is stored encrypted, and timestamps/durations are generated at runtime.
     expect(mockRepository.saveEmailLog).toHaveBeenCalledWith(
       mockEvent.data.emailId,
       mockEvent.data.userId,
@@ -140,14 +133,11 @@ describe("sendEmailFunction", () => {
     const logger = createMockLogger();
 
     const handler = (sendEmailFunction as any).fn;
-    await handler({ event: mockEvent, step, logger });
+    await handler({ event: mockEvent, step, logger, transport: mockTransport, repository: mockRepository, aesKey: "test-aes-key" });
 
-    // Inngest guarantees each step runs exactly once per execution.
-    // On retry, completed steps are replayed from cache, not re-executed.
-    // This test verifies the function declares the correct step sequence.
     expect(step.run).toHaveBeenCalledTimes(6);
     expect(step.run.mock.calls.map((c: any[]) => c[0])).toEqual([
-      "received",
+      " email-receveid-and-update-history",
       "processing",
       "cleaning-html-input",
       "send-mail-via-nodemailer",

@@ -9,7 +9,7 @@ import { configMiddleware } from "@/middleware/config.middleware";
 
 // --- Module imports ---
 import { createSendEmailController, SmtpEmailTransport } from "@/send-email";
-import { inngest, functions, setInngestDeps } from "@/inngest/send-email";
+import { createInngestModule } from "@/inngest/send-email";
 import { serve } from "inngest/hono";
 
 // --- Database & repository imports ---
@@ -40,16 +40,14 @@ export type UserInfoVariables = {
 };
 
 // --- Lazy dependency container ---
-// Dependencies are initialized once on first request, then reused.
-// This avoids creating new connections on every Worker invocation.
 const deps = {
-  transport: null as IEmailTransport | null,   // SMTP transport (nodemailer)
-  repository: null as IEmailRepository | null, // Database repository (D1/Drizzle)
-  aesKey: null as string | null,               // AES encryption key
+  transport: null as IEmailTransport | null,
+  repository: null as IEmailRepository | null,
+  aesKey: null as string | null,
+  inngest: null as ReturnType<typeof createInngestModule> | null,
 
-  // Initialize all dependencies once with env vars and SMTP config
   init(env: Bindings, smtpConfig: SmtpConfig) {
-    if (this.transport) return; // Already initialized
+    if (this.transport) return;
 
     const db = createDatabase(env.makisend_db);
     this.repository = new SendEmailRepository(db);
@@ -59,23 +57,7 @@ const deps = {
     );
     this.aesKey = env.AES_256_KEY;
 
-    // Inject dependencies into Inngest functions
-    setInngestDeps(this.transport, this.repository, this.aesKey);
-  },
-
-  getTransport() {
-    if (!this.transport) throw new Error("Deps not initialized");
-    return this.transport;
-  },
-
-  getRepository() {
-    if (!this.repository) throw new Error("Deps not initialized");
-    return this.repository;
-  },
-
-  getAesKey() {
-    if (!this.aesKey) throw new Error("Deps not initialized");
-    return this.aesKey;
+    this.inngest = createInngestModule(this.transport, this.repository, this.aesKey);
   },
 };
 
@@ -105,17 +87,26 @@ app.use("/send-email/*", async (c, next) => {
 });
 
 // Mount send-email controller at /send-email
-const sendEmailController = createSendEmailController();
+// The controller receives a lazy getter for inngest — resolved at request time, not module load time
+const sendEmailController = createSendEmailController(() => {
+  if (!deps.inngest) throw new Error("Inngest module not initialized");
+  return deps.inngest.client;
+});
 app.route("/send-email", sendEmailController);
 
 // Inngest webhook endpoint for function orchestration
 app.on(
   ["GET", "PUT", "POST"],
   "/api/inngest",
-  serve({
-    client: inngest,
-    functions,
-  })
+  async (c) => {
+    if (!deps.inngest) {
+      throw new Error("Inngest module not initialized");
+    }
+    return serve({
+      client: deps.inngest.client,
+      functions: deps.inngest.functions,
+    })(c);
+  }
 );
 
 export default app;

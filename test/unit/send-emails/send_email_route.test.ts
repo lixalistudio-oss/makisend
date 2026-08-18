@@ -3,32 +3,32 @@ import { Hono } from "hono";
 
 import { errorHandler } from "@/middleware/error.handler";
 import { createSendEmailController } from "@/send-email/send-email.controller";
-
-vi.mock("@/inngest/send-email", () => ({
-  inngest: {
-    send: vi.fn().mockResolvedValue(undefined),
-  },
-}));
-
-import { inngest } from "@/inngest/send-email";
+import type { Inngest } from "inngest";
 
 function buildApp() {
+  const mockInngest = {
+    send: vi.fn().mockResolvedValue(undefined),
+  } as unknown as Inngest;
+
   const app = new Hono();
   app.onError(errorHandler);
   app.use("*", async (c, next) => {
     c.set("userConfig", { userId: "test-user-id" });
     await next();
   });
-  app.route("/send-email", createSendEmailController());
-  return app;
+  app.route("/send-email", createSendEmailController(() => mockInngest));
+  return { app, mockInngest };
 }
 
 describe("SendEmailController", () => {
   let app: Hono;
+  let mockInngest: { send: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     vi.clearAllMocks();
-    app = buildApp();
+    const built = buildApp();
+    app = built.app;
+    mockInngest = built.mockInngest as { send: ReturnType<typeof vi.fn> };
   });
 
   describe("POST /send-email", () => {
@@ -45,7 +45,7 @@ describe("SendEmailController", () => {
       });
 
       expect(res.status).toBe(202);
-      expect(inngest.send).toHaveBeenCalledTimes(1);
+      expect(mockInngest.send).toHaveBeenCalledTimes(1);
 
       const json = (await res.json()) as { success: boolean; message: string };
       expect(json.success).toBe(true);
