@@ -30,7 +30,9 @@ export type Bindings = {
   SMTP_USER: string;            // SMTP username
   SMTP_PASSWORD: string;        // SMTP password
   SENDER_EMAIL: string;         // Sender email address
-  USER_ID?: string;             // Optional user ID
+  USER_ID?: string;             // Optional user ID;
+  BETTER_AUTH_SECRET : string;
+  BETTER_AUTH_URL : string
 };
 
 // --- Hono context variables (per-request) ---
@@ -52,7 +54,7 @@ const deps = {
     const db = createDatabase(env.makisend_db);
     this.repository = new SendEmailRepository(db);
     this.transport = new SmtpEmailTransport(
-      { port: env.PORT, aesKey: env.AES_256_KEY, db: env.makisend_db, inngestConfig: env.INNGEST_DEV },
+      { port: env.PORT, aesKey: env.AES_256_KEY, db: env.makisend_db, inngestConfig: env.INNGEST_DEV ,betterAuthSecret: env.BETTER_AUTH_SECRET,betterAuthUrl : env.BETTER_AUTH_URL},
       smtpConfig,
     );
     this.aesKey = env.AES_256_KEY;

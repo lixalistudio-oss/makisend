@@ -1,11 +1,11 @@
 // drizzle-orm/d1 used indirectly via createDatabase
-import { smpt_credentials, apikey } from '@/db/schema';
+import { smpt_credentials } from '@/db/schema';
 import { createId } from "@paralleldrive/cuid2";
-import { generateApiKey } from 'generate-api-key';
 import { getPlatformProxy } from "wrangler";
 import type { Bindings } from "@/index";
 import { createDatabase } from "@/db/connection";
 import { createConfig } from '@/config/config';
+import { getAuth } from '@/lib/auth';
 import * as readline from 'node:readline/promises';
 import { encrypt } from './crypto';
 
@@ -36,62 +36,60 @@ async function main() {
     
     rl.close();
 
-    const now = new Date();
-
     const userId = createId();
-    const fullKey = generateApiKey({
-      method: 'uuidv4',
-      prefix: 'mk',
-    }) as unknown as string;
-    const uniqueEmail = `admin_${createId()}@makisend.local`
-
+    const uniqueEmail = `admin_${createId()}@makisend.local`;
 
     // Encrypt all sensitive values in parallel
     const config = createConfig(env);
     const db = createDatabase(config.db);
-    const aesKey = config.aesKey
+    const aesKey = config.aesKey;
 
-    // Encrypt all sensitive values in parallel
     const [
-    encryptedUniqueEmail,
-    encryptedSmtpUsername,
-    encryptedSmtpPassword,
-    encryptedSmtpHostName,
-    encryptedSenderEmail,
-] = await Promise.all([
-    encrypt(uniqueEmail,aesKey),
-    encrypt(smtpUsername, aesKey),
-    encrypt(smtpPassword, aesKey),
-    encrypt(smtpHostName, aesKey),
-    encrypt(senderEmail, aesKey),
-]);
+      encryptedUniqueEmail,
+      encryptedSmtpUsername,
+      encryptedSmtpPassword,
+      encryptedSmtpHostName,
+      encryptedSenderEmail,
+    ] = await Promise.all([
+      encrypt(uniqueEmail, aesKey),
+      encrypt(smtpUsername, aesKey),
+      encrypt(smtpPassword, aesKey),
+      encrypt(smtpHostName, aesKey),
+      encrypt(senderEmail, aesKey),
+    ]);
 
     console.log('\n Provisioning system admin smpt_credentials and generating API key...\n');
-    // 1. Create the Better Auth User
+
+    // 1. Create the smpt_credentials record
     await db.insert(smpt_credentials).values({
       id: userId,
       email: encryptedUniqueEmail,
-      smtpUsername : encryptedSmtpUsername,
-      smtpPassword : encryptedSmtpPassword,
-      smtpHostName : encryptedSmtpHostName,
-      senderEmail : encryptedSenderEmail, 
+      smtpUsername: encryptedSmtpUsername,
+      smtpPassword: encryptedSmtpPassword,
+      smtpHostName: encryptedSmtpHostName,
+      senderEmail: encryptedSenderEmail,
       emailVerified: true,
     });
 
-    // 2. Create the API Key mapping
-    await db.insert(apikey).values({
-      referenceId: userId,
-      key: fullKey,
-      name: "Admin Default Key",
-      remaining: 10,
-      createdAt: now,
-      updatedAt: now,
+    // 2. Create API Key via Better Auth (properly hashed)
+    const auth = getAuth(env);
+    const result = await auth.api.createApiKey({
+      body: {
+        userId: userId,
+        name: "Admin Default Key",
+        prefix: "mk_",
+        remaining: 10,
+      },
     });
+
+    if (!result.key) {
+      throw new Error("Failed to create API key");
+    }
 
     console.log('Account successfully provisioned!\n');
     console.log(`User ID:       ${userId}`);
     console.log(`Email:         ${uniqueEmail}`);
-    console.log(`API Key:       ${fullKey}`);
+    console.log(`API Key:       ${result.key}`);
     console.log(`SMTP Username:     ${smtpUsername}`);
     console.log(`SMTP Password:     ${smtpPassword}`);
     console.log(`SMTP HOSTNAME:  ${smtpHostName}`);
