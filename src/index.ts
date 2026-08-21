@@ -9,7 +9,7 @@ import { configMiddleware } from "@/middleware/config.middleware";
 
 // --- Module imports ---
 import { createSendEmailController, SmtpEmailTransport } from "@/send-email";
-import { createInngestModule } from "@/inngest/send-email";
+import { configureDeps, getInngestClient, getFunctions } from "@/inngest/send-email";
 import { serve } from "inngest/hono";
 
 // --- Database & repository imports ---
@@ -22,21 +22,21 @@ import type { IEmailTransport, IEmailRepository } from "@/send-email/send-email.
 
 // --- Cloudflare Worker environment bindings ---
 export type Bindings = {
-  AES_256_KEY: string;          // AES-256 key for email encryption
-  makisend_db: D1Database;      // Cloudflare D1 database binding
-  PORT: number;                 // SMTP port
-  INNGEST_DEV: number;          // Inngest dev mode flag
-  HOST: string;                 // SMTP host
-  SMTP_USER: string;            // SMTP username
-  SMTP_PASSWORD: string;        // SMTP password
-  SENDER_EMAIL: string;         // Sender email address
-  USER_ID?: string;             // Optional user ID
+  AES_256_KEY: string;
+  makisend_db: D1Database;
+  PORT: number;
+  INNGEST_DEV: number;
+  HOST: string;
+  SMTP_USER: string;
+  SMTP_PASSWORD: string;
+  SENDER_EMAIL: string;
+  USER_ID?: string;
 };
 
 // --- Hono context variables (per-request) ---
 export type UserInfoVariables = {
-  userConfig: UserConfig;       // User config (userId, etc.)
-  smtpConfig: SmtpConfig;       // SMTP connection config
+  userConfig: UserConfig;
+  smtpConfig: SmtpConfig;
 };
 
 // --- Lazy dependency container ---
@@ -44,7 +44,6 @@ const deps = {
   transport: null as IEmailTransport | null,
   repository: null as IEmailRepository | null,
   aesKey: null as string | null,
-  inngest: null as ReturnType<typeof createInngestModule> | null,
 
   init(env: Bindings, smtpConfig: SmtpConfig) {
     if (this.transport) return;
@@ -57,7 +56,7 @@ const deps = {
     );
     this.aesKey = env.AES_256_KEY;
 
-    this.inngest = createInngestModule(this.transport, this.repository, this.aesKey);
+    configureDeps(this.transport, this.repository, this.aesKey);
   },
 };
 
@@ -86,25 +85,18 @@ app.use("/send-email/*", async (c, next) => {
   await apiKeyMiddleware(config)(c, next);
 });
 
-// Mount send-email controller at /send-email
-// The controller receives a lazy getter for inngest — resolved at request time, not module load time
-const sendEmailController = createSendEmailController(() => {
-  if (!deps.inngest) throw new Error("Inngest module not initialized");
-  return deps.inngest.client;
-});
+// Mount send-email controller — getter resolves at request time
+const sendEmailController = createSendEmailController(() => getInngestClient());
 app.route("/send-email", sendEmailController);
 
-// Inngest webhook endpoint for function orchestration
+// Inngest webhook endpoint
 app.on(
   ["GET", "PUT", "POST"],
   "/api/inngest",
   async (c) => {
-    if (!deps.inngest) {
-      throw new Error("Inngest module not initialized");
-    }
     return serve({
-      client: deps.inngest.client,
-      functions: deps.inngest.functions,
+      client: getInngestClient(),
+      functions: getFunctions(),
     })(c);
   }
 );

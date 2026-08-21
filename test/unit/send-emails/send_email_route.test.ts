@@ -28,7 +28,7 @@ describe("SendEmailController", () => {
     vi.clearAllMocks();
     const built = buildApp();
     app = built.app;
-    mockInngest = built.mockInngest as { send: ReturnType<typeof vi.fn> };
+    mockInngest = built.mockInngest as unknown as { send: ReturnType<typeof vi.fn> };
   });
 
   describe("POST /send-email", () => {

@@ -3,7 +3,7 @@ import { pinoLogger } from "@/core/logger";
 import type { Config, SmtpConfig, UserConfig } from "@/config/config";
 import { AppError } from "@/core/errors";
 import { createDatabase } from "@/db/connection";
-import { apikey,smpt_credentials } from "@/db/schema";
+import { apikey,user } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { decrypt } from "@/core/crypto";
 
@@ -42,14 +42,14 @@ export function apiKeyMiddleware(config: Config) {
     const result = await db
     .select({
     // User fields
-    userId: smpt_credentials.id,
-    smtpUsername : smpt_credentials.smtpUsername,
-    smtpPassword : smpt_credentials.smtpPassword,
-    smtpHostName : smpt_credentials.smtpHostName,
-    senderEmail : smpt_credentials.senderEmail
+    userId: user.id,
+    smtpUsername : user.smtpUsername,
+    smtpPassword : user.smtpPassword,
+    smtpHostName : user.smtpHostName,
+    senderEmail : user.senderEmail
   })
     .from(apikey)
-    .innerJoin(smpt_credentials, eq(smpt_credentials.id, apikey.referenceId))
+    .innerJoin(user, eq(user.id, apikey.referenceId))
     .where(eq(apikey.key, apiKey))
     .limit(1);
     
@@ -58,7 +58,7 @@ export function apiKeyMiddleware(config: Config) {
       pinoLogger.error({ err: Error }, "Invalid API Key");
       throw new AppError(403, "Invalid API Key");
     }
-    //Decrypt all sensitive infos about the smpt_credentials
+    //Decrypt all sensitive infos about the user
     const [
         decryptedSmtpUsername,//d
         decryptedSmtpPassword,
@@ -71,7 +71,7 @@ export function apiKeyMiddleware(config: Config) {
         decrypt(apiKeyRecord.senderEmail,config.aesKey),
     ]);
 
-    // Attach smpt_credentials/key info to context for downstream handlers
+    // Attach user/key info to context for downstream handlers
     // c.set("apiKey", apiKeyRecord.key);
     c.set("smtpConfig", {
       smtpUsername: decryptedSmtpUsername,

@@ -4,7 +4,7 @@ import { relations, sql } from "drizzle-orm";
 
 
 export const emailLogs = sqliteTable("email_logs", {
-  internalId: text("internalId").primaryKey().notNull(),
+  internalId: text("internalId").primaryKey().$defaultFn(() => createId()),
   userId : text("user_id").notNull(),
   to: text("to").notNull(),
   subject: text("subject").notNull(),
@@ -27,8 +27,9 @@ export const emailHistories = sqliteTable("email_histories", {
   createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
 });
 
-export const smpt_credentials = sqliteTable("smpt_credentials", {
+export const user = sqliteTable("user", {
   id: text("id").primaryKey(),
+  name: text("name").notNull(),
   email: text("email").notNull().unique(),
   smtpUsername: text("smtp_username").notNull(),
   smtpPassword: text("smtp_password").notNull(),
@@ -37,6 +38,7 @@ export const smpt_credentials = sqliteTable("smpt_credentials", {
   emailVerified: integer("email_verified", { mode: "boolean" })
     .default(false)
     .notNull(),
+  image: text("image"),
   createdAt: integer("created_at", { mode: "timestamp_ms" })
     .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
     .notNull(),
@@ -62,7 +64,7 @@ export const session = sqliteTable(
     userAgent: text("user_agent"),
     userId: text("user_id")
       .notNull()
-      .references(() => smpt_credentials.id, { onDelete: "cascade" }),
+      .references(() => user.id, { onDelete: "cascade" }),
   },
   (table) => [index("session_userId_idx").on(table.userId)],
 );
@@ -75,7 +77,7 @@ export const account = sqliteTable(
     providerId: text("provider_id").notNull(),
     userId: text("user_id")
       .notNull()
-      .references(() => smpt_credentials.id, { onDelete: "cascade" }),
+      .references(() => user.id, { onDelete: "cascade" }),
     accessToken: text("access_token"),
     refreshToken: text("refresh_token"),
     idToken: text("id_token"),
@@ -150,21 +152,21 @@ export const apikey = sqliteTable(
   ],
 );
 
-export const userRelations = relations(smpt_credentials, ({ many }) => ({
+export const userRelations = relations(user, ({ many }) => ({
   sessions: many(session),
   accounts: many(account),
 }));
 
 export const sessionRelations = relations(session, ({ one }) => ({
-  smpt_credentials: one(smpt_credentials, {
+  user: one(user, {
     fields: [session.userId],
-    references: [smpt_credentials.id],
+    references: [user.id],
   }),
 }));
 
 export const accountRelations = relations(account, ({ one }) => ({
-  smpt_credentials: one(smpt_credentials, {
+  user: one(user, {
     fields: [account.userId],
-    references: [smpt_credentials.id],
+    references: [user.id],
   }),
 }));
