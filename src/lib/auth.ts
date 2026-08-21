@@ -5,10 +5,9 @@ import { drizzle } from "drizzle-orm/d1";
 import * as schema from "@/db/schema";
 import type { Bindings } from "@/index";
 
-export function getAuth(env: Bindings) {
+export function createAuth(env: Bindings) {
   const db = drizzle(env.makisend_db);
 
-  console.log("D1 binding:", typeof env.makisend_db, env.makisend_db);
   return betterAuth({
     database: drizzleAdapter(db, {
       provider: "sqlite",

@@ -4,14 +4,12 @@ import { apiKeyMiddleware } from "@/middleware/api-key.middleware";
 import { errorHandler } from "@/middleware/error.handler";
 import * as dbModule from "@/db/connection";
 import * as cryptoModule from "@/core/crypto";
-import * as authModule from "@/lib/better-auth/auth";
 import type { Database } from "@/db/connection";
 import type { Bindings } from "@/index";
 import type { UserInfoVariables } from "@/index";
 
 vi.mock("@/db/connection");
 vi.mock("@/core/crypto");
-vi.mock("@/lib/better-auth/auth");
 
 type AppEnv = {
   Bindings: Bindings;
@@ -21,13 +19,9 @@ type AppEnv = {
 const mockConfig: {
   db: D1Database;
   aesKey: string;
-  better_auth_secret: string;
-  better_auth_url: string;
 } = {
   db: {} as D1Database,
   aesKey: "a".repeat(64),
-  better_auth_secret: "test-secret",
-  better_auth_url: "http://localhost:8787",
 };
 
 const mockDbQuery = {
@@ -38,13 +32,19 @@ const mockDbQuery = {
 };
 
 const mockVerifyApiKey = vi.fn();
+const mockAuth = {
+  api: { verifyApiKey: mockVerifyApiKey },
+};
 
 function buildApp() {
   const app = new Hono<AppEnv>();
   app.onError(errorHandler);
   app.use(
     "*",
-    apiKeyMiddleware(mockConfig as Parameters<typeof apiKeyMiddleware>[0]),
+    apiKeyMiddleware(
+      mockConfig as Parameters<typeof apiKeyMiddleware>[0],
+      mockAuth as never,
+    ),
   );
   app.get("/test", (c) => {
     const smtp = c.get("smtpConfig");
@@ -74,9 +74,6 @@ describe("API Key Middleware", () => {
     vi.mocked(cryptoModule.decrypt).mockImplementation(
       async (text: string) => `decrypted_${text}`,
     );
-    vi.mocked(authModule.getAuth).mockReturnValue({
-      api: { verifyApiKey: mockVerifyApiKey },
-    } as never);
     app = buildApp();
   });
 

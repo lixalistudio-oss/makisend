@@ -5,7 +5,7 @@ import { getPlatformProxy } from "wrangler";
 import type { Bindings } from "@/index";
 import { createDatabase } from "@/db/connection";
 import { createConfig } from '@/config/config';
-import { getAuth } from '@/lib/better-auth/auth';
+import { createAuth } from '@/lib/auth';
 import * as readline from 'node:readline/promises';
 import { encrypt } from './crypto';
 
@@ -73,7 +73,7 @@ async function main() {
     });
 
     // 2. Create API Key via Better Auth (properly hashed)
-    const auth = getAuth(env);
+    const auth = createAuth(env);
     const result = await auth.api.createApiKey({
       body: {
         userId: userId,
