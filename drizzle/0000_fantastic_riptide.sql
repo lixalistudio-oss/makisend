@@ -75,7 +75,7 @@ CREATE TABLE `user` (
 	`smtp_username` text NOT NULL,
 	`smtp_password` text NOT NULL,
 	`smpt_hostname` text NOT NULL,
-	`sendder_email` text NOT NULL,
+	`sender_email` text NOT NULL,
 	`email_verified` integer DEFAULT false NOT NULL,
 	`image` text,
 	`created_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,

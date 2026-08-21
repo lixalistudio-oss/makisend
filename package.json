@@ -55,7 +55,8 @@
     "wrangler": "^4.115.0"
   },
   "overrides": {
-    "sharp": "^0.35.3"
+    "sharp": "^0.35.3",
+    "drizzle-orm": "$drizzle-orm"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

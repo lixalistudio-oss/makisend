@@ -1,85 +1,91 @@
 import { createMiddleware } from "hono/factory";
 import { pinoLogger } from "@/core/logger";
-import type { Config, SmtpConfig, UserConfig } from "@/config/config";
+import type { Config } from "@/config/config";
 import { AppError } from "@/core/errors";
+import { getAuth } from "@/lib/better-auth/auth";
+import type { Bindings } from "@/index";
 import { createDatabase } from "@/db/connection";
-import { apikey,user } from "@/db/schema";
+import { user } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { decrypt } from "@/core/crypto";
 
-// src/types/hono.d.ts (or any .d.ts file)
-declare module "hono" {
-  interface ContextVariableMap {
-    smtpConfig: SmtpConfig,
-    userConfig: UserConfig
-  }
-}
 export function apiKeyMiddleware(config: Config) {
   return createMiddleware(async (c, next) => {
-   
     const apiKeyHeader = c.req.header("x-api-key");
     const authHeader = c.req.header("Authorization");
 
     let apiKey: string | undefined;
 
     if (apiKeyHeader) {
-     apiKey = apiKeyHeader;
-}   else if (authHeader?.startsWith("Bearer ")) {
-     apiKey = authHeader.replace("Bearer ", "");
-}
+      apiKey = apiKeyHeader;
+    } else if (authHeader?.startsWith("Bearer ")) {
+      apiKey = authHeader.replace("Bearer ", "");
+    }
 
-    
     if (!apiKey) {
-      pinoLogger.error({ err: Error }, "Missing x-api-key or Authorization header");
+      pinoLogger.error("Missing x-api-key or Authorization header");
       throw new AppError(401, "Missing x-api-key or Authorization header");
     }
-    // Expect: "mk.xxxx-xxxx-xxxx"
-    if (!apiKey.startsWith("mk.")) {
-      pinoLogger.error({ err: Error }, "Invalid x-api-key or Authorization header");
-      throw new AppError(401, "Invalid x-api-key or Authorization header");
-    }
-    const db = createDatabase(config.db);
-    const result = await db
-    .select({
-    // User fields
-    userId: user.id,
-    smtpUsername : user.smtpUsername,
-    smtpPassword : user.smtpPassword,
-    smtpHostName : user.smtpHostName,
-    senderEmail : user.senderEmail
-  })
-    .from(apikey)
-    .innerJoin(user, eq(user.id, apikey.referenceId))
-    .where(eq(apikey.key, apiKey))
-    .limit(1);
-    
-    const apiKeyRecord = result[0];
-    if (!apiKeyRecord) {
-      pinoLogger.error({ err: Error }, "Invalid API Key");
+
+    // Step 1: Verify API key with Better Auth
+    const auth = getAuth({
+      BETTER_AUTH_SECRET: config.better_auth_secret,
+      BETTER_AUTH_URL: config.better_auth_url,
+      makisend_db: config.db,
+    } as Bindings);
+
+    const result = await auth.api.verifyApiKey({
+      body: { key: apiKey },
+    });
+
+    if (!result.valid || !result.key) {
+      pinoLogger.error("Invalid API Key");
       throw new AppError(403, "Invalid API Key");
     }
-    //Decrypt all sensitive infos about the user
+
+    // Step 2: referenceId = the user ID who owns this API key
+    const userId = result.key.referenceId;
+
+    const db = createDatabase(config.db);
+    const userResult = await db
+      .select({
+        id: user.id,
+        smtpUsername: user.smtpUsername,
+        smtpPassword: user.smtpPassword,
+        smtpHostName: user.smtpHostName,
+        senderEmail: user.senderEmail,
+      })
+      .from(user)
+      .where(eq(user.id, userId))
+      .limit(1);
+
+    const userRecord = userResult[0];
+    if (!userRecord) {
+      pinoLogger.error("User not found for this API key");
+      throw new AppError(403, "User not found");
+    }
+
+    // Step 3: Decrypt SMTP credentials
     const [
-        decryptedSmtpUsername,
-        decryptedSmtpPassword,
-        decryptedSmtpHostName,
-        decryptedSenderEmail,
+      decryptedSmtpUsername,
+      decryptedSmtpPassword,
+      decryptedSmtpHostName,
+      decryptedSenderEmail,
     ] = await Promise.all([
-        decrypt(apiKeyRecord.smtpUsername,config.aesKey),
-        decrypt(apiKeyRecord.smtpPassword,config.aesKey),
-        decrypt(apiKeyRecord.smtpHostName,config.aesKey),
-        decrypt(apiKeyRecord.senderEmail,config.aesKey),
+      decrypt(userRecord.smtpUsername, config.aesKey),
+      decrypt(userRecord.smtpPassword, config.aesKey),
+      decrypt(userRecord.smtpHostName, config.aesKey),
+      decrypt(userRecord.senderEmail, config.aesKey),
     ]);
 
-    // Attach user/key info to context for downstream handlers
-    // c.set("apiKey", apiKeyRecord.key);
     c.set("smtpConfig", {
       smtpUsername: decryptedSmtpUsername,
       smtpPassword: decryptedSmtpPassword,
       smtpHostName: decryptedSmtpHostName,
       senderEmail: decryptedSenderEmail,
-});
-    c.set("userConfig",{userId : apiKeyRecord.userId})
+    });
+    c.set("userConfig", { userId: userRecord.id });
+
     await next();
   });
 }

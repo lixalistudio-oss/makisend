@@ -16,6 +16,8 @@ export interface Config {
   port: number;
   aesKey: string;
   db: D1Database;
+  better_auth_url : string;
+  better_auth_secret: string
 }
 
 
@@ -41,5 +43,7 @@ export function createConfig(env: Bindings): Config {
 
     
     db: env.makisend_db,
+    better_auth_secret : env.BETTER_AUTH_SECRET,
+    better_auth_url : env.BETTER_AUTH_URL
   };
 }

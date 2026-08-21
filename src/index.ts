@@ -11,6 +11,8 @@ export type Bindings = {
   AES_256_KEY: string;
   makisend_db: D1Database;
   PORT: number;
+  BETTER_AUTH_SECRET:string;
+  BETTER_AUTH_URL : string
 };
 export type UserInfoVariables = {
   userConfig : UserConfig

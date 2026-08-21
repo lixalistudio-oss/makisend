@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "1f192cdf-31eb-43f6-8561-436e9b6c307e",
+  "id": "8d7d5e83-808e-4004-bdd0-1a72813ea116",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "account": {
@@ -520,8 +520,8 @@
           "notNull": true,
           "autoincrement": false
         },
-        "sendder_email": {
-          "name": "sendder_email",
+        "sender_email": {
+          "name": "sender_email",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
