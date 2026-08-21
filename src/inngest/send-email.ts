@@ -78,7 +78,7 @@ function initInngest() {
           pinoLogger.info({ smtpId: messageId }, "Step: saving email log to database");
           await repository.saveEmailLog(
             event.data.emailId,
-            event.data.userId,
+            "system",
             encryptedReceiver,
             event.data.subject,
             messageId,

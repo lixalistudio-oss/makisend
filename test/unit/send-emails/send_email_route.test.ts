@@ -12,10 +12,6 @@ function buildApp() {
 
   const app = new Hono();
   app.onError(errorHandler);
-  app.use("*", async (c, next) => {
-    c.set("userConfig", { userId: "test-user-id" });
-    await next();
-  });
   app.route("/send-email", createSendEmailController(() => mockInngest));
   return { app, mockInngest };
 }

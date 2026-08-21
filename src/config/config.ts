@@ -7,12 +7,7 @@ export interface SmtpConfig {
   smtpUsername: string;
   smtpPassword: string;
 }
-export interface UserConfig
-{
-  userId : string
-}
 export interface Config {
-  // smtp: SmtpConfig;
   port: number;
   aesKey: string;
   db: D1Database;

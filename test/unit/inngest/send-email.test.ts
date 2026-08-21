@@ -15,7 +15,6 @@ vi.mock("@/core/html-sanitizer", () => ({
 const mockEvent = {
   data: {
     emailId: "test-email-id-123",
-    userId: "test-user-id",
     to: "recipient@example.com",
     subject: "Test Subject",
     text: "Plain text content for testing",
@@ -98,7 +97,7 @@ describe("sendEmailFunction", () => {
 
     expect(mockRepository.saveEmailLog).toHaveBeenCalledWith(
       mockEvent.data.emailId,
-      mockEvent.data.userId,
+      "system",
       "encrypted-value",
       mockEvent.data.subject,
       "<mock-id@gmail.com>",

@@ -4,7 +4,6 @@ import { Hono } from "hono";
 // --- Middleware imports ---
 import { errorHandler } from "@/middleware/error.handler";
 import { requestLoggerMiddleware } from "@/middleware/request-logger.middleware";
-import { apiKeyMiddleware } from "@/middleware/api-key.middleware";
 import { configMiddleware } from "@/middleware/config.middleware";
 
 // --- Module imports ---
@@ -17,7 +16,7 @@ import { createDatabase } from "@/db/connection";
 import { SendEmailRepository } from "@/send-email/send-email.repository";
 
 // --- Type imports ---
-import type { SmtpConfig, UserConfig } from "./config/config";
+import type { SmtpConfig } from "./config/config";
 import type { IEmailTransport, IEmailRepository } from "@/send-email/send-email.types";
 
 // --- Cloudflare Worker environment bindings ---
@@ -30,12 +29,10 @@ export type Bindings = {
   SMTP_USER: string;
   SMTP_PASSWORD: string;
   SENDER_EMAIL: string;
-  USER_ID?: string;
 };
 
 // --- Hono context variables (per-request) ---
 export type UserInfoVariables = {
-  userConfig: UserConfig;
   smtpConfig: SmtpConfig;
 };
 
@@ -77,12 +74,6 @@ app.use("*", async (c, next) => {
     }
   }
   await next();
-});
-
-// API key auth middleware for send-email routes
-app.use("/send-email/*", async (c, next) => {
-  const config = c.get("appConfig");
-  await apiKeyMiddleware(config)(c, next);
 });
 
 // Mount send-email controller — getter resolves at request time

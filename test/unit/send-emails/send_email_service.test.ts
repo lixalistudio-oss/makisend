@@ -28,7 +28,6 @@ describe("SendEmailService", () => {
   let mockRepository: IEmailRepository;
 
   const TEST_AES_KEY = "a".repeat(64);
-  const TEST_USER_CONFIG = { userId: "user_test_123" };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -45,13 +44,10 @@ describe("SendEmailService", () => {
     mockEncryptFn.mockResolvedValue("mocked_encrypted_string_data");
     mockCleanHtmlFn.mockReturnValue("<p>cleaned html</p>");
 
-    // The service constructor now requires userConfig — each user has
-    // their own SMTP credentials and the userId is needed for logging.
     service = new SendEmailService(
       mockTransport,
       mockRepository,
       TEST_AES_KEY,
-      TEST_USER_CONFIG,
     );
   });
 
@@ -81,7 +77,7 @@ describe("SendEmailService", () => {
     // saveEmailLog signature: (internalId, userId, encryptedTo, subject, smtpId, sentAt, durationMs)
     expect(mockRepository.saveEmailLog).toHaveBeenCalledWith(
       expect.any(String),
-      TEST_USER_CONFIG.userId,
+      "system",
       "mocked_encrypted_string_data",
       "Hello",
       "mock-smtp-id-12345",

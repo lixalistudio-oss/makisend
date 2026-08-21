@@ -8,14 +8,12 @@ import type {
   IEmailTransport,
   EmailInput,
 } from "./send-email.types";
-import type { UserConfig } from "@/config/config";
 
 export class SendEmailService {
   constructor(
     private readonly emailTransport: IEmailTransport,
     private readonly emailRepository: IEmailRepository,
     private readonly aesKey: string,
-    private readonly userConfig: UserConfig,
   ) {}
 
   async sendEmail(data: EmailInput): Promise<{ message: string }> {
@@ -43,7 +41,7 @@ export class SendEmailService {
 
       await this.emailRepository.saveEmailLog(
         emailId,
-        this.userConfig.userId,
+        "system",
         encryptedReceiver,
         data.subject,
         messageId,
