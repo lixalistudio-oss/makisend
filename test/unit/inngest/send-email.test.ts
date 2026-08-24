@@ -1,5 +1,6 @@
 import { describe, it, vi, expect, beforeEach, type Mocked } from "vitest";
-import { configureDeps, getFunctions } from "@/inngest/send-email";
+import { configureDeps } from "@/inngest/client";
+import { getFunctions } from "@/inngest/functions";
 import type { IEmailRepository, IEmailTransport } from "@/send-email/send-email.types";
 import { encrypt } from "@/core/crypto";
 import { cleanHtml } from "@/core/html-sanitizer";

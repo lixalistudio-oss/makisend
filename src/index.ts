@@ -8,7 +8,8 @@ import { configMiddleware } from "@/middleware/config.middleware";
 
 // --- Module imports ---
 import { createSendEmailController, SmtpEmailTransport } from "@/send-email";
-import { configureDeps, getInngestClient, getFunctions } from "@/inngest/send-email";
+import { configureDeps, getInngestClient } from "@/inngest/client";
+import { getFunctions } from "@/inngest/functions";
 import { serve } from "inngest/hono";
 
 // --- Database & repository imports ---
