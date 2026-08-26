@@ -2,19 +2,24 @@ import { AppError } from "@/core/errors";
 import type { Bindings } from "@/index";
 
 export interface SmtpConfig {
-  host: string;
+  smtpHostName: string;
+  senderEmail: string;
+  smtpUsername: string;
+  smtpPassword: string;
+}
+export interface UserConfig
+{
+  userId : string
+}
+export interface Config {
+  // smtp: SmtpConfig;
   port: number;
-  user: string;
-  password: string;
+  aesKey: string;
+  db: D1Database;
+  better_auth_url : string;
+  better_auth_secret: string
 }
 
-export interface Config {
-  smtp: SmtpConfig;
-  senderEmail: string;
-  aesKey: string;
-  apiKey: string;
-  db: D1Database;
-}
 
 export function createConfig(env: Bindings): Config {
   if (!env.AES_256_KEY) {
@@ -26,15 +31,19 @@ export function createConfig(env: Bindings): Config {
   }
 
   return {
-    smtp: {
-      host: env.HOST,
-      port: env.PORT,
-      user: env.SMTP_USER,
-      password: env.SMTP_PASSWORD,
-    },
-    senderEmail: env.SENDER_EMAIL,
+    // smtp: {
+    //   host: env.HOST,
+    
+    //   user: env.SMTP_USER,
+    //   password: env.SMTP_PASSWORD,
+    // },
+    port: env.PORT,
+  
     aesKey: env.AES_256_KEY,
-    apiKey: env.API_KEY,
+
+    
     db: env.makisend_db,
+    better_auth_secret : env.BETTER_AUTH_SECRET,
+    better_auth_url : env.BETTER_AUTH_URL
   };
 }

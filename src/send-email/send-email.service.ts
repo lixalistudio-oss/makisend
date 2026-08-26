@@ -8,11 +8,13 @@ import type {
   IEmailTransport,
 } from "./send-email.types";
 
+import type { UserConfig } from "@/config/config";
 export class SendEmailService {
   constructor(
     private readonly emailTransport: IEmailTransport,
     private readonly emailRepository: IEmailRepository,
     private readonly aesKey: string,
+    private readonly userConfig : UserConfig
   ) {}
 
   async sendEmail(data: EmailInput): Promise<{ message: string }> {
@@ -22,12 +24,12 @@ export class SendEmailService {
     try {
       const cleanedHtml = cleanHtml(data.html);
       const encryptedReceiver = await encrypt(data.to, this.aesKey);
-
+ 
       const { messageId } = await this.emailTransport.send({
         to: data.to,
         subject: data.subject,
         text: data.text,
-        html: cleanedHtml,
+        html: cleanedHtml ,
       });
 
       const durationMs = Math.round(performance.now() - startTime);
@@ -37,15 +39,17 @@ export class SendEmailService {
         "Email successfully dispatched",
       );
 
+
       await this.emailRepository.saveEmailLog(
+        this.userConfig.userId,
         encryptedReceiver,
         data.subject,
         messageId,
         new Date().toISOString(),
-        durationMs,
+        durationMs
       );
 
-      return { message: "Email sent successfully" };
+      return { message:`Email sent successfully` };
     } catch (error) {
       pinoLogger.error({ err: error }, "Service failed to send email");
       throw new AppError(500, "Email delivery failed");

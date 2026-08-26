@@ -5,12 +5,7 @@ import { createConfig } from "@/config/config";
 import { AppError } from "@/core/errors";
 
 const baseBindings = {
-  HOST: "smtp.example.com",
   PORT: 587,
-  SMTP_USER: "user@example.com",
-  SMTP_PASSWORD: "secret",
-  SENDER_EMAIL: "noreply@example.com",
-  API_KEY: "api-key",
   makisend_db: {} as D1Database,
 };
 
@@ -31,6 +26,6 @@ describe("createConfig", () => {
     } as Bindings);
 
     expect(config.aesKey).toBe("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
-    expect(config.smtp.host).toBe("smtp.example.com");
+    expect(config.port).toBe(587);
   });
 });

@@ -1,6 +1,6 @@
 import * as nodemailer from "nodemailer";
 import type { Transporter } from "nodemailer";
-import type { Config } from "@/config/config";
+import type { Config,SmtpConfig,UserConfig } from "@/config/config";
 import { createDatabase } from "@/db/connection";
 import { createSendEmailController } from "./send-email.controller";
 import { SendEmailService } from "./send-email.service";
@@ -11,15 +11,15 @@ class SmtpEmailTransport implements IEmailTransport {
   private readonly transporter: Transporter;
   private readonly senderEmail: string;
 
-  constructor(config: Config["smtp"], senderEmail: string) {
-    this.senderEmail = senderEmail;
+  constructor(config : Config,smtpConfig:SmtpConfig) {
+    this.senderEmail = smtpConfig.senderEmail;
     this.transporter = nodemailer.createTransport({
-      host: config.host,
+      host: smtpConfig.smtpHostName,
       port: config.port,
       secure: true,
       auth: {
-        user: config.user,
-        pass: config.password,
+        user: smtpConfig.smtpUsername,
+        pass: smtpConfig.smtpPassword,
       },
       family: 4,
       tls: {
@@ -42,13 +42,13 @@ class SmtpEmailTransport implements IEmailTransport {
   }
 }
 
-export function createSendEmailModule(config: Config) {
+export function createSendEmailModule(config: Config,smtpConfig : SmtpConfig,userConfig:UserConfig) {
   const db = createDatabase(config.db);
-  const transport = new SmtpEmailTransport(config.smtp, config.senderEmail);
+  const transport = new SmtpEmailTransport(config,smtpConfig);
   const repository = new SendEmailRepository(db);
-  const service = new SendEmailService(transport, repository, config.aesKey);
+  const service = new SendEmailService(transport, repository, config.aesKey,userConfig);
 
-  return {
+return {
     controller: createSendEmailController(),
     service,
     repository,
@@ -58,4 +58,3 @@ export function createSendEmailModule(config: Config) {
 
 export { createSendEmailController } from "./send-email.controller";
 export * from "./send-email.types";
-export * from "./send-email.dto";

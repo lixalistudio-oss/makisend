@@ -11,6 +11,7 @@ export interface EmailSendResult {
 
 export interface IEmailRepository {
   saveEmailLog(
+    userId: string,
     to: string,
     subject: string,
     smtpId: string,
@@ -22,3 +23,4 @@ export interface IEmailRepository {
 export interface IEmailTransport {
   send(input: EmailInput): Promise<EmailSendResult>;
 }
+
