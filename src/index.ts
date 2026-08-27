@@ -5,6 +5,7 @@ import { Hono } from "hono";
 import { errorHandler } from "@/middleware/error.handler";
 import { requestLoggerMiddleware } from "@/middleware/request-logger.middleware";
 import { configMiddleware } from "@/middleware/config.middleware";
+import { apiKeyMiddleware } from "@/middleware/api-key.middleware";
 
 // --- Module imports ---
 import { createSendEmailController, SmtpEmailTransport } from "@/send-email";
@@ -12,12 +13,15 @@ import { configureDeps, getInngestClient } from "@/inngest/client";
 import { getFunctions } from "@/inngest/functions";
 import { serve } from "inngest/hono";
 
+// --- Better Auth ---
+import { createAuth } from "@/lib/auth";
+
 // --- Database & repository imports ---
 import { createDatabase } from "@/db/connection";
 import { SendEmailRepository } from "@/send-email/send-email.repository";
 
 // --- Type imports ---
-import type { SmtpConfig } from "./config/config";
+import type { SmtpConfig, UserConfig } from "./config/config";
 import type { IEmailTransport, IEmailRepository } from "@/send-email/send-email.types";
 
 // --- Cloudflare Worker environment bindings ---
@@ -30,12 +34,25 @@ export type Bindings = {
   SMTP_USER: string;
   SMTP_PASSWORD: string;
   SENDER_EMAIL: string;
+  BETTER_AUTH_SECRET: string;
+  BETTER_AUTH_URL: string;
 };
 
 // --- Hono context variables (per-request) ---
 export type UserInfoVariables = {
+  userConfig: UserConfig;
   smtpConfig: SmtpConfig;
 };
+
+// Singleton: auth created once on first request, reused after
+let authInstance: ReturnType<typeof createAuth> | null = null;
+
+function getAuthInstance(env: Bindings) {
+  if (!authInstance) {
+    authInstance = createAuth(env);
+  }
+  return authInstance;
+}
 
 // --- Lazy dependency container ---
 const deps = {
@@ -66,7 +83,14 @@ app.use("*", requestLoggerMiddleware());
 app.onError(errorHandler);
 app.use(configMiddleware());
 
-// Initialize lazy dependencies on first request (if not already done)
+// API key auth (Better Auth) on send-email routes
+app.use("/send-email/*", async (c, next) => {
+  const config = c.get("appConfig");
+  const auth = getAuthInstance(c.env);
+  await apiKeyMiddleware(config, auth)(c, next);
+});
+
+// Initialize lazy dependencies once a smtpConfig is available
 app.use("*", async (c, next) => {
   if (!deps.transport) {
     const smtpConfig = c.get("smtpConfig");
@@ -90,7 +114,7 @@ app.on(
       client: getInngestClient(),
       functions: getFunctions(),
     })(c);
-  }
+  },
 );
 
 export default app;
