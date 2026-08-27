@@ -7,19 +7,17 @@ export interface SmtpConfig {
   smtpUsername: string;
   smtpPassword: string;
 }
-export interface UserConfig
-{
-  userId : string
+export interface UserConfig {
+  userId: string;
 }
 export interface Config {
-  // smtp: SmtpConfig;
   port: number;
   aesKey: string;
   db: D1Database;
-  better_auth_url : string;
-  better_auth_secret: string
+  inngestConfig: number;
+  better_auth_url: string;
+  better_auth_secret: string;
 }
-
 
 export function createConfig(env: Bindings): Config {
   if (!env.AES_256_KEY) {
@@ -31,19 +29,11 @@ export function createConfig(env: Bindings): Config {
   }
 
   return {
-    // smtp: {
-    //   host: env.HOST,
-    
-    //   user: env.SMTP_USER,
-    //   password: env.SMTP_PASSWORD,
-    // },
     port: env.PORT,
-  
     aesKey: env.AES_256_KEY,
-
-    
     db: env.makisend_db,
-    better_auth_secret : env.BETTER_AUTH_SECRET,
-    better_auth_url : env.BETTER_AUTH_URL
+    inngestConfig: env.INNGEST_DEV,
+    better_auth_secret: env.BETTER_AUTH_SECRET,
+    better_auth_url: env.BETTER_AUTH_URL,
   };
 }

@@ -11,12 +11,18 @@ export interface EmailSendResult {
 
 export interface IEmailRepository {
   saveEmailLog(
+    internalId : string,///23
     userId: string,
     to: string,
     subject: string,
     smtpId: string,
     sentAt: string,
     emailProcessingTimeMs: number,
+  ): Promise<void>;
+  saveEmailHistory(
+    emailId: string,
+    status: string,
+    error?: string,
   ): Promise<void>;
 }
 

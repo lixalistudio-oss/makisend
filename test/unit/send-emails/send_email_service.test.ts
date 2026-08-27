@@ -28,7 +28,6 @@ describe("SendEmailService", () => {
   let mockRepository: IEmailRepository;
 
   const TEST_AES_KEY = "a".repeat(64);
-  const TEST_USER_CONFIG = { userId: "user_test_123" };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -39,18 +38,16 @@ describe("SendEmailService", () => {
 
     mockRepository = {
       saveEmailLog: vi.fn().mockResolvedValue(undefined),
+      saveEmailHistory: vi.fn().mockResolvedValue(undefined),
     };
 
     mockEncryptFn.mockResolvedValue("mocked_encrypted_string_data");
     mockCleanHtmlFn.mockReturnValue("<p>cleaned html</p>");
 
-    // The service constructor now requires userConfig — each user has
-    // their own SMTP credentials and the userId is needed for logging.
     service = new SendEmailService(
       mockTransport,
       mockRepository,
       TEST_AES_KEY,
-      TEST_USER_CONFIG,
     );
   });
 
@@ -64,7 +61,7 @@ describe("SendEmailService", () => {
 
     const result = await service.sendEmail(inputData);
 
-    expect(result.message).toBe("Email sent successfully");
+    expect(result.message).toBe("Email successfully dispatched");
     expect(mockTransport.send).toHaveBeenCalledTimes(1);
     expect(mockRepository.saveEmailLog).toHaveBeenCalledTimes(1);
 
@@ -77,10 +74,10 @@ describe("SendEmailService", () => {
     // The HTML must be sanitized before reaching the transport.
     expect(mockCleanHtmlFn).toHaveBeenCalledWith(inputData.html);
 
-    // saveEmailLog signature: (userId, encryptedTo, subject, smtpId, sentAt, durationMs)
-    // The first arg is userId from userConfig, not the encrypted email.
+    // saveEmailLog signature: (internalId, userId, encryptedTo, subject, smtpId, sentAt, durationMs)
     expect(mockRepository.saveEmailLog).toHaveBeenCalledWith(
-      TEST_USER_CONFIG.userId,
+      expect.any(String),
+      "system",
       "mocked_encrypted_string_data",
       "Hello",
       "mock-smtp-id-12345",

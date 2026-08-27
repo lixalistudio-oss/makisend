@@ -1,19 +1,13 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
-import type { Bindings } from "@/index";
-import type { UserInfoVariables } from "@/index";
+import type { Bindings, UserInfoVariables } from "@/index";
 import { SendEmailDto } from "./send-email.dto";
-import type { SendEmailService } from "./send-email.service";
+import type { Inngest } from "inngest";
+import { createId } from "@paralleldrive/cuid2";
 
-declare module "hono" {
-  interface ContextVariableMap {
-    sendEmailService: SendEmailService;
-  }
-}
-
-export function createSendEmailController(): Hono<{ Bindings: Bindings , Variables : UserInfoVariables }> {
-  const controller = new Hono<{ Bindings: Bindings ,Variables : UserInfoVariables}>();
+export function createSendEmailController(getInngest: () => Inngest): Hono<{ Bindings: Bindings; Variables: UserInfoVariables }> {
+  const controller = new Hono<{ Bindings: Bindings; Variables: UserInfoVariables }>();
 
   controller.post(
     "",
@@ -34,9 +28,9 @@ export function createSendEmailController(): Hono<{ Bindings: Bindings , Variabl
     }),
     async (c) => {
       const data = c.req.valid("json");
-      const service = c.get("sendEmailService");
-      const result = await service.sendEmail(data);
-      return c.json({ success: true, data: result }, 201);
+      const emailId = createId();
+      await getInngest().send({ name: "app/send-email", data: { ...data, emailId } });
+      return c.json({ success: true, message: "Email queued" }, 202);
     },
   );
 
