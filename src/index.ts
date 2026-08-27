@@ -66,7 +66,7 @@ const deps = {
     const db = createDatabase(env.makisend_db);
     this.repository = new SendEmailRepository(db);
     this.transport = new SmtpEmailTransport(
-      { port: env.PORT, aesKey: env.AES_256_KEY, db: env.makisend_db, inngestConfig: env.INNGEST_DEV },
+      { port: env.PORT, aesKey: env.AES_256_KEY, db: env.makisend_db, inngestConfig: env.INNGEST_DEV ,better_auth_secret: env.BETTER_AUTH_SECRET,better_auth_url: env.BETTER_AUTH_URL},
       smtpConfig,
     );
     this.aesKey = env.AES_256_KEY;

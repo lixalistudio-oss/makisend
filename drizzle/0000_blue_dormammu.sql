@@ -44,6 +44,14 @@ CREATE TABLE `apikey` (
 CREATE INDEX `apikey_configId_idx` ON `apikey` (`config_id`);--> statement-breakpoint
 CREATE INDEX `apikey_referenceId_idx` ON `apikey` (`reference_id`);--> statement-breakpoint
 CREATE INDEX `apikey_key_idx` ON `apikey` (`key`);--> statement-breakpoint
+CREATE TABLE `email_histories` (
+	`id` text PRIMARY KEY NOT NULL,
+	`email_id` text NOT NULL,
+	`status` text NOT NULL,
+	`error` text,
+	`created_at` text NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE `email_logs` (
 	`internalId` text PRIMARY KEY NOT NULL,
 	`user_id` text NOT NULL,
