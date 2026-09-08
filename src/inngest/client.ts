@@ -1,12 +1,13 @@
 import { Inngest, dependencyInjectionMiddleware } from "inngest";
 import { pinoLogger } from "@/core/logger";
-import { AppError } from "@/core/errors";
 import type { IEmailRepository, IEmailTransport } from "@/send-email/send-email.types";
+import type { ISmtpConfigRepository } from "@/smtp-config/smtp-config.types";
 
 let _inngest: Inngest | null = null;
 
 let transport: IEmailTransport | null = null;
-let repository: IEmailRepository | null = null;
+let emailRepository: IEmailRepository | null = null;
+let smtpConfigRepository: ISmtpConfigRepository | null = null;
 let aesKey: string | null = null;
 
 function initInngest() {
@@ -16,7 +17,13 @@ function initInngest() {
     id: "makisend",
     logger: pinoLogger,
     middleware: [
-      dependencyInjectionMiddleware({ transport: transport!, repository: repository!, aesKey: aesKey! }),
+      dependencyInjectionMiddleware({
+        // Use getters so deps are resolved at execution time, not creation time
+        get transport() { return transport!; },
+        get emailRepository() { return emailRepository!; },
+        get smtpConfigRepository() { return smtpConfigRepository!; },
+        get aesKey() { return aesKey!; },
+      }),
     ],
   });
 }
@@ -25,17 +32,18 @@ export function configureDeps(
   t: IEmailTransport,
   r: IEmailRepository,
   k: string,
+  scr: ISmtpConfigRepository,
 ) {
   transport = t;
-  repository = r;
+  emailRepository = r;
   aesKey = k;
+  smtpConfigRepository = scr;
   initInngest();
 }
 
 export function getInngestClient(): Inngest {
   if (!_inngest) {
-    pinoLogger.error("Inngest not initialized — call configureDeps() first");
-    throw new AppError(500, "Inngest not initialized — call configureDeps() first");
+    initInngest();
   }
-  return _inngest;
+  return _inngest!;
 }

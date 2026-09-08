@@ -7,7 +7,7 @@ import type { IEmailRepository, IEmailTransport } from "@/send-email/send-email.
 
 interface FunctionContext {
   transport: IEmailTransport;
-  repository: IEmailRepository;
+  emailRepository: IEmailRepository;
   aesKey: string;
 }
 
@@ -21,7 +21,7 @@ export function getSendEmailFunction() {
       onFailure: async ({ event, error }) => {
         const { emailId } = event.data as unknown as { emailId: string };
         const ctx = error as unknown as FunctionContext;
-        await ctx.repository.saveEmailHistory(emailId, "failed", error.message);
+        await ctx.emailRepository.saveEmailHistory(emailId, "failed", error.message);
         throw new AppError(500, "Email delivery failed");
       },
       throttle: { limit: 3, period: "1m" },
@@ -29,18 +29,18 @@ export function getSendEmailFunction() {
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async ({ event, step, logger, ...ctx }: any) => {
-      const { transport, repository, aesKey } = ctx as FunctionContext;
+      const { transport, emailRepository, aesKey } = ctx as FunctionContext;
       const startTime = performance.now();
       const emailId = event.data.emailId;
 
       await step.run("email-received-and-update-history", async () => {
         logger.info({ receiver: event.data.to }, "Email sending request pending");
-        await repository.saveEmailHistory(emailId, "received");
+        await emailRepository.saveEmailHistory(emailId, "received");
       });
 
       await step.run("processing", async () => {
         pinoLogger.info({ receiver: event.data.to }, "Step: Inngest processing started");
-        await repository.saveEmailHistory(emailId, "processing");
+        await emailRepository.saveEmailHistory(emailId, "processing");
       });
 
       const { cleanedHtml, encryptedReceiver } = await step.run("cleaning-html-input", async () => {
@@ -48,7 +48,7 @@ export function getSendEmailFunction() {
         const cleanedHtml = cleanHtml(event.data.html);
         const encryptedReceiver = await encrypt(event.data.to, aesKey);
         pinoLogger.info({ receiver: event.data.to }, "Step: HTML cleaned and email encrypted");
-        await repository.saveEmailHistory(emailId, "cleaned");
+        await emailRepository.saveEmailHistory(emailId, "cleaned");
         return { cleanedHtml, encryptedReceiver };
       });
 
@@ -63,13 +63,13 @@ export function getSendEmailFunction() {
 
         const durationMs = Math.round(performance.now() - startTime);
         pinoLogger.info({ smtpId: messageId, durationMs }, "Step: email dispatched via SMTP");
-        await repository.saveEmailHistory(emailId, "sent");
+        await emailRepository.saveEmailHistory(emailId, "sent");
         return { messageId, durationMs };
       });
 
       await step.run("save-infos-in-db", async () => {
         pinoLogger.info({ smtpId: messageId }, "Step: saving email log to database");
-        await repository.saveEmailLog(
+        await emailRepository.saveEmailLog(
           event.data.emailId,
           "system",
           encryptedReceiver,

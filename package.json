@@ -13,7 +13,9 @@
     "lint:fix": "eslint src test drizzle.config.ts vitest.config.ts --fix",
     "d1:exec": "wrangler d1 execute makisend_db --local --file",
     "d1:exec:remote": "wrangler d1 execute makisend_db --remote --file",
-    "user:create": "pnpm tsx src/core/create-user.ts"
+    "user:create": "pnpm tsx src/core/create-user.ts",
+    "db:generate": "drizzle-kit generate --config=drizzle.config.ts",
+    "inngest:dev": "npx inngest-cli@latest dev -u http://localhost:8787/api/inngest"
   },
   "dependencies": {
     "@better-auth/api-key": "^1.6.25",

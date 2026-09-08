@@ -3,7 +3,7 @@ import { pinoLogger } from "@/core/logger";
 import type { Config } from "@/config/config";
 import { AppError } from "@/core/errors";
 import { createDatabase } from "@/db/connection";
-import { user } from "@/db/schema";
+import { user, apikey, smtpConfig } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { decrypt } from "@/core/crypto";
 
@@ -40,23 +40,44 @@ export function apiKeyMiddleware(config: Config, auth: any) {
     const userId = result.key.referenceId;
 
     const db = createDatabase(config.db);
+
+    // Verify user exists
     const userResult = await db
-      .select({
-        id: user.id,
-        smtpUsername: user.smtpUsername,
-        smtpPassword: user.smtpPassword,
-        smtpHostName: user.smtpHostName,
-        senderEmail: user.senderEmail,
-      })
+      .select({ id: user.id })
       .from(user)
       .where(eq(user.id, userId))
       .limit(1);
 
-    const userRecord = userResult[0];
-    if (!userRecord) {
+    if (!userResult[0]) {
       pinoLogger.error("User not found for this API key");
       throw new AppError(403, "User not found");
     }
+
+    // Look up the API key record to get the linked smtp_config_id
+    const apiKeyRecord = await db
+      .select({ smtpConfigId: apikey.smtpConfigId })
+      .from(apikey)
+      .where(eq(apikey.id, result.key.id))
+      .limit(1);
+
+    if (!apiKeyRecord[0]?.smtpConfigId) {
+      pinoLogger.error("API key is not linked to an SMTP configuration");
+      throw new AppError(403, "API key has no SMTP configuration");
+    }
+
+    // Fetch the SMTP config
+    const smtpConfigResult = await db
+      .select()
+      .from(smtpConfig)
+      .where(eq(smtpConfig.id, apiKeyRecord[0].smtpConfigId))
+      .limit(1);
+
+    if (!smtpConfigResult[0]) {
+      pinoLogger.error("SMTP configuration not found");
+      throw new AppError(403, "SMTP configuration not found");
+    }
+
+    const record = smtpConfigResult[0];
 
     // Decrypt SMTP credentials
     const [
@@ -65,10 +86,10 @@ export function apiKeyMiddleware(config: Config, auth: any) {
       decryptedSmtpHostName,
       decryptedSenderEmail,
     ] = await Promise.all([
-      decrypt(userRecord.smtpUsername, config.aesKey),
-      decrypt(userRecord.smtpPassword, config.aesKey),
-      decrypt(userRecord.smtpHostName, config.aesKey),
-      decrypt(userRecord.senderEmail, config.aesKey),
+      decrypt(record.smtpUsername, config.aesKey),
+      decrypt(record.smtpPassword, config.aesKey),
+      decrypt(record.smtpHostname, config.aesKey),
+      decrypt(record.senderEmail, config.aesKey),
     ]);
 
     c.set("smtpConfig", {
@@ -77,7 +98,7 @@ export function apiKeyMiddleware(config: Config, auth: any) {
       smtpHostName: decryptedSmtpHostName,
       senderEmail: decryptedSenderEmail,
     });
-    c.set("userConfig", { userId: userRecord.id });
+    c.set("userConfig", { userId: userResult[0].id });
 
     await next();
   });

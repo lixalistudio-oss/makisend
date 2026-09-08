@@ -3,6 +3,7 @@ import { InngestTestEngine } from "@inngest/test";
 import { configureDeps } from "@/inngest/client";
 import { getSendEmailFunction } from "@/inngest/send-email";
 import type { IEmailRepository, IEmailTransport } from "@/send-email/send-email.types";
+import type { ISmtpConfigRepository } from "@/smtp-config/smtp-config.types";
 import { encrypt } from "@/core/crypto";
 import { cleanHtml } from "@/core/html-sanitizer";
 
@@ -28,6 +29,7 @@ const mockEvent = {
 describe("sendEmailFunction", () => {
   let mockRepository: IEmailRepository;
   let mockTransport: IEmailTransport;
+  let mockSmtpConfigRepository: ISmtpConfigRepository;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -44,7 +46,15 @@ describe("sendEmailFunction", () => {
       send: vi.fn().mockResolvedValue({ messageId: "<mock-id@gmail.com>" }),
     };
 
-    configureDeps(mockTransport, mockRepository, "test-aes-key");
+    mockSmtpConfigRepository = {
+      create: vi.fn().mockResolvedValue({}),
+      findByUserId: vi.fn().mockResolvedValue([]),
+      findById: vi.fn().mockResolvedValue(null),
+      update: vi.fn().mockResolvedValue({}),
+      delete: vi.fn().mockResolvedValue(undefined),
+    };
+
+    configureDeps(mockTransport, mockRepository, "test-aes-key", mockSmtpConfigRepository);
   });
 
   it("should call all lifecycle statuses in order", async () => {
@@ -54,7 +64,7 @@ describe("sendEmailFunction", () => {
       transformCtx: (ctx) => ({
         ...ctx,
         transport: mockTransport,
-        repository: mockRepository,
+        emailRepository: mockRepository,
         aesKey: "test-aes-key",
       }),
       steps: [
@@ -112,7 +122,7 @@ describe("sendEmailFunction", () => {
       transformCtx: (ctx) => ({
         ...ctx,
         transport: mockTransport,
-        repository: mockRepository,
+        emailRepository: mockRepository,
         aesKey: "test-aes-key",
       }),
       steps: [
@@ -154,7 +164,7 @@ describe("sendEmailFunction", () => {
       transformCtx: (ctx) => ({
         ...ctx,
         transport: mockTransport,
-        repository: mockRepository,
+        emailRepository: mockRepository,
         aesKey: "test-aes-key",
       }),
       steps: [
@@ -203,7 +213,7 @@ describe("sendEmailFunction", () => {
       transformCtx: (ctx) => ({
         ...ctx,
         transport: mockTransport,
-        repository: mockRepository,
+        emailRepository: mockRepository,
         aesKey: "test-aes-key",
       }),
       steps: [

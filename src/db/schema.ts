@@ -6,6 +6,7 @@ import { relations, sql } from "drizzle-orm";
 export const emailLogs = sqliteTable("email_logs", {
   internalId: text("internalId").primaryKey().$defaultFn(() => createId()),
   userId : text("user_id").notNull(),
+  apiKeyId: text("apikey_id").references(() => apikey.id),
   to: text("to").notNull(),
   subject: text("subject").notNull(),
   smtpId: text("smtp_id").notNull(),
@@ -25,10 +26,6 @@ export const user = sqliteTable("user", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
-  smtpUsername: text("smtp_username").notNull(),
-  smtpPassword: text("smtp_password").notNull(),
-  smtpHostName: text("smpt_hostname").notNull(),
-  senderEmail: text("sender_email").notNull(),
   emailVerified: integer("email_verified", { mode: "boolean" })
     .default(false)
     .notNull(),
@@ -111,6 +108,29 @@ export const verification = sqliteTable(
   (table) => [index("verification_identifier_idx").on(table.identifier)],
 );
 
+export const smtpConfig = sqliteTable(
+  "smtp_config",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    smtpHostname: text("smtphostname").notNull(),
+    smtpUsername: text("smtpusername").notNull(),
+    smtpPassword: text("smtppassword").notNull(),
+    senderEmail: text("sender_email").notNull(),
+    isActive: integer("is_active", { mode: "boolean" }).default(true),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [index("smtpConfig_userId_idx").on(table.userId)],
+);
+
 export const apikey = sqliteTable(
   "apikey",
   {
@@ -138,6 +158,7 @@ export const apikey = sqliteTable(
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
     permissions: text("permissions"),
     metadata: text("metadata"),
+    smtpConfigId: text("smtp_config_id").unique().references(() => smtpConfig.id, { onDelete: "cascade" }),
   },
   (table) => [
     index("apikey_configId_idx").on(table.configId),
@@ -149,6 +170,7 @@ export const apikey = sqliteTable(
 export const userRelations = relations(user, ({ many }) => ({
   sessions: many(session),
   accounts: many(account),
+  smtpConfigs: many(smtpConfig),
 }));
 
 export const sessionRelations = relations(session, ({ one }) => ({
@@ -161,6 +183,13 @@ export const sessionRelations = relations(session, ({ one }) => ({
 export const accountRelations = relations(account, ({ one }) => ({
   user: one(user, {
     fields: [account.userId],
+    references: [user.id],
+  }),
+}));
+
+export const smtpConfigRelations = relations(smtpConfig, ({ one }) => ({
+  user: one(user, {
+    fields: [smtpConfig.userId],
     references: [user.id],
   }),
 }));

@@ -1,5 +1,4 @@
-// drizzle-orm/d1 used indirectly via createDatabase
-import { user } from '@/db/schema';
+import { user, smtpConfig, apikey } from '@/db/schema';
 import { createId } from "@paralleldrive/cuid2";
 import { getPlatformProxy } from "wrangler";
 import type { Bindings } from "@/index";
@@ -8,6 +7,7 @@ import { createConfig } from '@/config/config';
 import { createAuth } from '@/lib/auth';
 import * as readline from 'node:readline/promises';
 import { encrypt } from './crypto';
+import { eq, desc } from 'drizzle-orm';
 
 async function prompt(rl: readline.Interface, question: string): Promise<string> {
   const answer = await rl.question(question);
@@ -25,54 +25,60 @@ async function main() {
     output: process.stdout,
   });
 
+  try {
+    // Prompt for user info
+    const userName = await prompt(rl, 'User Name: ');
+
     console.log('\n SMTP Configuration Required\n');
 
-  try {
     // Prompt for SMTP attributes
     const smtpUsername = await prompt(rl, 'SMTP Username: ');
     const smtpPassword = await prompt(rl, 'SMTP Password: ');
     const smtpHostName = await prompt(rl, 'SMTP Hostname (e.g. smtp.gmail.com): ');
     const senderEmail = await prompt(rl, 'Sender Email: ');
-    
+
     rl.close();
 
-    const userId = createId();
-    const uniqueEmail = `admin_${createId()}@makisend.local`;
-
-    // Encrypt all sensitive values in parallel
     const config = createConfig(env);
     const db = createDatabase(config.db);
     const aesKey = config.aesKey;
 
+    // Create user
+    const userId = createId();
+    const uniqueEmail = `admin_${createId()}@makisend.local`;
+    const encryptedEmail = await encrypt(uniqueEmail, aesKey);
+
+    await db.insert(user).values({
+      id: userId,
+      name: userName,
+      email: encryptedEmail,
+      emailVerified: true,
+    });
+
+    // Create SMTP config
+    const smtpConfigId = createId();
     const [
-      encryptedUniqueEmail,
       encryptedSmtpUsername,
       encryptedSmtpPassword,
       encryptedSmtpHostName,
       encryptedSenderEmail,
     ] = await Promise.all([
-      encrypt(uniqueEmail, aesKey),
       encrypt(smtpUsername, aesKey),
       encrypt(smtpPassword, aesKey),
       encrypt(smtpHostName, aesKey),
       encrypt(senderEmail, aesKey),
     ]);
 
-    console.log('\n Provisioning system admin user and generating API key...\n');
-
-    // 1. Create the user record
-    await db.insert(user).values({
-      id: userId,
-      name: "Maki Admin",
-      email: encryptedUniqueEmail,
+    await db.insert(smtpConfig).values({
+      id: smtpConfigId,
+      userId: userId,
       smtpUsername: encryptedSmtpUsername,
       smtpPassword: encryptedSmtpPassword,
-      smtpHostName: encryptedSmtpHostName,
+      smtpHostname: encryptedSmtpHostName,
       senderEmail: encryptedSenderEmail,
-      emailVerified: true,
     });
 
-    // 2. Create API Key via Better Auth (properly hashed)
+    // Create API Key via Better Auth (linked to SMTP config)
     const auth = createAuth(env);
     const result = await auth.api.createApiKey({
       body: {
@@ -87,14 +93,32 @@ async function main() {
       throw new Error("Failed to create API key");
     }
 
+    // Link API key to SMTP config
+    // Find the most recently created key for this user
+    const latestKey = await db
+      .select({ id: apikey.id })
+      .from(apikey)
+      .where(eq(apikey.referenceId, userId))
+      .orderBy(desc(apikey.createdAt))
+      .limit(1);
+
+    if (!latestKey[0]) {
+      throw new Error("Failed to find created API key");
+    }
+
+    await db
+      .update(apikey)
+      .set({ smtpConfigId: smtpConfigId })
+      .where(eq(apikey.id, latestKey[0].id));
+
     console.log('Account successfully provisioned!\n');
-    console.log(`User ID:       ${userId}`);
-    console.log(`Email:         ${uniqueEmail}`);
-    console.log(`API Key:       ${result.key}`);
-    console.log(`SMTP Username:     ${smtpUsername}`);
-    console.log(`SMTP Password:     ${smtpPassword}`);
-    console.log(`SMTP HOSTNAME:  ${smtpHostName}`);
-    console.log(`Sender Email:  ${senderEmail}`);
+    console.log(`User ID:          ${userId}`);
+    console.log(`Email:            ${uniqueEmail}`);
+    console.log(`API Key:          ${result.key}`);
+    console.log(`SMTP Config ID:   ${smtpConfigId}`);
+    console.log(`SMTP Username:    ${smtpUsername}`);
+    console.log(`SMTP Hostname:    ${smtpHostName}`);
+    console.log(`Sender Email:     ${senderEmail}`);
     console.log('\n Save the API key — it cannot be retrieved later.\n');
 
   } catch (error) {
