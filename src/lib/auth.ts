@@ -16,6 +16,9 @@ export function createAuth(env: Bindings) {
     }),
     secret: env.BETTER_AUTH_SECRET,
     baseURL: env.BETTER_AUTH_URL,
+    emailAndPassword: {
+      enabled: true,
+    },
     plugins: [apiKey({ defaultPrefix: "mk_" })],
   });
 }

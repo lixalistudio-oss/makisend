@@ -11,6 +11,7 @@ import { sessionMiddleware } from "@/middleware/session.middleware";
 // --- Module imports ---
 import { createSendEmailController, SmtpEmailTransport } from "@/send-email";
 import { createSmtpConfigController, SmtpConfigRepository } from "@/smtp-config";
+import { createApiKeysController, ApiKeyRepository } from "@/api-keys";
 import { configureDeps, getInngestClient } from "@/inngest/client";
 import { getFunctions } from "@/inngest/functions";
 import { serve } from "inngest/hono";
@@ -26,6 +27,7 @@ import { SendEmailRepository } from "@/send-email/send-email.repository";
 import type { SmtpConfig, UserConfig } from "./config/config";
 import type { IEmailTransport, IEmailRepository } from "@/send-email/send-email.types";
 import type { ISmtpConfigRepository } from "@/smtp-config/smtp-config.types";
+import type { IApiKeyRepository } from "@/api-keys/api-keys.types";
 
 // --- Cloudflare Worker environment bindings ---
 export type Bindings = {
@@ -59,6 +61,7 @@ const deps = {
   transport: null as IEmailTransport | null,
   emailRepository: null as IEmailRepository | null,
   smtpConfigRepository: null as ISmtpConfigRepository | null,
+  apiKeyRepository: null as IApiKeyRepository | null,
   aesKey: null as string | null,
   dbInitialized: false,
 
@@ -66,12 +69,14 @@ const deps = {
     if (this.dbInitialized) return;
 
     const db = createDatabase(env.makisend_db);
+    const auth = getAuthInstance(env);
     this.emailRepository = new SendEmailRepository(db);
     this.smtpConfigRepository = new SmtpConfigRepository(db);
+    this.apiKeyRepository = new ApiKeyRepository(db, auth);
     this.aesKey = env.AES_256_KEY;
     this.dbInitialized = true;
 
-    configureDeps(this.transport, this.emailRepository, this.aesKey, this.smtpConfigRepository);
+    configureDeps(this.transport!, this.emailRepository!, this.aesKey!, this.smtpConfigRepository!);
   },
 
   initTransport(env: Bindings, smtpConfig: SmtpConfig) {
@@ -82,7 +87,7 @@ const deps = {
       smtpConfig,
     );
 
-    configureDeps(this.transport, this.emailRepository, this.aesKey, this.smtpConfigRepository);
+    configureDeps(this.transport, this.emailRepository!, this.aesKey!, this.smtpConfigRepository!);
   },
 };
 
@@ -93,6 +98,52 @@ const app = new Hono<{ Bindings: Bindings; Variables: UserInfoVariables }>();
 app.use("*", requestLoggerMiddleware());
 app.onError(errorHandler);
 app.use(configMiddleware());
+
+// Better Auth endpoints (sign-up, sign-in, sign-out, get-session)
+app.post("/api/auth/sign-up", async (c) => {
+  const auth = getAuthInstance(c.env);
+  const body = await c.req.json();
+  const result = await auth.api.signUpEmail({
+    body: {
+      email: body.email,
+      password: body.password,
+      name: body.name,
+    },
+    asResponse: true,
+  });
+  return result;
+});
+
+app.post("/api/auth/sign-in", async (c) => {
+  const auth = getAuthInstance(c.env);
+  const body = await c.req.json();
+  const result = await auth.api.signInEmail({
+    body: {
+      email: body.email,
+      password: body.password,
+    },
+    asResponse: true,
+  });
+  return result;
+});
+
+app.get("/api/auth/get-session", async (c) => {
+  const auth = getAuthInstance(c.env);
+  const result = await auth.api.getSession({
+    headers: c.req.raw.headers,
+    asResponse: true,
+  });
+  return result;
+});
+
+app.post("/api/auth/sign-out", async (c) => {
+  const auth = getAuthInstance(c.env);
+  const result = await auth.api.signOut({
+    headers: c.req.raw.headers,
+    asResponse: true,
+  });
+  return result;
+});
 
 // API key auth (Better Auth) on send-email routes
 app.use("/send-email/*", async (c, next) => {
@@ -125,12 +176,26 @@ const sendEmailController = createSendEmailController(() => getInngestClient());
 app.route("/send-email", sendEmailController);
 
 // Mount SMTP config controller with session auth
-const smtpConfigController = createSmtpConfigController(() => getInngestClient());
+const smtpConfigController = createSmtpConfigController(
+  () => deps.smtpConfigRepository!,
+  () => deps.aesKey!,
+  () => deps.apiKeyRepository!,
+);
 app.use("/smtp-config/*", async (c, next) => {
   const auth = getAuthInstance(c.env);
   await sessionMiddleware(auth)(c, next);
 });
 app.route("/smtp-config", smtpConfigController);
+
+// Mount API keys controller with session auth
+const apiKeysController = createApiKeysController(
+  () => deps.apiKeyRepository!,
+);
+app.use("/api-keys/*", async (c, next) => {
+  const auth = getAuthInstance(c.env);
+  await sessionMiddleware(auth)(c, next);
+});
+app.route("/api-keys", apiKeysController);
 
 // Inngest webhook endpoint
 app.on(

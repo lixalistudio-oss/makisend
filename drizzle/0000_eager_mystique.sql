@@ -10,6 +10,7 @@ CREATE TABLE `account` (
 	`refresh_token_expires_at` integer,
 	`scope` text,
 	`password` text,
+	`issuer` text,
 	`created_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
 	`updated_at` integer NOT NULL,
 	FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE cascade
