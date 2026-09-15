@@ -13,10 +13,12 @@ export class SendEmailRepository implements IEmailRepository {
     smtpId: string,
     sentAt: string,
     emailProcessingTimeMs: number,
+    apiKeyId?: string | null,
   ): Promise<void> {
     await this.db.insert(emailLogs).values({
       internalId,
       userId,
+      apiKeyId: apiKeyId || null,
       to,
       subject,
       smtpId,

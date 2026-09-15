@@ -1,4 +1,4 @@
-import { encrypt } from "@/core/crypto";
+import { encrypt, decrypt } from "@/core/crypto";
 import { AppError } from "@/core/errors";
 import { pinoLogger } from "@/core/logger";
 import type { ISmtpConfigRepository, SmtpConfigRecord } from "./smtp-config.types";
@@ -9,9 +9,20 @@ export class SmtpConfigService {
     private readonly aesKey: string,
   ) {}
 
+  private async decryptRecord(record: SmtpConfigRecord): Promise<SmtpConfigRecord> {
+    const [smtpHostname, smtpUsername, smtpPassword, senderEmail] = await Promise.all([
+      decrypt(record.smtpHostname, this.aesKey),
+      decrypt(record.smtpUsername, this.aesKey),
+      decrypt(record.smtpPassword, this.aesKey),
+      decrypt(record.senderEmail, this.aesKey),
+    ]);
+    return { ...record, smtpHostname, smtpUsername, smtpPassword, senderEmail };
+  }
+
   async findAllByUser(userId: string): Promise<SmtpConfigRecord[]> {
     pinoLogger.info({ userId }, "Fetching all SMTP configs for user");
-    return this.smtpConfigRepo.findByUserId(userId);
+    const records = await this.smtpConfigRepo.findByUserId(userId);
+    return Promise.all(records.map((r) => this.decryptRecord(r)));
   }
 
   async findByIdAndUser(id: string, userId: string): Promise<SmtpConfigRecord> {
@@ -23,7 +34,7 @@ export class SmtpConfigService {
     if (config.userId !== userId) {
       throw new AppError(403, "Not authorized to access this SMTP config");
     }
-    return config;
+    return this.decryptRecord(config);
   }
 
   async create(

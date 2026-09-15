@@ -29,7 +29,7 @@ export function createEmailLogsController(
       if (parsed.success) filters.to = parsed.data;
     }
     if (status) {
-      const parsed = z.enum(["sent", "failed"]).safeParse(status);
+      const parsed = z.enum(["received", "processing", "cleaned", "sent", "failed"]).safeParse(status);
       if (parsed.success) filters.status = parsed.data;
     }
 

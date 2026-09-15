@@ -2,12 +2,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { SmtpConfigService } from "@/smtp-config/smtp-config.service";
 import type { ISmtpConfigRepository, SmtpConfigRecord } from "@/smtp-config/smtp-config.types";
 
-const { mockEncryptFn } = vi.hoisted(() => ({
+const { mockEncryptFn, mockDecryptFn } = vi.hoisted(() => ({
   mockEncryptFn: vi.fn(),
+  mockDecryptFn: vi.fn(),
 }));
 
 vi.mock("@/core/crypto", () => ({
   encrypt: mockEncryptFn,
+  decrypt: mockDecryptFn,
 }));
 
 vi.mock("@/core/logger", () => ({
@@ -37,6 +39,7 @@ describe("SmtpConfigService", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockEncryptFn.mockResolvedValue("encrypted_value");
+    mockDecryptFn.mockImplementation((val: string) => Promise.resolve(`decrypted_${val}`));
 
     mockRepo = {
       findByUserId: vi.fn() as ISmtpConfigRepository["findByUserId"],
@@ -57,7 +60,13 @@ describe("SmtpConfigService", () => {
   describe("findAllByUser", () => {
     it("should return configs for user", async () => {
       const result = await service.findAllByUser(USER_ID);
-      expect(result).toEqual([mockConfig]);
+      expect(result).toEqual([{
+        ...mockConfig,
+        smtpHostname: "decrypted_encrypted_host",
+        smtpUsername: "decrypted_encrypted_user",
+        smtpPassword: "decrypted_encrypted_pass",
+        senderEmail: "decrypted_encrypted_sender",
+      }]);
       expect(mockRepo.findByUserId).toHaveBeenCalledWith(USER_ID);
     });
   });
@@ -65,7 +74,13 @@ describe("SmtpConfigService", () => {
   describe("findByIdAndUser", () => {
     it("should return config when found and owned", async () => {
       const result = await service.findByIdAndUser(CONFIG_ID, USER_ID);
-      expect(result).toEqual(mockConfig);
+      expect(result).toEqual({
+        ...mockConfig,
+        smtpHostname: "decrypted_encrypted_host",
+        smtpUsername: "decrypted_encrypted_user",
+        smtpPassword: "decrypted_encrypted_pass",
+        senderEmail: "decrypted_encrypted_sender",
+      });
     });
 
     it("should throw 404 when config not found", async () => {

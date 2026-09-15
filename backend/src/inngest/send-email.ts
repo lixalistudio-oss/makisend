@@ -71,12 +71,13 @@ export function getSendEmailFunction() {
         pinoLogger.info({ smtpId: messageId }, "Step: saving email log to database");
         await emailRepository.saveEmailLog(
           event.data.emailId,
-          "system",
+          event.data.userId,
           encryptedReceiver,
           event.data.subject,
           messageId,
           new Date().toISOString(),
           durationMs,
+          event.data.apiKeyId,
         );
         pinoLogger.info({ smtpId: messageId }, "Step: email log saved successfully");
       });

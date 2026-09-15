@@ -2,10 +2,19 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { EmailLogService } from "@/email-logs/email-logs.service";
 import type { IEmailLogRepository, EmailLogWithHistory } from "@/email-logs/email-logs.types";
 
+const { mockDecryptFn } = vi.hoisted(() => ({
+  mockDecryptFn: vi.fn(),
+}));
+
+vi.mock("@/core/crypto", () => ({
+  decrypt: mockDecryptFn,
+}));
+
 vi.mock("@/core/logger", () => ({
   pinoLogger: { info: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }));
 
+const TEST_AES_KEY = "a".repeat(64);
 const USER_ID = "user-123";
 const LOG_ID = "log-123";
 
@@ -13,7 +22,7 @@ const mockLog: EmailLogWithHistory = {
   internalId: LOG_ID,
   userId: USER_ID,
   apiKeyId: "key-123",
-  to: "test@example.com",
+  to: "encrypted_to",
   subject: "Hello",
   smtpId: "smtp-123",
   sentAt: new Date().toISOString(),
@@ -29,6 +38,7 @@ describe("EmailLogService", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockDecryptFn.mockResolvedValue("decrypted_value");
 
     mockRepo = {
       findByUserId: vi.fn() as IEmailLogRepository["findByUserId"],
@@ -37,13 +47,16 @@ describe("EmailLogService", () => {
     (mockRepo.findByUserId as ReturnType<typeof vi.fn>).mockResolvedValue([mockLog]);
     (mockRepo.findById as ReturnType<typeof vi.fn>).mockResolvedValue(mockLog);
 
-    service = new EmailLogService(mockRepo);
+    service = new EmailLogService(mockRepo, TEST_AES_KEY);
   });
 
   describe("findAllByUser", () => {
     it("should return logs for user", async () => {
       const result = await service.findAllByUser(USER_ID);
-      expect(result).toEqual([mockLog]);
+      expect(result).toEqual([{
+        ...mockLog,
+        to: "decrypted_value",
+      }]);
       expect(mockRepo.findByUserId).toHaveBeenCalledWith(USER_ID, undefined);
     });
 
@@ -57,7 +70,10 @@ describe("EmailLogService", () => {
   describe("findById", () => {
     it("should return log when found and owned", async () => {
       const result = await service.findById(LOG_ID, USER_ID);
-      expect(result).toEqual(mockLog);
+      expect(result).toEqual({
+        ...mockLog,
+        to: "decrypted_value",
+      });
     });
 
     it("should throw when log not found", async () => {

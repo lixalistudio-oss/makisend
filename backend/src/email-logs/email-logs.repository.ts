@@ -92,11 +92,6 @@ export class EmailLogRepository implements IEmailLogRepository {
         if (!hasStatus) continue;
       }
 
-      // Filter by recipient if specified
-      if (filters?.to) {
-        if (!record.to.toLowerCase().includes(filters.to.toLowerCase())) continue;
-      }
-
       results.push(record);
     }
 

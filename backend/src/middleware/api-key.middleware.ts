@@ -98,7 +98,9 @@ export function apiKeyMiddleware(config: Config, auth: any) {
       smtpHostName: decryptedSmtpHostName,
       senderEmail: decryptedSenderEmail,
     });
+    c.set("userId", userResult[0].id);
     c.set("userConfig", { userId: userResult[0].id });
+    c.set("apiKeyId", result.key.id);
 
     await next();
   });

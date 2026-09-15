@@ -18,6 +18,7 @@ export interface IEmailRepository {
     smtpId: string,
     sentAt: string,
     emailProcessingTimeMs: number,
+    apiKeyId?: string | null,
   ): Promise<void>;
   saveEmailHistory(
     emailId: string,

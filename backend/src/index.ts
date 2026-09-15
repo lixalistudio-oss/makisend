@@ -49,6 +49,7 @@ export type UserInfoVariables = {
   userConfig: UserConfig;
   smtpConfig: SmtpConfig;
   userId: string;
+  apiKeyId: string;
 };
 
 // Singleton: auth created once on first request, reused after
@@ -110,8 +111,8 @@ const deps = {
       this.aesKey!,
     );
     this.apiKeyService = new ApiKeyService(this.apiKeyRepository!);
-    this.emailLogService = new EmailLogService(this.emailLogRepository!);
-    this.dashboardService = new DashboardService(this.dashboardRepository!);
+    this.emailLogService = new EmailLogService(this.emailLogRepository!, this.aesKey!);
+    this.dashboardService = new DashboardService(this.dashboardRepository!, this.aesKey!);
   },
 };
 
@@ -233,7 +234,7 @@ app.route("/api-keys", apiKeysController);
 const emailLogsController = createEmailLogsController(
   () => deps.emailLogService!,
 );
-app.use("/email-logs/*", async (c, next) => {
+app.use("/email-logs*", async (c, next) => {
   const auth = getAuthInstance(c.env);
   await sessionMiddleware(auth)(c, next);
 });

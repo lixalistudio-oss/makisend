@@ -98,7 +98,7 @@ CREATE TABLE `smtp_config` (
 CREATE INDEX `smtpConfig_userId_idx` ON `smtp_config` (`user_id`);--> statement-breakpoint
 CREATE TABLE `user` (
 	`id` text PRIMARY KEY NOT NULL,
-	`name` text NOT NULL,
+	`name` text,
 	`email` text NOT NULL,
 	`email_verified` integer DEFAULT false NOT NULL,
 	`image` text,

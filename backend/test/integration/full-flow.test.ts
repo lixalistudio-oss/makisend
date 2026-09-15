@@ -282,6 +282,7 @@ describe("Inngest send-email function — full step execution", () => {
       name: "app/send-email" as const,
       data: {
         emailId,
+        userId: "test-user-id",
         to: "gedeon@example.com",
         subject: "Integration Test",
         text: "This is a test email body long enough.",
@@ -314,7 +315,7 @@ describe("Inngest send-email function — full step execution", () => {
     expect(logs.length).toBe(1);
     expect(logs[0].internalId).toBe(emailId);
     expect(logs[0].subject).toBe("Integration Test");
-    expect(logs[0].userId).toBe("system");
+    expect(logs[0].userId).toBe("test-user-id");
     expect(logs[0].smtpId).toBe("<test@mock-smtp.com>");
 
     const decryptedTo = await decrypt(logs[0].to, AES_KEY);

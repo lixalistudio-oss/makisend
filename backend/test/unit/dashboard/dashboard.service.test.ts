@@ -2,10 +2,19 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { DashboardService } from "@/dashboard/dashboard.service";
 import type { IDashboardRepository, DashboardStats, SmtpConfigBreakdown, RecentEmail, ErrorSummary } from "@/dashboard/dashboard.types";
 
+const { mockDecryptFn } = vi.hoisted(() => ({
+  mockDecryptFn: vi.fn(),
+}));
+
+vi.mock("@/core/crypto", () => ({
+  decrypt: mockDecryptFn,
+}));
+
 vi.mock("@/core/logger", () => ({
   pinoLogger: { info: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }));
 
+const TEST_AES_KEY = "a".repeat(64);
 const USER_ID = "user-123";
 
 const mockStats: DashboardStats = {
@@ -16,12 +25,12 @@ const mockStats: DashboardStats = {
 };
 
 const mockBreakdown: SmtpConfigBreakdown[] = [
-  { smtpConfigId: "c1", senderEmail: "a@test.com", totalSent: 60, successCount: 55, failureCount: 5 },
-  { smtpConfigId: "c2", senderEmail: "b@test.com", totalSent: 40, successCount: 35, failureCount: 5 },
+  { smtpConfigId: "c1", senderEmail: "encrypted_a", totalSent: 60, successCount: 55, failureCount: 5 },
+  { smtpConfigId: "c2", senderEmail: "encrypted_b", totalSent: 40, successCount: 35, failureCount: 5 },
 ];
 
 const mockRecent: RecentEmail[] = [
-  { internalId: "l1", to: "x@test.com", subject: "Hi", status: "sent", sentAt: new Date().toISOString(), emailProcessingTimeMs: 100 },
+  { internalId: "l1", to: "encrypted_x", subject: "Hi", status: "sent", sentAt: new Date().toISOString(), emailProcessingTimeMs: 100 },
 ];
 
 const mockErrors: ErrorSummary[] = [
@@ -35,6 +44,7 @@ describe("DashboardService", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockDecryptFn.mockResolvedValue("decrypted_value");
 
     mockRepo = {
       getStats: vi.fn().mockResolvedValue(mockStats),
@@ -43,7 +53,7 @@ describe("DashboardService", () => {
       getErrors: vi.fn().mockResolvedValue(mockErrors),
     };
 
-    service = new DashboardService(mockRepo);
+    service = new DashboardService(mockRepo, TEST_AES_KEY);
   });
 
   describe("getStats", () => {
@@ -62,7 +72,7 @@ describe("DashboardService", () => {
   describe("getByConfig", () => {
     it("should return breakdown from repo", async () => {
       const result = await service.getByConfig(USER_ID, 30);
-      expect(result).toEqual(mockBreakdown);
+      expect(result).toEqual(mockBreakdown.map((b) => ({ ...b, senderEmail: "decrypted_value" })));
       expect(mockRepo.getByConfig).toHaveBeenCalledWith(USER_ID, 30);
     });
   });
@@ -70,7 +80,7 @@ describe("DashboardService", () => {
   describe("getRecent", () => {
     it("should return recent emails from repo", async () => {
       const result = await service.getRecent(USER_ID, 10);
-      expect(result).toEqual(mockRecent);
+      expect(result).toEqual(mockRecent.map((r) => ({ ...r, to: "decrypted_value" })));
       expect(mockRepo.getRecent).toHaveBeenCalledWith(USER_ID, 10);
     });
   });
