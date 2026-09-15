@@ -6,6 +6,8 @@ settings:
 
 importers:
 
+  .: {}
+
   backend:
     dependencies:
       '@better-auth/api-key':
