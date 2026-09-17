@@ -1,0 +1,174 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  deploy-backend:
+    name: Deploy Backend (Workers)
+    runs-on: ubuntu-latest
+    outputs:
+      worker-url: ${{ steps.worker-url.outputs.url }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: backend
+
+      - name: Run lint
+        run: pnpm lint
+        working-directory: backend
+
+      - name: Run tests
+        run: pnpm test:run
+        working-directory: backend
+
+      - name: Determine environment
+        id: env
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "is_preview=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_preview=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Get or create preview D1 database
+        if: steps.env.outputs.is_preview == 'true'
+        id: preview-db
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          DB_ID=$(wrangler d1 list --json 2>/dev/null | jq -r '.[] | select(.name == "makisend-db-preview") | .uuid' 2>/dev/null || echo "")
+
+          if [ -z "$DB_ID" ]; then
+            echo "Creating preview D1 database..."
+            OUTPUT=$(wrangler d1 create makisend-db-preview 2>&1)
+            echo "$OUTPUT"
+            DB_ID=$(echo "$OUTPUT" | grep -oP 'database_id = "\K[^"]+')
+          else
+            echo "Preview D1 database already exists: $DB_ID"
+          fi
+
+          echo "db_id=$DB_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Configure preview database ID
+        if: steps.env.outputs.is_preview == 'true'
+        working-directory: backend
+        run: |
+          sed -i "s/PREVIEW_DB_ID_PLACEHOLDER/${{ steps.preview-db.outputs.db_id }}/" wrangler.jsonc
+
+      - name: Apply D1 migrations
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ "${{ steps.env.outputs.is_preview }}" = "true" ]; then
+            wrangler d1 migrations apply makisend_db --remote --env preview
+          else
+            wrangler d1 migrations apply makisend_db --remote
+          fi
+        working-directory: backend
+
+      - name: Deploy Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ "${{ steps.env.outputs.is_preview }}" = "true" ]; then
+            wrangler deploy --minify --env preview
+          else
+            wrangler deploy --minify
+          fi
+        working-directory: backend
+
+      - name: Get Worker URL
+        id: worker-url
+        run: |
+          if [ "${{ steps.env.outputs.is_preview }}" = "true" ]; then
+            echo "url=https://makisend-poc-preview.${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.workers.dev" >> "$GITHUB_OUTPUT"
+          else
+            echo "url=https://makisend-poc.${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.workers.dev" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy-frontend:
+    name: Deploy Frontend (Pages)
+    runs-on: ubuntu-latest
+    needs: deploy-backend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: frontend
+
+      - name: Determine environment
+        id: env
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "is_preview=false" >> "$GITHUB_OUTPUT"
+            echo "branch=main" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_preview=true" >> "$GITHUB_OUTPUT"
+            echo "branch=pr-${{ github.event.number }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build frontend
+        env:
+          PUBLIC_API_URL: ${{ needs.deploy-backend.outputs.worker-url }}
+        run: pnpm build
+        working-directory: frontend
+
+      - name: Deploy to Cloudflare Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ "${{ steps.env.outputs.is_preview }}" = "true" ]; then
+            wrangler pages deploy dist/ --project-name makisend --branch ${{ steps.env.outputs.branch }}
+          else
+            wrangler pages deploy dist/ --project-name makisend --branch main
+          fi
+        working-directory: frontend
+
+      - name: Summary
+        run: |
+          if [ "${{ steps.env.outputs.is_preview }}" = "true" ]; then
+            echo "### Preview Deploy" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Backend: ${{ needs.deploy-backend.outputs.worker-url }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Frontend: https://${{ steps.env.outputs.branch }}.makisend.pages.dev" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Production Deploy" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Backend: ${{ needs.deploy-backend.outputs.worker-url }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Frontend: https://makisend.pages.dev" >> "$GITHUB_STEP_SUMMARY"
+          fi

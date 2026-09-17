@@ -8,6 +8,7 @@ import {
   MailIcon,
 } from "lucide-react"
 
+import { fetchApi } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import {
   Table,
@@ -70,7 +71,7 @@ export function DataTable() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch("/email-logs")
+    fetchApi("/email-logs")
       .then((res) => res.json())
       .then((data) => {
         setLogs(data.logs ?? [])

@@ -29,6 +29,7 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@/components/ui/toggle-group"
+import { fetchApi } from "@/lib/api"
 
 const chartConfig = {
   sent: {
@@ -60,7 +61,7 @@ export function ChartAreaInteractive() {
 
   React.useEffect(() => {
     const days = timeRange === "7d" ? 7 : timeRange === "30d" ? 30 : 90
-    fetch(`/dashboard/stats?days=${days}`)
+    fetchApi(`/dashboard/stats?days=${days}`)
       .then((res) => res.json())
       .then((data) => {
         const stats = data.stats

@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react"
 import { LoaderIcon } from "lucide-react"
+import { fetchApi } from "@/lib/api"
 
 export function SessionGuard({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch("/api/auth/get-session")
+    fetchApi("/api/auth/get-session")
       .then((res) => res.json())
       .then((data) => {
         const session = data?.data?.session ?? data?.session

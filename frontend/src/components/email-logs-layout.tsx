@@ -40,6 +40,7 @@ import {
   SearchIcon,
 } from "lucide-react"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { fetchApi } from "@/lib/api"
 
 interface HistoryEntry {
   status: string
@@ -117,8 +118,8 @@ export function EmailLogsLayout() {
 
       const qs = params.toString()
       const [logsRes, configsRes] = await Promise.all([
-        fetch(`/email-logs${qs ? `?${qs}` : ""}`),
-        fetch("/smtp-config"),
+        fetchApi(`/email-logs${qs ? `?${qs}` : ""}`),
+        fetchApi("/smtp-config"),
       ])
       const logsData = await logsRes.json()
       const configsData = await configsRes.json()

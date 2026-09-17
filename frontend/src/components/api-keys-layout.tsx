@@ -41,6 +41,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { KeyIcon, PlusIcon, EllipsisVerticalIcon, TrashIcon, CheckCircleIcon, XCircleIcon, CopyIcon, LoaderIcon, AlertTriangleIcon } from "lucide-react"
+import { fetchApi } from "@/lib/api"
 
 interface SmtpConfig {
   id: string
@@ -71,8 +72,8 @@ export function ApiKeysLayout() {
   const fetchData = async () => {
     try {
       const [keysRes, configsRes] = await Promise.all([
-        fetch("/api-keys"),
-        fetch("/smtp-config"),
+        fetchApi("/api-keys"),
+        fetchApi("/smtp-config"),
       ])
       const keysData = await keysRes.json()
       const configsData = await configsRes.json()
@@ -106,7 +107,7 @@ export function ApiKeysLayout() {
 
     setSubmitting(true)
     try {
-      const res = await fetch("/api-keys", {
+      const res = await fetchApi("/api-keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -131,7 +132,7 @@ export function ApiKeysLayout() {
 
   const handleDelete = async (id: string) => {
     try {
-      const res = await fetch(`/api-keys/${id}`, { method: "DELETE" })
+      const res = await fetchApi(`/api-keys/${id}`, { method: "DELETE" })
       if (!res.ok) throw new Error("Failed to delete")
       setKeys(keys.filter((k) => k.id !== id))
       setCreatedKeys((prev) => {

@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { MailIcon, CheckCircleIcon, XCircleIcon, TrendingUpIcon } from "lucide-react"
+import { fetchApi } from "@/lib/api"
 
 interface Stats {
   totalSent: number
@@ -28,7 +29,7 @@ export function SectionCards() {
   })
 
   useEffect(() => {
-    fetch("/dashboard/stats")
+    fetchApi("/dashboard/stats")
       .then((res) => res.json())
       .then((data) => {
         if (data.stats) setStats(data.stats)

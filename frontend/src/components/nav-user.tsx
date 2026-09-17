@@ -19,13 +19,14 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar"
 import { EllipsisVerticalIcon, CircleUserRoundIcon, BellIcon, LogOutIcon } from "lucide-react"
+import { fetchApi } from "@/lib/api"
 
 export function NavUser() {
   const { isMobile } = useSidebar()
   const [user, setUser] = useState<{ name: string; email: string } | null>(null)
 
   useEffect(() => {
-    fetch("/api/auth/get-session")
+    fetchApi("/api/auth/get-session")
       .then((res) => res.json())
       .then((data) => {
         const user = data?.data?.user ?? data?.user
@@ -37,7 +38,7 @@ export function NavUser() {
   }, [])
 
   const handleLogout = async () => {
-    await fetch("/api/auth/sign-out", { method: "POST" })
+    await fetchApi("/api/auth/sign-out", { method: "POST" })
     window.location.href = "/login"
   }
 

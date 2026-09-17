@@ -34,6 +34,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { MailIcon, PlusIcon, EllipsisVerticalIcon, PencilIcon, TrashIcon, CheckCircleIcon, XCircleIcon, LoaderIcon } from "lucide-react"
+import { fetchApi } from "@/lib/api"
 
 interface SmtpConfig {
   id: string
@@ -56,7 +57,7 @@ export function SmtpConfigLayout() {
 
   const fetchConfigs = async () => {
     try {
-      const res = await fetch("/smtp-config")
+      const res = await fetchApi("/smtp-config")
       const data = await res.json()
       setConfigs(data.configs ?? [])
     } catch {
@@ -106,7 +107,7 @@ export function SmtpConfigLayout() {
         }
         if (password) body.smtpPassword = password
 
-        const res = await fetch(`/smtp-config/${editingId}`, {
+        const res = await fetchApi(`/smtp-config/${editingId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
@@ -114,7 +115,7 @@ export function SmtpConfigLayout() {
         if (!res.ok) throw new Error("Failed to update")
         toast.success("SMTP config updated")
       } else {
-        const res = await fetch("/smtp-config", {
+        const res = await fetchApi("/smtp-config", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -139,7 +140,7 @@ export function SmtpConfigLayout() {
 
   const handleDelete = async (id: string) => {
     try {
-      const res = await fetch(`/smtp-config/${id}`, { method: "DELETE" })
+      const res = await fetchApi(`/smtp-config/${id}`, { method: "DELETE" })
       if (!res.ok) throw new Error("Failed to delete")
       setConfigs(configs.filter((c) => c.id !== id))
       toast.success("SMTP config deleted")
