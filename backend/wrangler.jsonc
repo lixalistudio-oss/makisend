@@ -21,7 +21,7 @@
 			"database_name": "makisend-db",
 			"database_id": "fb679c0f-7a52-46c3-a859-0035767c06d2",
 			"migrations_dir": "./drizzle",
-			"migrations_pattern": "drizzle/*/migration.sql"
+			"migrations_pattern": "drizzle/*.sql"
 		}
 	],
 	"env": {
