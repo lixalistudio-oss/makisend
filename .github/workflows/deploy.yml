@@ -30,6 +30,8 @@ jobs:
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
+        with:
+          version: 11
 
       - name: Install Node
         uses: actions/setup-node@v4
@@ -37,8 +39,12 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - name: Install dependencies
+      - name: Install backend dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: frontend
 
       - name: Lint backend
         run: pnpm lint
@@ -48,9 +54,6 @@ jobs:
         run: pnpm test:run
         working-directory: backend
 
-      # Build frontend with placeholder PUBLIC_API_URL.
-      # The real URL is baked in at deploy time via PUBLIC_API_URL env var.
-      # For preview deploys, the frontend job rebuilds with the actual preview Worker URL.
       - name: Build frontend
         run: pnpm build
         working-directory: frontend
@@ -58,7 +61,7 @@ jobs:
       - name: Upload frontend build
         uses: actions/upload-artifact@v4
         with:
-          name: dist
+          name: frontend-dist
           path: frontend/dist/
           retention-days: 7
 
@@ -76,6 +79,8 @@ jobs:
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
+        with:
+          version: 11
 
       - name: Install Node
         uses: actions/setup-node@v4
@@ -83,7 +88,7 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - name: Install dependencies
+      - name: Install backend dependencies
         run: pnpm install --frozen-lockfile
 
       # --- Backend (Workers) ---
@@ -106,6 +111,10 @@ jobs:
           command: deploy --minify
 
       # --- Frontend (Pages) ---
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: frontend
 
       - name: Build frontend with production Worker URL
         run: pnpm build
@@ -146,6 +155,8 @@ jobs:
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
+        with:
+          version: 11
 
       - name: Install Node
         uses: actions/setup-node@v4
@@ -153,19 +164,10 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - name: Install dependencies
+      - name: Install backend dependencies
         run: pnpm install --frozen-lockfile
 
       # --- Backend preview (Workers) ---
-
-      - name: Get or create preview D1 database
-        id: preview-db
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: backend
-          command: d1 list --json
 
       - name: Create preview D1 if needed
         id: create-db
@@ -173,10 +175,10 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          DB_ID=$(wrangler d1 list --json 2>/dev/null | jq -r '.[] | select(.name == "makisend-db-preview") | .uuid' 2>/dev/null || echo "")
+          DB_ID=$(npx wrangler d1 list --json 2>/dev/null | jq -r '.[] | select(.name == "makisend-db-preview") | .uuid' 2>/dev/null || echo "")
           if [ -z "$DB_ID" ]; then
             echo "Creating preview D1 database..."
-            OUTPUT=$(wrangler d1 create makisend-db-preview 2>&1)
+            OUTPUT=$(npx wrangler d1 create makisend-db-preview 2>&1)
             echo "$OUTPUT"
             DB_ID=$(echo "$OUTPUT" | grep -oP 'database_id = "\K[^"]+')
           else
@@ -208,6 +210,10 @@ jobs:
           command: deploy --minify --env preview
 
       # --- Frontend preview (Pages) ---
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: frontend
 
       - name: Build frontend with preview Worker URL
         run: pnpm build
