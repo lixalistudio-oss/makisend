@@ -216,7 +216,7 @@ jobs:
         uses: actions/github-script@v7
         env:
           WORKER_URL: https://makisend-poc-preview.${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.workers.dev
-          PAGES_URL: https://${{ github.head_ref }}.makisend.pages.dev
+          PAGES_URL: https://$(echo "${{ github.head_ref }}" | tr '/' '--').makisend.pages.dev
         with:
           script: |
             const marker = '<!-- cf-preview -->';
