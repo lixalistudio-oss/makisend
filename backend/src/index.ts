@@ -53,12 +53,14 @@ export type UserInfoVariables = {
   apiKeyId: string;
 };
 
-// Singleton: auth created once on first request, reused after
+// Auth instance: recreate if baseURL changes (e.g. first request before secret is set)
 let authInstance: ReturnType<typeof createAuth> | null = null;
+let authBaseUrl: string | null = null;
 
 function getAuthInstance(env: Bindings) {
-  if (!authInstance) {
+  if (!authInstance || env.BETTER_AUTH_URL !== authBaseUrl) {
     authInstance = createAuth(env);
+    authBaseUrl = env.BETTER_AUTH_URL;
   }
   return authInstance;
 }
