@@ -8,7 +8,7 @@ export interface SmtpConfigInput {
 export interface SmtpConfigUpdateInput {
   smtpHostname?: string;
   smtpUsername?: string;
-  smtpPassword?: string;//adskfj
+  smtpPassword?: string;//ahi
   senderEmail?: string;
   isActive?: boolean;
 }
