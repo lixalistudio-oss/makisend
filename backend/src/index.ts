@@ -1,5 +1,6 @@
 // --- Framework & core imports ---
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 
 // --- Middleware imports ---
 import { errorHandler } from "@/middleware/error.handler";
@@ -119,7 +120,13 @@ const deps = {
 // --- Hono app setup ---
 const app = new Hono<{ Bindings: Bindings; Variables: UserInfoVariables }>();
 
-// Global middleware: request logging, error handling, config injection
+// Global middleware: CORS, request logging, error handling, config injection
+app.use("*", cors({
+  origin: (origin) => origin,
+  credentials: true,
+  allowHeaders: ["Content-Type", "Authorization"],
+  allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+}));
 app.use("*", requestLoggerMiddleware());
 app.onError(errorHandler);
 app.use(configMiddleware());
