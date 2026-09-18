@@ -19,6 +19,12 @@ export function createAuth(env: Bindings) {
     emailAndPassword: {
       enabled: true,
     },
+    advanced: {
+      cookieAttributes: {
+        sameSite: "none",
+        secure: true,
+      },
+    },
     plugins: [apiKey({ defaultPrefix: "mk_" })],
   });
 }
