@@ -184,6 +184,12 @@ jobs:
         run: npx wrangler@4.131.1 d1 migrations apply makisend_db --remote --env preview
         working-directory: backend
 
+      - name: Set preview Worker secrets
+        run: |
+          echo "${{ secrets.AES_256_KEY }}" | npx wrangler@4.131.1 secret put AES_256_KEY --env preview
+          echo "${{ secrets.BETTER_AUTH_SECRET }}" | npx wrangler@4.131.1 secret put BETTER_AUTH_SECRET --env preview
+        working-directory: backend
+
       - name: Deploy Worker (preview)
         id: deploy-worker
         run: |
@@ -191,6 +197,11 @@ jobs:
           echo "$OUTPUT"
           WORKER_URL=$(echo "$OUTPUT" | grep -oP 'https://\S+\.workers\.dev' | head -1)
           echo "url=$WORKER_URL" >> "$GITHUB_OUTPUT"
+        working-directory: backend
+
+      - name: Set BETTER_AUTH_URL for preview
+        run: |
+          echo "${{ steps.deploy-worker.outputs.url }}" | npx wrangler@4.131.1 secret put BETTER_AUTH_URL --env preview
         working-directory: backend
 
       # --- Frontend preview (Pages) ---
