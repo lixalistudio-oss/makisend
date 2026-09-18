@@ -1,29 +1,37 @@
 name: Deploy
 
+# Triggers:
+#   - push on main            → production deployment (frontend + backend)
+#   - pull_request on main/dev → CI + preview deployment (frontend + backend)
+#   - workflow_dispatch       → manual production deployment
+
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: write
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  deploy-backend:
-    name: Deploy Backend (Workers)
+  build:
+    name: Verify and build
     runs-on: ubuntu-latest
-    outputs:
-      worker-url: ${{ steps.worker-url.outputs.url }}
     steps:
-      - name: Checkout repository
+      - name: Check out the repository
         uses: actions/checkout@v4
 
-      - name: Setup pnpm
+      - name: Install pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 11
 
-      - name: Setup Node.js
+      - name: Install Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -31,34 +39,141 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-        working-directory: backend
 
-      - name: Run lint
+      - name: Lint backend
         run: pnpm lint
         working-directory: backend
 
-      - name: Run tests
+      - name: Test backend
         run: pnpm test:run
         working-directory: backend
 
-      - name: Determine environment
-        id: env
+      # Build frontend with placeholder PUBLIC_API_URL.
+      # The real URL is baked in at deploy time via PUBLIC_API_URL env var.
+      # For preview deploys, the frontend job rebuilds with the actual preview Worker URL.
+      - name: Build frontend
+        run: pnpm build
+        working-directory: frontend
+
+      - name: Upload frontend build
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: frontend/dist/
+          retention-days: 7
+
+  deploy:
+    name: Deploy to Cloudflare (production)
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://makisend.pages.dev
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # --- Backend (Workers) ---
+
+      - name: Apply D1 migrations (production)
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: backend
+          command: d1 migrations apply makisend_db --remote
+
+      - name: Deploy Worker (production)
+        uses: cloudflare/wrangler-action@v3
+        id: deploy-worker
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: backend
+          command: deploy --minify
+
+      # --- Frontend (Pages) ---
+
+      - name: Build frontend with production Worker URL
+        run: pnpm build
+        working-directory: frontend
+        env:
+          PUBLIC_API_URL: https://makisend-poc.${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.workers.dev
+
+      - name: Deploy to Cloudflare Pages (production)
+        uses: cloudflare/wrangler-action@v3
+        id: deploy-pages
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: frontend
+          command: pages deploy dist/ --project-name=makisend --branch=main
+
+      - name: Summary
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "is_preview=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "is_preview=true" >> "$GITHUB_OUTPUT"
-          fi
+          echo "### Production Deploy" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Backend: https://makisend-poc.${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.workers.dev" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Frontend: https://makisend.pages.dev" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-preview:
+    name: Deploy preview to Cloudflare
+    needs: build
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    environment:
+      name: preview
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # --- Backend preview (Workers) ---
 
       - name: Get or create preview D1 database
-        if: steps.env.outputs.is_preview == 'true'
         id: preview-db
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: backend
+          command: d1 list --json
+
+      - name: Create preview D1 if needed
+        id: create-db
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           DB_ID=$(wrangler d1 list --json 2>/dev/null | jq -r '.[] | select(.name == "makisend-db-preview") | .uuid' 2>/dev/null || echo "")
-
           if [ -z "$DB_ID" ]; then
             echo "Creating preview D1 database..."
             OUTPUT=$(wrangler d1 create makisend-db-preview 2>&1)
@@ -67,108 +182,89 @@ jobs:
           else
             echo "Preview D1 database already exists: $DB_ID"
           fi
-
           echo "db_id=$DB_ID" >> "$GITHUB_OUTPUT"
+        working-directory: backend
 
       - name: Configure preview database ID
-        if: steps.env.outputs.is_preview == 'true'
-        working-directory: backend
         run: |
-          sed -i "s/PREVIEW_DB_ID_PLACEHOLDER/${{ steps.preview-db.outputs.db_id }}/" wrangler.jsonc
-
-      - name: Apply D1 migrations
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          if [ "${{ steps.env.outputs.is_preview }}" = "true" ]; then
-            wrangler d1 migrations apply makisend_db --remote --env preview
-          else
-            wrangler d1 migrations apply makisend_db --remote
-          fi
+          sed -i "s/PREVIEW_DB_ID_PLACEHOLDER/${{ steps.create-db.outputs.db_id }}/" wrangler.jsonc
         working-directory: backend
 
-      - name: Deploy Worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          if [ "${{ steps.env.outputs.is_preview }}" = "true" ]; then
-            wrangler deploy --minify --env preview
-          else
-            wrangler deploy --minify
-          fi
-        working-directory: backend
-
-      - name: Get Worker URL
-        id: worker-url
-        run: |
-          if [ "${{ steps.env.outputs.is_preview }}" = "true" ]; then
-            echo "url=https://makisend-poc-preview.${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.workers.dev" >> "$GITHUB_OUTPUT"
-          else
-            echo "url=https://makisend-poc.${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.workers.dev" >> "$GITHUB_OUTPUT"
-          fi
-
-  deploy-frontend:
-    name: Deploy Frontend (Pages)
-    runs-on: ubuntu-latest
-    needs: deploy-backend
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - name: Apply D1 migrations (preview)
+        uses: cloudflare/wrangler-action@v3
         with:
-          version: 11
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: backend
+          command: d1 migrations apply makisend_db --remote --env preview
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Deploy Worker (preview)
+        uses: cloudflare/wrangler-action@v3
+        id: deploy-worker-preview
         with:
-          node-version: 22
-          cache: pnpm
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: backend
+          command: deploy --minify --env preview
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-        working-directory: frontend
+      # --- Frontend preview (Pages) ---
 
-      - name: Determine environment
-        id: env
-        run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "is_preview=false" >> "$GITHUB_OUTPUT"
-            echo "branch=main" >> "$GITHUB_OUTPUT"
-          else
-            echo "is_preview=true" >> "$GITHUB_OUTPUT"
-            echo "branch=pr-${{ github.event.number }}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Build frontend
-        env:
-          PUBLIC_API_URL: ${{ needs.deploy-backend.outputs.worker-url }}
+      - name: Build frontend with preview Worker URL
         run: pnpm build
         working-directory: frontend
-
-      - name: Deploy to Cloudflare Pages
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          if [ "${{ steps.env.outputs.is_preview }}" = "true" ]; then
-            wrangler pages deploy dist/ --project-name makisend --branch ${{ steps.env.outputs.branch }}
-          else
-            wrangler pages deploy dist/ --project-name makisend --branch main
-          fi
-        working-directory: frontend
+          PUBLIC_API_URL: https://makisend-poc-preview.${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.workers.dev
 
-      - name: Summary
-        run: |
-          if [ "${{ steps.env.outputs.is_preview }}" = "true" ]; then
-            echo "### Preview Deploy" >> "$GITHUB_STEP_SUMMARY"
-            echo "- Backend: ${{ needs.deploy-backend.outputs.worker-url }}" >> "$GITHUB_STEP_SUMMARY"
-            echo "- Frontend: https://${{ steps.env.outputs.branch }}.makisend.pages.dev" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "### Production Deploy" >> "$GITHUB_STEP_SUMMARY"
-            echo "- Backend: ${{ needs.deploy-backend.outputs.worker-url }}" >> "$GITHUB_STEP_SUMMARY"
-            echo "- Frontend: https://makisend.pages.dev" >> "$GITHUB_STEP_SUMMARY"
-          fi
+      - name: Deploy to Cloudflare Pages (preview)
+        uses: cloudflare/wrangler-action@v3
+        id: deploy-pages-preview
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: frontend
+          command: pages deploy dist/ --project-name=makisend --branch=${{ github.head_ref }}
+
+      # --- Comment preview URLs on PR ---
+
+      - name: Comment preview URLs on PR
+        uses: actions/github-script@v7
+        env:
+          WORKER_URL: https://makisend-poc-preview.${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.workers.dev
+          PAGES_URL: https://${{ github.head_ref }}.makisend.pages.dev
+        with:
+          script: |
+            const marker = '<!-- cf-preview -->';
+            const branch = context.payload.pull_request.head.ref;
+            const workerUrl = process.env.WORKER_URL;
+            const pagesUrl = process.env.PAGES_URL;
+            const body = [
+              marker,
+              '### 🔍 Preview Deployment',
+              '',
+              '| Service | URL |',
+              '|---------|-----|',
+              `| **Frontend** (Pages) | ${pagesUrl} |`,
+              `| **Backend** (Workers) | ${workerUrl} |`,
+              '',
+              `Branch \`${branch}\` — updates on each push.`,
+            ].join('\n');
+            const { data: comments } = await github.rest.issues.listComments({
+              ...context.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(
+              (c) => c.user?.type === 'Bot' && c.body?.includes(marker),
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({
+                ...context.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                ...context.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
