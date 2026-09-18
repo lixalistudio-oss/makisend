@@ -216,13 +216,13 @@ jobs:
         uses: actions/github-script@v7
         env:
           WORKER_URL: https://makisend-poc-preview.${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.workers.dev
-          PAGES_URL: https://$(echo "${{ github.head_ref }}" | tr '/' '--').makisend.pages.dev
         with:
           script: |
             const marker = '<!-- cf-preview -->';
             const branch = context.payload.pull_request.head.ref;
+            const branchSlug = branch.replace(/\//g, '--');
             const workerUrl = process.env.WORKER_URL;
-            const pagesUrl = process.env.PAGES_URL;
+            const pagesUrl = `https://${branchSlug}.makisend.pages.dev`;
             const body = [
               marker,
               '### 🔍 Preview Deployment',
