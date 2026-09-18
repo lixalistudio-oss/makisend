@@ -34,12 +34,8 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - name: Install backend dependencies
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Install frontend dependencies
-        run: pnpm install --frozen-lockfile
-        working-directory: frontend
 
       - name: Lint backend
         run: pnpm lint
@@ -86,7 +82,7 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - name: Install backend dependencies
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       # --- Backend (Workers) ---
@@ -100,10 +96,6 @@ jobs:
         working-directory: backend
 
       # --- Frontend (Pages) ---
-
-      - name: Install frontend dependencies
-        run: pnpm install --frozen-lockfile
-        working-directory: frontend
 
       - name: Build frontend with production Worker URL
         run: pnpm build
@@ -160,7 +152,7 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - name: Install backend dependencies
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       # --- Backend preview (Workers) ---
@@ -196,10 +188,6 @@ jobs:
         working-directory: backend
 
       # --- Frontend preview (Pages) ---
-
-      - name: Install frontend dependencies
-        run: pnpm install --frozen-lockfile
-        working-directory: frontend
 
       - name: Build frontend with preview Worker URL
         run: pnpm build
