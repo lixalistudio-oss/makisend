@@ -24,6 +24,10 @@ export function createAuth(env: Bindings) {
         sameSite: "none",
         secure: true,
       },
+      cors: (origin) => ({
+        origin,
+        credentials: true,
+      }),
     },
     plugins: [apiKey({ defaultPrefix: "mk_" })],
   });
