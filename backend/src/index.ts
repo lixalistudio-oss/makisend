@@ -1,6 +1,7 @@
 // --- Framework & core imports ---
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import type { Context } from "hono";
 
 // --- Middleware imports ---
 import { errorHandler } from "@/middleware/error.handler";
@@ -134,6 +135,19 @@ app.onError(errorHandler);
 app.use(configMiddleware());
 
 // Better Auth endpoints (sign-up, sign-in, sign-out, get-session)
+
+// Helper: convert Better Auth's asResponse into a Hono-compatible response
+// so CORS middleware can inject headers and Set-Cookie is preserved.
+async function authResponse(c: Context, result: Response) {
+  const setCookies = result.headers.getSetCookie?.() ?? [];
+  for (const cookie of setCookies) {
+    c.header("Set-Cookie", cookie, { append: true });
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = await result.json() as any;
+  return c.json(data, result.status as any);
+}
+
 app.post("/api/auth/sign-up", async (c) => {
   // Block registration if a user already exists (single-user app)
   const db = createDatabase(c.env.makisend_db);
@@ -152,7 +166,7 @@ app.post("/api/auth/sign-up", async (c) => {
     },
     asResponse: true,
   });
-  return result;
+  return authResponse(c, result);
 });
 
 app.post("/api/auth/sign-in", async (c) => {
@@ -165,7 +179,7 @@ app.post("/api/auth/sign-in", async (c) => {
     },
     asResponse: true,
   });
-  return result;
+  return authResponse(c, result);
 });
 
 app.get("/api/auth/get-session", async (c) => {
@@ -174,7 +188,7 @@ app.get("/api/auth/get-session", async (c) => {
     headers: c.req.raw.headers,
     asResponse: true,
   });
-  return result;
+  return authResponse(c, result);
 });
 
 app.post("/api/auth/sign-out", async (c) => {
@@ -183,7 +197,7 @@ app.post("/api/auth/sign-out", async (c) => {
     headers: c.req.raw.headers,
     asResponse: true,
   });
-  return result;
+  return authResponse(c, result);
 });
 
 // API key auth (Better Auth) on send-email routes
