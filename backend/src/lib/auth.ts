@@ -16,6 +16,7 @@ export function createAuth(env: Bindings) {
     }),
     secret: env.BETTER_AUTH_SECRET,
     baseURL: env.BETTER_AUTH_URL,
+    trustedOrigins: [env.FRONTEND_URL].filter(Boolean),
     emailAndPassword: {
       enabled: true,
     },
@@ -24,10 +25,6 @@ export function createAuth(env: Bindings) {
         sameSite: "none",
         secure: true,
       },
-      cors: (origin) => ({
-        origin,
-        credentials: true,
-      }),
     },
     plugins: [apiKey({ defaultPrefix: "mk_" })],
   });

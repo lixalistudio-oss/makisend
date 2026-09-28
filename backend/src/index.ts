@@ -43,6 +43,7 @@ export type Bindings = {
   INNGEST_DEV: number;
   BETTER_AUTH_SECRET: string;
   BETTER_AUTH_URL: string;
+  FRONTEND_URL: string;
 };
 
 // --- Hono context variables (per-request) ---
@@ -53,14 +54,20 @@ export type UserInfoVariables = {
   apiKeyId: string;
 };
 
-// Auth instance: recreate if baseURL changes (e.g. first request before secret is set)
+// Auth instance: recreate if baseURL or frontend URL changes (e.g. first request before secrets are set)
 let authInstance: ReturnType<typeof createAuth> | null = null;
 let authBaseUrl: string | null = null;
+let authFrontendUrl: string | null = null;
 
 function getAuthInstance(env: Bindings) {
-  if (!authInstance || env.BETTER_AUTH_URL !== authBaseUrl) {
+  if (
+    !authInstance ||
+    env.BETTER_AUTH_URL !== authBaseUrl ||
+    env.FRONTEND_URL !== authFrontendUrl
+  ) {
     authInstance = createAuth(env);
     authBaseUrl = env.BETTER_AUTH_URL;
+    authFrontendUrl = env.FRONTEND_URL;
   }
   return authInstance;
 }
@@ -133,9 +140,22 @@ app.use("*", requestLoggerMiddleware());
 app.onError(errorHandler);
 app.use(configMiddleware());
 
-// Better Auth: custom sign-up (blocks registration if user exists),
-// then all /api/auth/* routes forwarded to Better Auth's own handler
-// which produces proper Responses with Set-Cookie + CORS headers.
+// Better Auth: forward raw Request to auth.handler() for all /api/auth/* routes.
+// We wrap the result to add CORS headers that Hono's middleware can't inject into
+// raw Response objects.
+
+function addCorsHeaders(result: Response, origin: string | null): Response {
+  const headers = new Headers(result.headers);
+  if (origin) {
+    headers.set("Access-Control-Allow-Origin", origin);
+    headers.set("Access-Control-Allow-Credentials", "true");
+  }
+  return new Response(result.body, {
+    status: result.status,
+    statusText: result.statusText,
+    headers,
+  });
+}
 
 app.post("/api/auth/sign-up", async (c) => {
   const db = createDatabase(c.env.makisend_db);
@@ -144,12 +164,14 @@ app.post("/api/auth/sign-up", async (c) => {
     return c.json({ error: "Registration is closed" }, 403);
   }
   const auth = getAuthInstance(c.env);
-  return auth.handler(c.req.raw);
+  const result = await auth.handler(c.req.raw);
+  return addCorsHeaders(result, c.req.header("origin"));
 });
 
 app.all("/api/auth/*", async (c) => {
   const auth = getAuthInstance(c.env);
-  return auth.handler(c.req.raw);
+  const result = await auth.handler(c.req.raw);
+  return addCorsHeaders(result, c.req.header("origin"));
 });
 
 // API key auth (Better Auth) on send-email routes
