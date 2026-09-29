@@ -21,7 +21,10 @@ export function createAuth(env: Bindings) {
       enabled: true,
     },
     advanced: {
-      cookieAttributes: {
+      // pages.dev and workers.dev are different sites: SameSite=Lax would make the
+      // browser drop the session cookie on every cross-origin fetch.
+      // SameSite=None is only accepted together with Secure.
+      defaultCookieAttributes: {
         sameSite: "none",
         secure: true,
       },
