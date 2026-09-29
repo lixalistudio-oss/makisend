@@ -48,7 +48,7 @@ describe("POST /smtp-config", () => {
     expect(res.status).toBe(200);
     const h = res.headers as Headers & { getSetCookie?: () => string[] };
     const cookies = h.getSetCookie ? h.getSetCookie() : [h.get("set-cookie")];
-    cookie = cookies.map((c) => c.split(";")[0]).join("; ");
+    cookie = cookies.map((c) => (c ?? "").split(";")[0]).join("; ");
     expect(cookie).toContain("session_token");
   });
 
@@ -86,7 +86,7 @@ describe("POST /smtp-config", () => {
       },
       env,
     );
-    const body = await res.json();
+    const body = (await res.json()) as { config: { userId: string; senderEmail: string } };
 
     expect(res.status).toBe(201);
     expect(body.config.userId).toBeTruthy();
@@ -102,7 +102,7 @@ describe("POST /smtp-config", () => {
       },
       env,
     );
-    const body = await res.json();
+    const body = (await res.json()) as { configs: { senderEmail: string }[] };
 
     expect(res.status).toBe(200);
     expect(body.configs).toHaveLength(1);

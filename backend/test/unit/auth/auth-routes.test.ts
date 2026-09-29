@@ -57,7 +57,7 @@ describe("auth routes (email + password only)", () => {
 
   it("signs up with email and password only, without asking for a name", async () => {
     const res = await signUp();
-    const body = await res.json();
+    const body = (await res.json()) as { user: { email: string; name: string } };
 
     expect(res.status).toBe(200);
     expect(body.user.email).toBe(EMAIL);
@@ -79,7 +79,8 @@ describe("auth routes (email + password only)", () => {
 
     expect(res.status).toBe(200);
     expect(res.headers.get("set-cookie")).toBeTruthy();
-    expect((await res.json()).user.email).toBe(EMAIL);
+    const body = (await res.json()) as { user: { email: string } };
+    expect(body.user.email).toBe(EMAIL);
   });
 
   it("returns 401 with a JSON body for invalid credentials", async () => {

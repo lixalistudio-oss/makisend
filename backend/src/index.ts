@@ -144,7 +144,7 @@ app.use(configMiddleware());
 // We wrap the result to add CORS headers that Hono's middleware can't inject into
 // raw Response objects.
 
-function addCorsHeaders(result: Response, origin: string | null): Response {
+function addCorsHeaders(result: Response, origin: string | undefined): Response {
   const headers = new Headers(result.headers);
   if (origin) {
     headers.set("Access-Control-Allow-Origin", origin);

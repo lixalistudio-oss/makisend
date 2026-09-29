@@ -1,8 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { eq } from "drizzle-orm";
 import { createTestD1, cleanupTestD1 } from "../../helpers/d1-setup";
 import { createDatabase } from "@/db/connection";
-import { emailLogs, smtpConfig, apikey } from "@/db/schema";
+import { emailLogs, smtpConfig } from "@/db/schema";
 import app from "@/index";
 import type { Bindings } from "@/index";
 
@@ -42,7 +41,7 @@ describe("POST /api/auth/delete-user with owned data", () => {
     expect(res.status).toBe(200);
     const h = res.headers as Headers & { getSetCookie?: () => string[] };
     cookie = (h.getSetCookie ? h.getSetCookie() : [h.get("set-cookie")])
-      .map((c) => c.split(";")[0])
+      .map((c) => (c ?? "").split(";")[0])
       .join("; ");
 
     // a full data chain: smtp config -> api key -> email log
@@ -61,7 +60,7 @@ describe("POST /api/auth/delete-user with owned data", () => {
       env,
     );
     expect(cfgRes.status).toBe(201);
-    const cfg = (await cfgRes.json()).config;
+    const cfg = ((await cfgRes.json()) as { config: { id: string } }).config;
 
     const keyRes = await app.request(
       "/api-keys",
@@ -73,7 +72,7 @@ describe("POST /api/auth/delete-user with owned data", () => {
       env,
     );
     expect(keyRes.status).toBe(201);
-    const keyId = (await keyRes.json()).record.id;
+    const keyId = ((await keyRes.json()) as { record: { id: string } }).record.id;
 
     await createDatabase(env.makisend_db).insert(emailLogs).values({
       userId: (await createDatabase(env.makisend_db).select().from(smtpConfig))[0].userId,

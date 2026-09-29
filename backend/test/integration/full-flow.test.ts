@@ -128,6 +128,7 @@ describe("POST /send-email — HTTP layer integration", () => {
       INNGEST_DEV: 1,
       BETTER_AUTH_SECRET: "test-secret-for-integration",
       BETTER_AUTH_URL: "http://localhost:8787",
+      FRONTEND_URL: "http://localhost:4321",
     };
   }
 
