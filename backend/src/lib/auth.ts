@@ -2,6 +2,7 @@ import { betterAuth } from "better-auth";
 import { apiKey } from "@better-auth/api-key";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { drizzle } from "drizzle-orm/d1";
+import { eq } from "drizzle-orm";
 import * as schema from "@/db/schema";
 import type { Bindings } from "@/index";
 
@@ -19,6 +20,17 @@ export function createAuth(env: Bindings) {
     trustedOrigins: [env.FRONTEND_URL].filter(Boolean),
     emailAndPassword: {
       enabled: true,
+    },
+    user: {
+      deleteUser: {
+        enabled: true,
+        // email_logs has no foreign key to user (it points at apikey), so the
+        // ON DELETE cascade from user -> smtp_config -> apikey would be blocked
+        // by surviving log rows. Purge them before Better Auth deletes the user.
+        beforeDelete: async (deletedUser) => {
+          await db.delete(schema.emailLogs).where(eq(schema.emailLogs.userId, deletedUser.id));
+        },
+      },
     },
     advanced: {
       // pages.dev and workers.dev are different sites: SameSite=Lax would make the

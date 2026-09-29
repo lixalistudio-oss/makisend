@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createTestD1, cleanupTestD1 } from "../../helpers/d1-setup";
 import { createDatabase } from "@/db/connection";
-import { emailLogs, smtpConfig } from "@/db/schema";
+import { emailLogs, smtpConfig, user } from "@/db/schema";
 import app from "@/index";
 import type { Bindings } from "@/index";
 
@@ -102,11 +102,13 @@ describe("POST /api/auth/delete-user with owned data", () => {
       env,
     );
     const body = await res.text();
+    expect(res.status, body).toBe(200);
 
     const db = createDatabase(env.makisend_db);
-    const users = await db.select().from(emailLogs);
+    const logs = await db.select().from(emailLogs);
+    const users = await db.select().from(user);
 
-    expect(`DELETE status=${res.status} body=${body.slice(0, 300)} | leftover_logs=${users.length}`).toBe("DUMP");
-    expect(res.status).toBeLessThan(500);
+    expect(logs).toHaveLength(0);
+    expect(users).toHaveLength(0);
   });
 });
