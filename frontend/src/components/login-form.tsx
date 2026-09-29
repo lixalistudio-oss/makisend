@@ -26,16 +26,16 @@ export function LoginForm({
     setLoading(true);
 
     try {
-      const res = await fetchApi("/api/auth/sign-in", {
+      const res = await fetchApi("/api/auth/sign-in/email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
 
       if (!res.ok) {
-        setError(data.error || "Invalid email or password");
+        setError(data?.message || data?.error || "Invalid email or password");
         return;
       }
 

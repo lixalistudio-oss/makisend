@@ -38,16 +38,16 @@ export function SignupForm({
 
     setLoading(true);
     try {
-      const res = await fetchApi("/api/auth/sign-up", {
+      const res = await fetchApi("/api/auth/sign-up/email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
 
       if (!res.ok) {
-        setError(data.error || "Something went wrong");
+        setError(data?.message || data?.error || "Something went wrong");
         return;
       }
 

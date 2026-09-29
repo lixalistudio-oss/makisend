@@ -157,14 +157,25 @@ function addCorsHeaders(result: Response, origin: string | null): Response {
   });
 }
 
-app.post("/api/auth/sign-up", async (c) => {
+// Better Auth hardcodes `name: z.string()` in its sign-up body schema and offers no
+// option to relax it, while our product only asks for email + password. We fill it in
+// with the local part of the email before handing the request over to Better Auth.
+app.post("/api/auth/sign-up/email", async (c) => {
   const db = createDatabase(c.env.makisend_db);
   const existingUsers = await db.select().from(user).limit(1);
   if (existingUsers.length > 0) {
     return c.json({ error: "Registration is closed" }, 403);
   }
+  const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
+  const fallbackName = String(body.email ?? "").split("@")[0];
   const auth = getAuthInstance(c.env);
-  const result = await auth.handler(c.req.raw);
+  const result = await auth.handler(
+    new Request(c.req.raw.url, {
+      method: c.req.raw.method,
+      headers: c.req.raw.headers,
+      body: JSON.stringify({ ...body, name: body.name || fallbackName }),
+    }),
+  );
   return addCorsHeaders(result, c.req.header("origin"));
 });
 
