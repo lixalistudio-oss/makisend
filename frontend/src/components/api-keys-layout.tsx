@@ -30,7 +30,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
@@ -67,7 +66,6 @@ export function ApiKeysLayout() {
   const [configError, setConfigError] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [newKeyValue, setNewKeyValue] = useState<string | null>(null)
-  const [createdKeys, setCreatedKeys] = useState<Record<string, string>>({})
 
   const fetchData = async () => {
     try {
@@ -122,7 +120,6 @@ export function ApiKeysLayout() {
       const data = await res.json()
       setNewKeyValue(data.key)
       setKeys([...keys, data.record])
-      setCreatedKeys((prev) => ({ ...prev, [data.record.id]: data.key }))
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to create API key")
     } finally {
@@ -135,11 +132,6 @@ export function ApiKeysLayout() {
       const res = await fetchApi(`/api-keys/${id}`, { method: "DELETE" })
       if (!res.ok) throw new Error("Failed to delete")
       setKeys(keys.filter((k) => k.id !== id))
-      setCreatedKeys((prev) => {
-        const next = { ...prev }
-        delete next[id]
-        return next
-      })
       toast.success("API key deleted")
     } catch {
       toast.error("Failed to delete API key")
@@ -305,7 +297,6 @@ export function ApiKeysLayout() {
             <ItemGroup className="gap-5">
               {keys.map((key) => {
                 const config = configs.find((c) => c.id === key.smtpConfigId)
-                const fullKey = createdKeys[key.id]
                 return (
                   <Item key={key.id} variant="outline" className="py-4 px-4 gap-5">
                     <ItemMedia variant="icon" className="size-10">
@@ -323,12 +314,6 @@ export function ApiKeysLayout() {
                         {key.enabled ? <CheckCircleIcon className="fill-green-500" /> : <XCircleIcon />}
                         {key.enabled ? "Active" : "Disabled"}
                       </Badge>
-                      {fullKey && (
-                        <Button variant="outline" size="sm" onClick={() => copyKey(fullKey)}>
-                          <CopyIcon />
-                          Copy Key
-                        </Button>
-                      )}
                       <DropdownMenu>
                         <DropdownMenuTrigger
                           render={
@@ -339,13 +324,6 @@ export function ApiKeysLayout() {
                           <span className="sr-only">Actions</span>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-32">
-                          {!fullKey && (
-                            <DropdownMenuItem disabled>
-                              <CopyIcon />
-                              Key hidden
-                            </DropdownMenuItem>
-                          )}
-                          <DropdownMenuSeparator />
                           <DropdownMenuItem variant="destructive" onClick={() => handleDelete(key.id)}>
                             <TrashIcon />
                             Delete

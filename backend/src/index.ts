@@ -224,7 +224,7 @@ const smtpConfigController = createSmtpConfigController(
 );
 app.use("/smtp-config/*", async (c, next) => {
   const auth = getAuthInstance(c.env);
-  await sessionMiddleware(auth)(c, next);
+  return sessionMiddleware(auth)(c, next);
 });
 app.route("/smtp-config", smtpConfigController);
 
@@ -234,7 +234,7 @@ const apiKeysController = createApiKeysController(
 );
 app.use("/api-keys/*", async (c, next) => {
   const auth = getAuthInstance(c.env);
-  await sessionMiddleware(auth)(c, next);
+  return sessionMiddleware(auth)(c, next);
 });
 app.route("/api-keys", apiKeysController);
 
@@ -244,7 +244,7 @@ const emailLogsController = createEmailLogsController(
 );
 app.use("/email-logs*", async (c, next) => {
   const auth = getAuthInstance(c.env);
-  await sessionMiddleware(auth)(c, next);
+  return sessionMiddleware(auth)(c, next);
 });
 app.route("/email-logs", emailLogsController);
 
@@ -254,7 +254,7 @@ const dashboardController = createDashboardController(
 );
 app.use("/dashboard/*", async (c, next) => {
   const auth = getAuthInstance(c.env);
-  await sessionMiddleware(auth)(c, next);
+  return sessionMiddleware(auth)(c, next);
 });
 app.route("/dashboard", dashboardController);
 

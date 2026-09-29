@@ -59,7 +59,7 @@ export class SmtpConfigService {
     });
 
     pinoLogger.info({ configId: config.id }, "SMTP config created successfully");
-    return config;
+    return this.decryptRecord(config);
   }
 
   async update(
@@ -97,7 +97,7 @@ export class SmtpConfigService {
 
     const config = await this.smtpConfigRepo.update(id, encryptedUpdates);
     pinoLogger.info({ id }, "SMTP config updated successfully");
-    return config;
+    return this.decryptRecord(config);
   }
 
   async delete(id: string, userId: string): Promise<void> {

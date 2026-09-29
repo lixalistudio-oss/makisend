@@ -32,6 +32,15 @@ const mockConfig: SmtpConfigRecord = {
   updatedAt: new Date(),
 };
 
+// create()/update() must return plaintext like the read paths do
+const decryptedConfig: SmtpConfigRecord = {
+  ...mockConfig,
+  smtpHostname: "decrypted_encrypted_host",
+  smtpUsername: "decrypted_encrypted_user",
+  smtpPassword: "decrypted_encrypted_pass",
+  senderEmail: "decrypted_encrypted_sender",
+};
+
 describe("SmtpConfigService", () => {
   let service: SmtpConfigService;
   let mockRepo: ISmtpConfigRepository;
@@ -117,7 +126,7 @@ describe("SmtpConfigService", () => {
         smtpPassword: "encrypted_value",
         senderEmail: "encrypted_value",
       });
-      expect(result).toEqual(mockConfig);
+      expect(result).toEqual(decryptedConfig);
     });
   });
 
@@ -126,7 +135,7 @@ describe("SmtpConfigService", () => {
       const result = await service.update(CONFIG_ID, USER_ID, { smtpHostname: "new.host" });
       expect(mockEncryptFn).toHaveBeenCalledWith("new.host", TEST_AES_KEY);
       expect(mockRepo.update).toHaveBeenCalled();
-      expect(result).toEqual(mockConfig);
+      expect(result).toEqual(decryptedConfig);
     });
 
     it("should throw 404 when config not found", async () => {
