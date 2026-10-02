@@ -188,6 +188,7 @@ jobs:
         run: |
           echo "${{ secrets.AES_256_KEY }}" | npx wrangler@4.131.1 secret put AES_256_KEY --env preview
           echo "${{ secrets.BETTER_AUTH_SECRET }}" | npx wrangler@4.131.1 secret put BETTER_AUTH_SECRET --env preview
+          echo "${{ secrets.INNGEST_EVENT_KEY }}" | npx wrangler@4.131.1 secret put INNGEST_EVENT_KEY --env preview
         working-directory: backend
 
       - name: Deploy Worker (preview)
