@@ -11,7 +11,7 @@ import { eq, desc } from 'drizzle-orm';
 
 async function prompt(rl: readline.Interface, question: string): Promise<string> {
   const answer = await rl.question(question);
-  if (!answer.trim()) {
+  if (!answer.trim()) {//
     throw new Error(`"${question}" cannot be empty`);
   }
   return answer.trim();
