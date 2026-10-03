@@ -5,7 +5,7 @@ import type { EmailInput, EmailSendResult, IEmailTransport } from "./send-email.
 
 export class SmtpEmailTransport implements IEmailTransport {
   private readonly transporter: Transporter;
-  private readonly senderEmail: string;
+  private readonly senderEmail: string;//
 
   constructor(config: Config, smtpConfig: SmtpConfig) {
     this.senderEmail = smtpConfig.senderEmail;
