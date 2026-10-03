@@ -70,6 +70,12 @@ jobs:
     environment:
       name: production
       url: https://makisend.pages.dev
+    # Job-level permissions replace the workflow-level ones, so re-declare read
+    # and add PR write for the production-URL comment below.
+    permissions:
+      contents: read
+      deployments: write
+      pull-requests: write
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -195,6 +201,65 @@ jobs:
           echo "### Production Deploy" >> "$GITHUB_STEP_SUMMARY"
           echo "- Backend: ${{ steps.deploy-worker.outputs.url }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- Frontend: ${{ steps.pages-deploy.outputs.url }}" >> "$GITHUB_STEP_SUMMARY"
+
+      # Prod deploys on every push (any branch). If that branch has an open PR,
+      # tell the reviewer where the production build is live.
+      - name: Comment production URL on PR
+        uses: actions/github-script@v7
+        env:
+          WORKER_URL: ${{ steps.deploy-worker.outputs.url }}
+          PAGES_URL: ${{ steps.pages-deploy.outputs.url }}
+        with:
+          script: |
+            const marker = '<!-- cf-prod -->';
+            const branch = context.ref.replace(/^refs\/heads\//, '');
+            const workerUrl = process.env.WORKER_URL;
+            const pagesUrl = process.env.PAGES_URL;
+
+            const { data: pulls } = await github.rest.pulls.list({
+              ...context.repo,
+              state: 'open',
+              head: `${context.repo.owner}:${branch}`,
+            });
+            if (!pulls.length) {
+              core.info(`No open PR for branch "${branch}" — skipping comment.`);
+              return;
+            }
+
+            const body = [
+              marker,
+              '### 🚀 Production Deploy',
+              '',
+              '| Service | URL |',
+              '|---------|-----|',
+              `| **Frontend** | ${pagesUrl} |`,
+              `| **Backend** | ${workerUrl} |`,
+              '',
+              `Deployed from branch \`${branch}\` — production updates on every push.`,
+            ].join('\n');
+
+            for (const pr of pulls) {
+              const { data: comments } = await github.rest.issues.listComments({
+                ...context.repo,
+                issue_number: pr.number,
+              });
+              const existing = comments.find(
+                (c) => c.user?.type === 'Bot' && c.body?.includes(marker),
+              );
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  ...context.repo,
+                  comment_id: existing.id,
+                  body,
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  ...context.repo,
+                  issue_number: pr.number,
+                  body,
+                });
+              }
+            }
 
   deploy-preview:
     name: Deploy preview to Cloudflare
