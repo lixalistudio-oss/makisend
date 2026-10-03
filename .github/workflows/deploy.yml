@@ -130,6 +130,11 @@ jobs:
       github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    # All PRs share one preview Worker and one preview D1: serialize these jobs so
+    # two deploys never delete/recreate the database at the same time.
+    concurrency:
+      group: deploy-preview
+      cancel-in-progress: true
     permissions:
       contents: read
       pull-requests: write
@@ -158,21 +163,35 @@ jobs:
 
       # --- Backend preview (Workers) ---
 
-      - name: Create preview D1 if needed
+      # Preview is disposable: drop and recreate the D1 on every deploy so the schema
+      # always matches the committed migrations. Editing an already-applied migration
+      # file is never re-run by `d1 migrations apply`, which left this DB stale and
+      # broke sign-up (422 FAILED_TO_CREATE_USER).
+      - name: Recreate preview D1 (fresh database on every deploy)
         id: create-db
         run: |
           set -eo pipefail
-          echo "Listing D1 databases..."
-          DB_ID=$(npx wrangler@4.131.1 d1 list --json | jq -r '.[] | select(.name == "makisend-db-preview") | .uuid' || echo "")
+          if npx wrangler@4.131.1 d1 list --json | jq -e '.[] | select(.name == "makisend-db-preview")' >/dev/null; then
+            echo "Deleting existing makisend-db-preview..."
+            npx wrangler@4.131.1 d1 delete makisend-db-preview -y
+            # deletion is eventually consistent: wait until it is gone
+            for i in $(seq 1 24); do
+              if ! npx wrangler@4.131.1 d1 list --json | jq -e '.[] | select(.name == "makisend-db-preview")' >/dev/null; then
+                break
+              fi
+              echo "waiting for deletion to propagate... ($i)"
+              sleep 5
+            done
+          fi
+          echo "Creating makisend-db-preview..."
+          npx wrangler@4.131.1 d1 create makisend-db-preview
+          DB_ID=$(npx wrangler@4.131.1 d1 list --json | jq -r '.[] | select(.name == "makisend-db-preview") | .uuid')
           if [ -z "$DB_ID" ]; then
-            echo "Creating preview D1 database..."
-            npx wrangler@4.131.1 d1 create makisend-db-preview
-            DB_ID=$(npx wrangler@4.131.1 d1 list --json | jq -r '.[] | select(.name == "makisend-db-preview") | .uuid')
-          else
-            echo "Preview D1 database already exists: $DB_ID"
+            echo "Failed to resolve makisend-db-preview UUID" >&2
+            exit 1
           fi
           echo "db_id=$DB_ID" >> "$GITHUB_OUTPUT"
-          echo "Final DB_ID: $DB_ID"
+          echo "Created preview D1: $DB_ID"
         working-directory: backend
 
       - name: Configure preview database ID
@@ -182,21 +201,6 @@ jobs:
 
       - name: Apply D1 migrations (preview)
         run: npx wrangler@4.131.1 d1 migrations apply makisend_db --remote --env preview
-        working-directory: backend
-
-      - name: Wipe preview database (fresh state on every deploy)
-        run: |
-          cat > /tmp/wipe-preview.sql <<'SQL'
-          DELETE FROM email_logs;
-          DELETE FROM email_histories;
-          DELETE FROM apikey;
-          DELETE FROM smtp_config;
-          DELETE FROM session;
-          DELETE FROM account;
-          DELETE FROM verification;
-          DELETE FROM user;
-          SQL
-          npx wrangler@4.131.1 d1 execute makisend_db --remote --env preview --file /tmp/wipe-preview.sql
         working-directory: backend
 
       - name: Set preview Worker secrets
