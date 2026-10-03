@@ -6,6 +6,12 @@
 	"compatibility_flags": [
 		"nodejs_compat"
 	],
+	// `vars` are NOT inherited by environments, so preview declares its own below.
+	// PORT is used by nodemailer (SmtpEmailTransport); without it the port silently
+	// falls back to 465.
+	"vars": {
+		"PORT": "465"
+	},
 	"observability": {
 		"logs": {
 			"enabled": true,
@@ -27,6 +33,9 @@
 	"env": {
 		"preview": {
 			"name": "makisend-poc-preview",
+			"vars": {
+				"PORT": "465"
+			},
 			"d1_databases": [
 				{
 					"binding": "makisend_db",

@@ -208,6 +208,13 @@ jobs:
           echo "${{ secrets.AES_256_KEY }}" | npx wrangler@4.131.1 secret put AES_256_KEY --env preview
           echo "${{ secrets.BETTER_AUTH_SECRET }}" | npx wrangler@4.131.1 secret put BETTER_AUTH_SECRET --env preview
           echo "${{ secrets.INNGEST_EVENT_KEY }}" | npx wrangler@4.131.1 secret put INNGEST_EVENT_KEY --env preview
+          # Without this the SDK runs in cloud mode with no signing key, so
+          # GET /api/inngest returns 500 and Inngest can never sync the app.
+          if [ -n "${{ secrets.INNGEST_SIGNING_KEY }}" ]; then
+            echo "${{ secrets.INNGEST_SIGNING_KEY }}" | npx wrangler@4.131.1 secret put INNGEST_SIGNING_KEY --env preview
+          else
+            echo "::warning::INNGEST_SIGNING_KEY secret is not set in GitHub"
+          fi
         working-directory: backend
 
       - name: Deploy Worker (preview)

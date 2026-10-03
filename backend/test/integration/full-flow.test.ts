@@ -35,6 +35,8 @@ describe("POST /send-email — HTTP layer integration", () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let auth: any;
   let testApiKey: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let mockInngestSend: any;
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -96,7 +98,7 @@ describe("POST /send-email — HTTP layer integration", () => {
       .set({ smtpConfigId })
       .where(eq(apikey.id, latestKey[0].id));
 
-    const mockInngestSend = vi.fn().mockResolvedValue(undefined);
+    mockInngestSend = vi.fn().mockResolvedValue(undefined);
     const mockInngest = { send: mockInngestSend } as unknown as Inngest;
 
     app = new Hono<AppEnv>();
@@ -145,6 +147,16 @@ describe("POST /send-email — HTTP layer integration", () => {
       const json = (await res.json()) as { success: boolean; message: string };
       expect(json.success).toBe(true);
       expect(json.message).toBe("Email queued");
+
+      expect(mockInngestSend).toHaveBeenCalledTimes(1);
+      const sent = mockInngestSend.mock.calls[0][0] as {
+        name: string;
+        data: Record<string, unknown>;
+      };
+      expect(sent.name).toBe("app/send-email");
+      expect(sent.data.smtpConfigId).toBe("test-smtp-config-001");
+      expect(sent.data.apiKeyId).toBeTruthy();
+      expect(sent.data.emailId).toBeTruthy();
     });
 
     it("should return 202 with Bearer header", async () => {
@@ -291,12 +303,20 @@ describe("Inngest send-email function — full step execution", () => {
       },
     };
 
+    const resolveTransport = vi.fn(async () => mockTransport);
+    configureDeps(
+      mockTransport,
+      realRepository,
+      AES_KEY,
+      {} as ISmtpConfigRepository,
+      resolveTransport,
+    );
+
     const engine = new InngestTestEngine({
       function: getSendEmailFunction(),
       events: [event],
       transformCtx: (ctx) => ({
         ...ctx,
-        transport: mockTransport,
         repository: realRepository,
         aesKey: AES_KEY,
       }),
@@ -304,6 +324,9 @@ describe("Inngest send-email function — full step execution", () => {
 
     const { error } = await engine.execute();
     expect(error).toBeUndefined();
+
+    // Legacy events queued without smtpConfigId still resolve a transport.
+    expect(resolveTransport).toHaveBeenCalledWith(undefined);
 
     expect(mockTransport.send).toHaveBeenCalledWith({
       to: "gedeon@example.com",

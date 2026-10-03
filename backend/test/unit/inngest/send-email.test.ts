@@ -23,6 +23,7 @@ const mockEvent = {
     subject: "Test Subject",
     text: "Plain text content for testing",
     html: "<p>HTML content for testing</p>",
+    smtpConfigId: "smtp-config-123",
   },
 };
 
@@ -234,5 +235,52 @@ describe("sendEmailFunction", () => {
 
     const { error } = await t.execute();
     expect(error).toBeUndefined();
+  });
+
+  it("should resolve the transport with the event's smtpConfigId", async () => {
+    const resolveTransport = vi.fn().mockResolvedValue(mockTransport);
+    configureDeps(
+      mockTransport,
+      mockRepository,
+      "test-aes-key",
+      mockSmtpConfigRepository,
+      resolveTransport,
+    );
+
+    const t = new InngestTestEngine({
+      function: getSendEmailFunction(),
+      events: [mockEvent],
+      transformCtx: (ctx) => ({
+        ...ctx,
+        emailRepository: mockRepository,
+        aesKey: "test-aes-key",
+      }),
+      steps: [
+        { id: "email-received-and-update-history", handler: async () => {} },
+        { id: "processing", handler: async () => {} },
+        { id: "cleaning-html-input", handler: async () => ({
+          cleanedHtml: "<p>cleaned</p>",
+          encryptedReceiver: "encrypted-value",
+        })},
+        { id: "send-mail-via-nodemailer", handler: async () => {
+          const { messageId } = await mockTransport.send({
+            to: mockEvent.data.to,
+            subject: mockEvent.data.subject,
+            text: mockEvent.data.text,
+            html: "<p>cleaned</p>",
+          });
+          return { messageId, durationMs: 100 };
+        }},
+        { id: "save-infos-in-db", handler: async () => {} },
+        { id: "return-json-success-data", handler: async () => ({ message: "done" }) },
+      ],
+    });
+
+    const { error } = await t.execute();
+    expect(error).toBeUndefined();
+
+    expect(resolveTransport).toHaveBeenCalledTimes(1);
+    expect(resolveTransport).toHaveBeenCalledWith("smtp-config-123");
+    expect(mockTransport.send).toHaveBeenCalled();
   });
 });

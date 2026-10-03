@@ -101,6 +101,7 @@ export function apiKeyMiddleware(config: Config, auth: any) {
     c.set("userId", userResult[0].id);
     c.set("userConfig", { userId: userResult[0].id });
     c.set("apiKeyId", result.key.id);
+    c.set("smtpConfigId", apiKeyRecord[0].smtpConfigId);
 
     await next();
   });

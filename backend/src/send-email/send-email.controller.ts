@@ -30,8 +30,12 @@ export function createSendEmailController(getInngest: () => Inngest): Hono<{ Bin
       const data = c.req.valid("json");
       const userId = c.get("userId");
       const apiKeyId = c.get("apiKeyId");
+      const smtpConfigId = c.get("smtpConfigId");
       const emailId = createId();
-      await getInngest().send({ name: "app/send-email", data: { ...data, emailId, userId, apiKeyId } });
+      await getInngest().send({
+        name: "app/send-email",
+        data: { ...data, emailId, userId, apiKeyId, smtpConfigId },
+      });
       return c.json({ success: true, message: "Email queued" }, 202);
     },
   );

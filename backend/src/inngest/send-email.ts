@@ -6,7 +6,8 @@ import { getInngestClient } from "./client";
 import type { IEmailRepository, IEmailTransport } from "@/send-email/send-email.types";
 
 interface FunctionContext {
-  transport: IEmailTransport;
+  transport?: IEmailTransport;
+  resolveTransport: (smtpConfigId?: string) => Promise<IEmailTransport>;
   emailRepository: IEmailRepository;
   aesKey: string;
 }
@@ -18,10 +19,14 @@ export function getSendEmailFunction() {
     {
       id: "send-email",
       triggers: [{ event: "app/send-email" }],
-      onFailure: async ({ event, error }) => {
+      onFailure: async ({ event, error, ...rest }) => {
         const { emailId } = event.data as unknown as { emailId: string };
-        const ctx = error as unknown as FunctionContext;
-        await ctx.emailRepository.saveEmailHistory(emailId, "failed", error.message);
+        const { emailRepository } = rest as unknown as Partial<FunctionContext>;
+        if (emailRepository) {
+          await emailRepository.saveEmailHistory(emailId, "failed", error.message);
+        } else {
+          pinoLogger.error({ emailId, err: error }, "Email delivery failed");
+        }
         throw new AppError(500, "Email delivery failed");
       },
       throttle: { limit: 3, period: "1m" },
@@ -29,9 +34,13 @@ export function getSendEmailFunction() {
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async ({ event, step, logger, ...ctx }: any) => {
-      const { transport, emailRepository, aesKey } = ctx as FunctionContext;
+      const { resolveTransport, emailRepository, aesKey } = ctx as FunctionContext;
       const startTime = performance.now();
       const emailId = event.data.emailId;
+
+      // Resolve the SMTP configuration the event was queued with (falls back to the
+      // active configuration for events queued before smtpConfigId existed).
+      const transport = await resolveTransport(event.data.smtpConfigId);
 
       await step.run("email-received-and-update-history", async () => {
         logger.info({ receiver: event.data.to }, "Email sending request pending");
