@@ -1,5 +1,4 @@
 import { pinoLogger } from "@/core/logger";
-import { AppError } from "@/core/errors";
 import { cleanHtml } from "@/core/html-sanitizer";
 import { getInngestClient } from "./client";
 import type { IEmailRepository, IEmailTransport } from "@/send-email/send-email.types";
@@ -12,6 +11,9 @@ interface FunctionContext {
   attempt?: number;
 }
 
+const RETRIES = 4;
+const MAX_ATTEMPTS = RETRIES + 1;
+
 export function getSendEmailFunction() {
   const inngest = getInngestClient();
 
@@ -20,21 +22,29 @@ export function getSendEmailFunction() {
       id: "send-email",
       triggers: [{ event: "app/send-email" }],
       onFailure: async ({ event, error, ...rest }) => {
-        const { emailId } = event.data as unknown as { emailId: string };
-        const { emailRepository, attempt } = rest as unknown as Partial<FunctionContext>;
-        const attempts = (attempt ?? 0) + 1;
-        if (emailRepository) {
-          await emailRepository.saveEmailHistory(emailId, "failed", error.message, attempts);
-        } else {
-          pinoLogger.error({ emailId, err: error, attempts }, "Email delivery failed");
+        // `onFailure` receives an `inngest/function.failed` event, which wraps the
+        // original triggering event at `event.data.event` instead of exposing it
+        // at the top level.
+        const originalEvent = (event.data as { event?: { data?: { emailId?: string } } }).event;
+        const emailId = originalEvent?.data?.emailId;
+        const { emailRepository } = rest as unknown as Partial<FunctionContext>;
+
+        if (!emailId) {
+          pinoLogger.error({ event: event.data, err: error }, "Email delivery failed: no emailId in failure event");
+          return;
         }
-      throw new AppError(500, "Email delivery failed");
-    },
-    // Global safety cap: smooths bursts (e.g. provider outage + many retries)
-    // so we never hammer the SMTP provider, while staying high enough to never
-    // bottleneck a single email's 5 attempts.
-    throttle: { limit: 60, period: "1m" },
-    retries: 4,
+        // All retries are exhausted at this point, so the attempt count is fixed.
+        if (emailRepository) {
+          await emailRepository.saveEmailHistory(emailId, "failed", error.message, MAX_ATTEMPTS);
+        } else {
+          pinoLogger.error({ emailId, err: error, attempts: MAX_ATTEMPTS }, "Email delivery failed");
+        }
+      },
+      // Global safety cap: smooths bursts (e.g. provider outage + many retries)
+      // so we never hammer the SMTP provider, while staying high enough to never
+      // bottleneck a single email's 5 attempts.
+      throttle: { limit: 1000, period: "1m" },
+      retries: RETRIES,
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async ({ event, step, logger, ...ctx }: any) => {

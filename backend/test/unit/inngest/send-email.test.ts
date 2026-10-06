@@ -304,4 +304,53 @@ describe("sendEmailFunction", () => {
     // completeEmailLog must NOT run on a failed attempt.
     expect(mockRepository.completeEmailLog).not.toHaveBeenCalled();
   });
+
+  it("records a failed history row when all retries are exhausted", async () => {
+    // InngestTestEngine cannot trigger onFailure, so invoke the handler directly
+    // with the wrapped `inngest/function.failed` payload it receives in production.
+    const onFailure = (getSendEmailFunction() as unknown as {
+      onFailureFn?: (ctx: unknown) => Promise<void>;
+    }).onFailureFn;
+    expect(onFailure).toBeTypeOf("function");
+
+    await onFailure!({
+      event: {
+        name: "inngest/function.failed",
+        data: {
+          function_id: "send-email",
+          run_id: "run-123",
+          error: { name: "Error", message: "SMTP down" },
+          event: mockEvent,
+        },
+      },
+      error: new Error("SMTP down"),
+      emailRepository: mockRepository,
+      transport: mockTransport,
+      aesKey: "test-aes-key",
+    });
+
+    expect(mockRepository.saveEmailHistory).toHaveBeenCalledTimes(1);
+    expect(mockRepository.saveEmailHistory).toHaveBeenCalledWith(
+      "test-email-id-123",
+      "failed",
+      "SMTP down",
+      5,
+    );
+  });
+
+  it("does not throw when the failure event carries no emailId", async () => {
+    const onFailure = (getSendEmailFunction() as unknown as {
+      onFailureFn?: (ctx: unknown) => Promise<void>;
+    }).onFailureFn;
+
+    await expect(
+      onFailure!({
+        event: { name: "inngest/function.failed", data: { event: { data: {} } } },
+        error: new Error("SMTP down"),
+        emailRepository: mockRepository,
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(mockRepository.saveEmailHistory).not.toHaveBeenCalled();
+  });
 });
