@@ -30,6 +30,27 @@
 			"migrations_pattern": "drizzle/*.sql"
 		}
 	],
+	// HTTP -> Queue -> Inngest. The queue buffers bursts at the edge; the consumer
+	// forwards events to Inngest (retrying with backoff up to max_retries, then the
+	// DLQ). Inngest keeps owning the actual email-send retries (retries: 4).
+	"queues": {
+		"producers": [
+			{
+				"binding": "SEND_EMAIL_QUEUE",
+				"queue": "makisend-send-email"
+			}
+		],
+		"consumers": [
+			{
+				"queue": "makisend-send-email",
+				"max_batch_size": 10,
+				"max_batch_timeout": 5,
+				"max_retries": 3,
+				"retry_delay": 30,
+				"dead_letter_queue": "makisend-send-email-dlq"
+			}
+		]
+	},
 	"env": {
 		"preview": {
 			"name": "makisend-poc-preview",
@@ -44,7 +65,27 @@
 					"migrations_dir": "./drizzle",
 					"migrations_pattern": "drizzle/*.sql"
 				}
-			]
+			],
+			// Separate queue names so preview traffic can never be consumed by the
+			// production worker (which would deliver real emails).
+			"queues": {
+				"producers": [
+					{
+						"binding": "SEND_EMAIL_QUEUE",
+						"queue": "makisend-send-email-preview"
+					}
+				],
+				"consumers": [
+					{
+						"queue": "makisend-send-email-preview",
+						"max_batch_size": 10,
+						"max_batch_timeout": 5,
+						"max_retries": 3,
+						"retry_delay": 30,
+						"dead_letter_queue": "makisend-send-email-dlq-preview"
+					}
+				]
+			}
 		}
 	}
 }

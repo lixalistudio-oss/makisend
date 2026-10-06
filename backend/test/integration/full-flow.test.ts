@@ -9,13 +9,14 @@ import { configMiddleware } from "@/middleware/config.middleware";
 import { apiKeyMiddleware } from "@/middleware/api-key.middleware";
 import { createSendEmailController } from "@/send-email/send-email.controller";
 import { SendEmailRepository } from "@/send-email/send-email.repository";
-import { configureDeps } from "@/inngest/client";
+import { configureDeps, getInngestClient } from "@/inngest/client";
 import { getSendEmailFunction } from "@/inngest/send-email";
+import { sendEmailQueueConsumer } from "@/queue/send-email.consumer";
 import { encrypt, decrypt } from "@/core/crypto";
 import { user, emailLogs, emailHistories, smtpConfig, apikey } from "@/db/schema";
 import { createTestD1, cleanupTestD1 } from "../helpers/d1-setup";
 import type { Bindings, UserInfoVariables } from "@/index";
-import type { Inngest } from "inngest";
+import type { SendEmailQueueMessage } from "@/send-email/send-email.types";
 import type { Miniflare } from "miniflare";
 import type { ISmtpConfigRepository } from "@/smtp-config/smtp-config.types";
 import { eq } from "drizzle-orm";
@@ -36,7 +37,7 @@ describe("POST /send-email — HTTP layer integration", () => {
   let auth: any;
   let testApiKey: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let mockInngestSend: any;
+  let mockQueueSend: any;
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -98,8 +99,7 @@ describe("POST /send-email — HTTP layer integration", () => {
       .set({ smtpConfigId })
       .where(eq(apikey.id, latestKey[0].id));
 
-    mockInngestSend = vi.fn().mockResolvedValue(undefined);
-    const mockInngest = { send: mockInngestSend } as unknown as Inngest;
+    mockQueueSend = vi.fn().mockResolvedValue(undefined);
 
     app = new Hono<AppEnv>();
     app.onError(errorHandler);
@@ -108,7 +108,7 @@ describe("POST /send-email — HTTP layer integration", () => {
       const config = c.get("appConfig");
       await apiKeyMiddleware(config, auth)(c, next);
     });
-    app.route("/send-email", createSendEmailController(() => mockInngest));
+    app.route("/send-email", createSendEmailController());
   });
 
   afterEach(async () => {
@@ -131,6 +131,7 @@ describe("POST /send-email — HTTP layer integration", () => {
       BETTER_AUTH_SECRET: "test-secret-for-integration",
       BETTER_AUTH_URL: "http://localhost:8787",
       FRONTEND_URL: "http://localhost:4321",
+      SEND_EMAIL_QUEUE: { send: mockQueueSend } as unknown as Bindings["SEND_EMAIL_QUEUE"],
     };
   }
 
@@ -148,15 +149,29 @@ describe("POST /send-email — HTTP layer integration", () => {
       expect(json.success).toBe(true);
       expect(json.message).toBe("Email queued");
 
-      expect(mockInngestSend).toHaveBeenCalledTimes(1);
-      const sent = mockInngestSend.mock.calls[0][0] as {
-        name: string;
-        data: Record<string, unknown>;
-      };
-      expect(sent.name).toBe("app/send-email");
-      expect(sent.data.smtpConfigId).toBe("test-smtp-config-001");
-      expect(sent.data.apiKeyId).toBeTruthy();
-      expect(sent.data.emailId).toBeTruthy();
+      expect(mockQueueSend).toHaveBeenCalledTimes(1);
+      const message = mockQueueSend.mock.calls[0][0] as SendEmailQueueMessage;
+      expect(message.name).toBe("app/send-email");
+      expect(message.data.smtpConfigId).toBe("test-smtp-config-001");
+      expect(message.data.apiKeyId).toBeTruthy();
+      expect(message.data.emailId).toBeTruthy();
+
+      // The consumer forwards the buffered message to Inngest exactly once.
+      const clientSendSpy = vi.spyOn(getInngestClient(), "send").mockResolvedValue(undefined as never);
+      try {
+        await sendEmailQueueConsumer({
+          messages: [{ body: message, attempts: 1, ack: vi.fn(), retry: vi.fn() }],
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any);
+
+        expect(clientSendSpy).toHaveBeenCalledTimes(1);
+        expect(clientSendSpy).toHaveBeenCalledWith({
+          ...message,
+          id: message.data.emailId,
+        });
+      } finally {
+        clientSendSpy.mockRestore();
+      }
     });
 
     it("should return 202 with Bearer header", async () => {
@@ -255,6 +270,8 @@ describe("POST /send-email — HTTP layer integration", () => {
         SENDER_EMAIL: "sender@test.com",
         BETTER_AUTH_SECRET: "test-secret-for-integration",
         BETTER_AUTH_URL: "http://localhost:8787",
+        FRONTEND_URL: "http://localhost:4321",
+        SEND_EMAIL_QUEUE: { send: vi.fn().mockRejectedValue(new Error("queue down")) },
       });
 
       expect(res.status).toBeGreaterThanOrEqual(400);

@@ -18,6 +18,7 @@ import { createDashboardController, DashboardRepository, DashboardService } from
 import { configureDeps, getInngestClient } from "@/inngest/client";
 import { getFunctions } from "@/inngest/functions";
 import { serve } from "inngest/hono";
+import { sendEmailQueueConsumer } from "@/queue/send-email.consumer";
 
 // --- Better Auth ---
 import { createAuth } from "@/lib/auth";
@@ -33,7 +34,7 @@ import { pinoLogger } from "@/core/logger";
 
 // --- Type imports ---
 import type { Config, SmtpConfig, UserConfig } from "./config/config";
-import type { IEmailTransport, IEmailRepository } from "@/send-email/send-email.types";
+import type { IEmailTransport, IEmailRepository, SendEmailQueueMessage } from "@/send-email/send-email.types";
 import type { ISmtpConfigRepository } from "@/smtp-config/smtp-config.types";
 import type { IApiKeyRepository } from "@/api-keys/api-keys.types";
 import type { IEmailLogRepository } from "@/email-logs/email-logs.types";
@@ -48,6 +49,7 @@ export type Bindings = {
   BETTER_AUTH_SECRET: string;
   BETTER_AUTH_URL: string;
   FRONTEND_URL: string;
+  SEND_EMAIL_QUEUE: Queue<SendEmailQueueMessage>;
 };
 
 // --- Hono context variables (per-request) ---
@@ -322,8 +324,8 @@ app.use("*", async (c, next) => {
   await next();
 });
 
-// Mount send-email controller — getter resolves at request time
-const sendEmailController = createSendEmailController(() => getInngestClient());
+// Mount send-email controller — produces to the Cloudflare Queue
+const sendEmailController = createSendEmailController();
 app.route("/send-email", sendEmailController);
 
 // Mount SMTP config controller with session auth
@@ -378,4 +380,10 @@ app.on(
   },
 );
 
-export default app;
+// Worker entrypoint: HTTP requests via Hono, queue messages via the consumer.
+// The Hono app is also exported by name so tests can call `app.request(...)`.
+export { app };
+export default {
+  fetch: app.fetch,
+  queue: sendEmailQueueConsumer,
+};

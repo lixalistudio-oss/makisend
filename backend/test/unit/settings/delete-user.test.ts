@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createTestD1, cleanupTestD1 } from "../../helpers/d1-setup";
 import { createDatabase } from "@/db/connection";
 import { emailLogs, smtpConfig, user } from "@/db/schema";
-import app from "@/index";
+import { app } from "@/index";
 import type { Bindings } from "@/index";
 
 const ORIGIN = "http://localhost:4321";

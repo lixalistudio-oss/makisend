@@ -31,3 +31,22 @@ export interface IEmailTransport {
   send(input: EmailInput): Promise<EmailSendResult>;
 }
 
+/**
+ * Payload buffered in the Cloudflare Queue before being forwarded to Inngest.
+ * Mirrors the `app/send-email` event body exactly so the consumer can pass it
+ * straight to `inngest.send()`.
+ */
+export interface SendEmailQueueMessage {
+  name: "app/send-email";
+  data: {
+    to: string;
+    subject: string;
+    text: string;
+    html: string;
+    emailId: string;
+    userId: string;
+    apiKeyId?: string | null;
+    smtpConfigId?: string | null;
+  };
+}
+

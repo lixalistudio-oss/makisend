@@ -148,6 +148,13 @@ jobs:
         run: npx wrangler@4.131.1 d1 migrations apply makisend_db --remote
         working-directory: backend
 
+      # The producer binding must point at an existing queue. `queues create`
+      # fails when the queue already exists, hence `|| true`. The DLQ is
+      # auto-created by Cloudflare when the consumer references it.
+      - name: Ensure send-email queue exists (production)
+        run: npx wrangler@4.131.1 queues create makisend-send-email || true
+        working-directory: backend
+
       - name: Deploy Worker (production)
         id: deploy-worker
         run: |
@@ -362,6 +369,12 @@ jobs:
           else
             echo "::warning::INNGEST_SIGNING_KEY secret is not set in GitHub"
           fi
+        working-directory: backend
+
+      # Preview uses its own queue so preview traffic can never be consumed by
+      # the production worker (which would deliver real emails).
+      - name: Ensure send-email queue exists (preview)
+        run: npx wrangler@4.131.1 queues create makisend-send-email-preview || true
         working-directory: backend
 
       - name: Deploy Worker (preview)

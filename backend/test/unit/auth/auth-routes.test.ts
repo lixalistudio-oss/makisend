@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createTestD1, cleanupTestD1 } from "../../helpers/d1-setup";
-import app from "@/index";
+import { app } from "@/index";
 import type { Bindings } from "@/index";
 
 const BASE_URL = "http://localhost:8787";
