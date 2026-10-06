@@ -67,7 +67,7 @@ CREATE TABLE `email_logs` (
 	`sent_at` text,
 	`email_processing_time` integer,
 	`created_at` text NOT NULL,
-	FOREIGN KEY (`apikey_id`) REFERENCES `apikey`(`id`) ON UPDATE no action ON DELETE no action
+	FOREIGN KEY (`apikey_id`) REFERENCES `apikey`(`id`) ON UPDATE no action ON DELETE set null
 );
 --> statement-breakpoint
 CREATE TABLE `session` (

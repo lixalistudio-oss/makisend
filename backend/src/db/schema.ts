@@ -6,7 +6,9 @@ import { relations, sql } from "drizzle-orm";
 export const emailLogs = sqliteTable("email_logs", {
   internalId: text("internalId").primaryKey().$defaultFn(() => createId()),
   userId : text("user_id").notNull(),
-  apiKeyId: text("apikey_id").references(() => apikey.id),
+  // SET NULL: deleting an API key keeps the send history but unhooks it, so
+  // keys (and SMTP configs via cascade) can always be deleted.
+  apiKeyId: text("apikey_id").references(() => apikey.id, { onDelete: "set null" }),
   to: text("to").notNull(),
   subject: text("subject").notNull(),
   // Nullable: written at enqueue as a pending row, filled in when (and if) the
