@@ -31,7 +31,7 @@ CREATE TABLE `apikey` (
 	`enabled` integer DEFAULT true,
 	`rate_limit_enabled` integer DEFAULT true,
 	`rate_limit_time_window` integer DEFAULT 86400000,
-	`rate_limit_max` integer DEFAULT 10,
+	`rate_limit_max` integer DEFAULT 10000,
 	`request_count` integer DEFAULT 0,
 	`remaining` integer,
 	`last_request` integer,

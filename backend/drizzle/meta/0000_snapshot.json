@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "a5b661d0-6a71-4c09-b939-7bd241854b1d",
+  "id": "bb9f94f4-3b46-4af2-8eed-90844bd18523",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "account": {
@@ -239,7 +239,7 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false,
-          "default": 10
+          "default": 10000
         },
         "request_count": {
           "name": "request_count",

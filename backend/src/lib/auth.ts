@@ -41,6 +41,18 @@ export function createAuth(env: Bindings) {
         secure: true,
       },
     },
-    plugins: [apiKey({ defaultPrefix: "mk_" })],
+    plugins: [
+      apiKey({
+        defaultPrefix: "mk_",
+        // Better-auth defaults to 10 requests per key per day — far too low for
+        // an email API (and it fails with 403, not 429). Keys are stamped with
+        // this value at creation time.
+        rateLimit: {
+          enabled: true,
+          maxRequests: 10000,
+          timeWindow: 1000 * 60 * 60 * 24,
+        },
+      }),
+    ],
   });
 }
