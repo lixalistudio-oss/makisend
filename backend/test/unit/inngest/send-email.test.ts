@@ -39,7 +39,8 @@ describe("sendEmailFunction", () => {
     vi.mocked(cleanHtml).mockImplementation((html: string) => `<p>${html}</p>`);
 
     mockRepository = {
-      saveEmailLog: vi.fn().mockResolvedValue(undefined),
+      createPendingEmailLog: vi.fn().mockResolvedValue(undefined),
+      completeEmailLog: vi.fn().mockResolvedValue(undefined),
       saveEmailHistory: vi.fn().mockResolvedValue(undefined),
     };
 
@@ -92,13 +93,10 @@ describe("sendEmailFunction", () => {
           return { messageId, durationMs: 100 };
         }},
         { id: "save-infos-in-db", handler: async () => {
-          await mockRepository.saveEmailLog(
+          await mockRepository.completeEmailLog(
             "test-email-id-123",
-            "system",
-            "encrypted-value",
-            "Test Subject",
             "<mock-id@gmail.com>",
-            expect.any(String),
+            new Date().toISOString(),
             100,
           );
         }},
@@ -158,7 +156,7 @@ describe("sendEmailFunction", () => {
     });
   });
 
-  it("should save email log with all fields", async () => {
+  it("should complete the email log with delivery details", async () => {
     const t = new InngestTestEngine({
       function: getSendEmailFunction(),
       events: [mockEvent],
@@ -180,11 +178,8 @@ describe("sendEmailFunction", () => {
           durationMs: 100,
         })},
         { id: "save-infos-in-db", handler: async () => {
-          await mockRepository.saveEmailLog(
+          await mockRepository.completeEmailLog(
             "test-email-id-123",
-            "system",
-            "encrypted-value",
-            "Test Subject",
             "<mock-id@gmail.com>",
             new Date().toISOString(),
             100,
@@ -196,11 +191,8 @@ describe("sendEmailFunction", () => {
 
     await t.execute();
 
-    expect(mockRepository.saveEmailLog).toHaveBeenCalledWith(
+    expect(mockRepository.completeEmailLog).toHaveBeenCalledWith(
       "test-email-id-123",
-      "system",
-      "encrypted-value",
-      "Test Subject",
       "<mock-id@gmail.com>",
       expect.any(String),
       expect.any(Number),
@@ -282,5 +274,34 @@ describe("sendEmailFunction", () => {
     expect(resolveTransport).toHaveBeenCalledTimes(1);
     expect(resolveTransport).toHaveBeenCalledWith("smtp-config-123");
     expect(mockTransport.send).toHaveBeenCalled();
+  });
+
+  it("records an attempt_failed history row when SMTP rejects the send", async () => {
+    // No `steps` override: the real step bodies run against the mocked deps.
+    mockTransport.send = vi
+      .fn()
+      .mockRejectedValue(new Error("SMTP down"));
+
+    const t = new InngestTestEngine({
+      function: getSendEmailFunction(),
+      events: [mockEvent],
+      transformCtx: (ctx) => ({
+        ...ctx,
+        transport: mockTransport,
+        emailRepository: mockRepository,
+        aesKey: "test-aes-key",
+      }),
+    });
+
+    await t.execute();
+
+    expect(mockRepository.saveEmailHistory).toHaveBeenCalledWith(
+      "test-email-id-123",
+      "attempt_failed",
+      "SMTP down",
+      1,
+    );
+    // completeEmailLog must NOT run on a failed attempt.
+    expect(mockRepository.completeEmailLog).not.toHaveBeenCalled();
   });
 });

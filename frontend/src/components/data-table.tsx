@@ -19,13 +19,21 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
+interface HistoryEntry {
+  status: string
+  error: string | null
+  attempts: number | null
+  createdAt: string
+}
+
 interface EmailLog {
   internalId: string
   to: string
   subject: string
-  status: string
-  sentAt: string
+  sentAt: string | null
+  createdAt: string
   emailProcessingTimeMs: number | null
+  history: HistoryEntry[]
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -50,13 +58,21 @@ function StatusBadge({ status }: { status: string }) {
       icon: <CircleCheckIcon className="fill-green-500 dark:fill-green-400" />,
       className: "text-green-600",
     },
+    attempt_failed: {
+      icon: <CircleXIcon className="fill-orange-500 dark:fill-orange-400" />,
+      className: "text-orange-600",
+    },
     failed: {
       icon: <CircleXIcon className="fill-red-500 dark:fill-red-400" />,
       className: "text-red-600",
     },
+    unknown: {
+      icon: <LoaderIcon className="size-3" />,
+      className: "text-muted-foreground",
+    },
   }
 
-  const v = variants[status] ?? variants.received
+  const v = variants[status] ?? variants.unknown
 
   return (
     <Badge variant="outline" className={`gap-1 px-1.5 ${v.className}`}>
@@ -104,35 +120,42 @@ export function DataTable() {
             <TableHead>Recipient</TableHead>
             <TableHead>Subject</TableHead>
             <TableHead>Status</TableHead>
-            <TableHead>Sent At</TableHead>
+            <TableHead>Date</TableHead>
             <TableHead className="text-right">Duration</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {logs.map((log) => (
-            <TableRow key={log.internalId}>
-              <TableCell className="font-medium">{log.to}</TableCell>
-              <TableCell className="max-w-[300px] truncate">
-                {log.subject}
-              </TableCell>
-              <TableCell>
-                <StatusBadge status={log.status} />
-              </TableCell>
-              <TableCell>
-                {new Date(log.sentAt).toLocaleDateString("en-US", {
-                  month: "short",
-                  day: "numeric",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </TableCell>
-              <TableCell className="text-right text-muted-foreground">
-                {log.emailProcessingTimeMs
-                  ? `${log.emailProcessingTimeMs}ms`
-                  : "—"}
-              </TableCell>
-            </TableRow>
-          ))}
+          {logs.map((log) => {
+            // Status lives only in history[] — last entry is the latest state.
+            const latestStatus =
+              log.history[log.history.length - 1]?.status ?? "unknown"
+            const sentOrCreated = log.sentAt ?? log.createdAt
+
+            return (
+              <TableRow key={log.internalId}>
+                <TableCell className="font-medium">{log.to}</TableCell>
+                <TableCell className="max-w-[300px] truncate">
+                  {log.subject}
+                </TableCell>
+                <TableCell>
+                  <StatusBadge status={latestStatus} />
+                </TableCell>
+                <TableCell>
+                  {new Date(sentOrCreated).toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </TableCell>
+                <TableCell className="text-right text-muted-foreground">
+                  {log.emailProcessingTimeMs
+                    ? `${log.emailProcessingTimeMs}ms`
+                    : "—"}
+                </TableCell>
+              </TableRow>
+            )
+          })}
         </TableBody>
       </Table>
     </div>

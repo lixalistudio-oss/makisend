@@ -9,6 +9,7 @@ import { configMiddleware } from "@/middleware/config.middleware";
 import { apiKeyMiddleware } from "@/middleware/api-key.middleware";
 import { createSendEmailController } from "@/send-email/send-email.controller";
 import { SendEmailRepository } from "@/send-email/send-email.repository";
+import { createDatabase } from "@/db/connection";
 import { configureDeps, getInngestClient } from "@/inngest/client";
 import { getSendEmailFunction } from "@/inngest/send-email";
 import { sendEmailQueueConsumer } from "@/queue/send-email.consumer";
@@ -32,6 +33,7 @@ describe("POST /send-email — HTTP layer integration", () => {
   let mf: Miniflare;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let db: any;
+  let emailRepository: SendEmailRepository;
   let app: Hono<AppEnv>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let auth: any;
@@ -45,6 +47,7 @@ describe("POST /send-email — HTTP layer integration", () => {
     const testD1 = await createTestD1();
     mf = testD1.mf;
     db = testD1.db;
+    emailRepository = new SendEmailRepository(createDatabase(testD1.d1));
 
     auth = betterAuth({
       database: drizzleAdapter(db, {
@@ -108,7 +111,7 @@ describe("POST /send-email — HTTP layer integration", () => {
       const config = c.get("appConfig");
       await apiKeyMiddleware(config, auth)(c, next);
     });
-    app.route("/send-email", createSendEmailController());
+    app.route("/send-email", createSendEmailController(() => emailRepository));
   });
 
   afterEach(async () => {
@@ -156,13 +159,23 @@ describe("POST /send-email — HTTP layer integration", () => {
       expect(message.data.apiKeyId).toBeTruthy();
       expect(message.data.emailId).toBeTruthy();
 
+      // Enqueue-time pending row exists so failures are listable from the start.
+      const logs = await db.select().from(emailLogs).all();
+      expect(logs.length).toBe(1);
+      expect(logs[0].internalId).toBe(message.data.emailId);
+      expect(logs[0].sentAt).toBeNull();
+      expect(logs[0].createdAt).toBeTruthy();
+
       // The consumer forwards the buffered message to Inngest exactly once.
       const clientSendSpy = vi.spyOn(getInngestClient(), "send").mockResolvedValue(undefined as never);
       try {
-        await sendEmailQueueConsumer({
-          messages: [{ body: message, attempts: 1, ack: vi.fn(), retry: vi.fn() }],
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } as any);
+        await sendEmailQueueConsumer(
+          {
+            messages: [{ body: message, attempts: 1, ack: vi.fn(), retry: vi.fn() }],
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          } as any,
+          mockEnvWithD1(d1),
+        );
 
         expect(clientSendSpy).toHaveBeenCalledTimes(1);
         expect(clientSendSpy).toHaveBeenCalledWith({
@@ -339,6 +352,15 @@ describe("Inngest send-email function — full step execution", () => {
       }),
     });
 
+    // The controller writes this row at enqueue time; simulate it here since
+    // this test invokes the Inngest function directly (no HTTP layer).
+    await realRepository.createPendingEmailLog(
+      emailId,
+      "test-user-id",
+      await encrypt("gedeon@example.com", AES_KEY),
+      "Integration Test",
+    );
+
     const { error } = await engine.execute();
     expect(error).toBeUndefined();
 
@@ -368,6 +390,10 @@ describe("Inngest send-email function — full step execution", () => {
     expect(statuses).toContain("processing");
     expect(statuses).toContain("cleaned");
     expect(statuses).toContain("sent");
+
+    // The successful attempt is recorded so the timeline shows retries on success.
+    const sentEntry = histories.find((h: { status: string }) => h.status === "sent");
+    expect(sentEntry.attempts).toBe(1);
 
     for (const h of histories) {
       expect(h.emailId).toBe(emailId);

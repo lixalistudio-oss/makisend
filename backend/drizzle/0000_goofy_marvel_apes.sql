@@ -53,6 +53,7 @@ CREATE TABLE `email_histories` (
 	`email_id` text NOT NULL,
 	`status` text NOT NULL,
 	`error` text,
+	`attempts` integer,
 	`created_at` text NOT NULL
 );
 --> statement-breakpoint
@@ -62,9 +63,10 @@ CREATE TABLE `email_logs` (
 	`apikey_id` text,
 	`to` text NOT NULL,
 	`subject` text NOT NULL,
-	`smtp_id` text NOT NULL,
-	`sent_at` text NOT NULL,
+	`smtp_id` text,
+	`sent_at` text,
 	`email_processing_time` integer,
+	`created_at` text NOT NULL,
 	FOREIGN KEY (`apikey_id`) REFERENCES `apikey`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint

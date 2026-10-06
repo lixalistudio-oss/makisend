@@ -4,9 +4,10 @@ export interface EmailLogRecord {
   apiKeyId: string | null;
   to: string;
   subject: string;
-  smtpId: string;
-  sentAt: string;
+  smtpId: string | null;
+  sentAt: string | null;
   emailProcessingTimeMs: number | null;
+  createdAt: string;
 }
 
 export interface EmailHistoryRecord {
@@ -14,6 +15,7 @@ export interface EmailHistoryRecord {
   emailId: string;
   status: string;
   error: string | null;
+  attempts: number | null;
   createdAt: string;
 }
 

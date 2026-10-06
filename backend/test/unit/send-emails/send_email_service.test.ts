@@ -37,7 +37,8 @@ describe("SendEmailService", () => {
     };
 
     mockRepository = {
-      saveEmailLog: vi.fn().mockResolvedValue(undefined),
+      createPendingEmailLog: vi.fn().mockResolvedValue(undefined),
+      completeEmailLog: vi.fn().mockResolvedValue(undefined),
       saveEmailHistory: vi.fn().mockResolvedValue(undefined),
     };
 
@@ -63,7 +64,8 @@ describe("SendEmailService", () => {
 
     expect(result.message).toBe("Email successfully dispatched");
     expect(mockTransport.send).toHaveBeenCalledTimes(1);
-    expect(mockRepository.saveEmailLog).toHaveBeenCalledTimes(1);
+    expect(mockRepository.createPendingEmailLog).toHaveBeenCalledTimes(1);
+    expect(mockRepository.completeEmailLog).toHaveBeenCalledTimes(1);
 
     // Verify encrypt is called with the raw recipient and the AES key.
     expect(mockEncryptFn).toHaveBeenCalledWith(
@@ -74,12 +76,17 @@ describe("SendEmailService", () => {
     // The HTML must be sanitized before reaching the transport.
     expect(mockCleanHtmlFn).toHaveBeenCalledWith(inputData.html);
 
-    // saveEmailLog signature: (internalId, userId, encryptedTo, subject, smtpId, sentAt, durationMs)
-    expect(mockRepository.saveEmailLog).toHaveBeenCalledWith(
+    // Pending row: (internalId, userId, encryptedTo, subject)
+    expect(mockRepository.createPendingEmailLog).toHaveBeenCalledWith(
       expect.any(String),
       "system",
       "mocked_encrypted_string_data",
       "Hello",
+    );
+
+    // Completion: (internalId, smtpId, sentAt, durationMs)
+    expect(mockRepository.completeEmailLog).toHaveBeenCalledWith(
+      expect.any(String),
       "mock-smtp-id-12345",
       expect.any(String),
       expect.any(Number),

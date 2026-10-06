@@ -9,9 +9,12 @@ export const emailLogs = sqliteTable("email_logs", {
   apiKeyId: text("apikey_id").references(() => apikey.id),
   to: text("to").notNull(),
   subject: text("subject").notNull(),
-  smtpId: text("smtp_id").notNull(),
-  sentAt: text("sent_at").notNull(),
+  // Nullable: written at enqueue as a pending row, filled in when (and if) the
+  // email is actually delivered. Failed sends keep smtp_id/sent_at as NULL.
+  smtpId: text("smtp_id"),
+  sentAt: text("sent_at"),
   emailProcessingTimeMs: integer("email_processing_time"),
+  createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
 });
 
 export const emailHistories = sqliteTable("email_histories", {
@@ -19,6 +22,7 @@ export const emailHistories = sqliteTable("email_histories", {
   emailId: text("email_id").notNull(),
   status: text("status").notNull(),
   error: text("error"),
+  attempts: integer("attempts"),
   createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
 });
 

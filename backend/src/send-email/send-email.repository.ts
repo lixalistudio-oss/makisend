@@ -1,18 +1,16 @@
 import { emailLogs, emailHistories } from "@/db/schema";
 import type { Database } from "@/db/connection";
 import type { IEmailRepository } from "./send-email.types";
+import { eq } from "drizzle-orm";
 
 export class SendEmailRepository implements IEmailRepository {
   constructor(private readonly db: Database) {}
 
-  async saveEmailLog(
-    internalId : string,
+  async createPendingEmailLog(
+    internalId: string,
     userId: string,
     to: string,
     subject: string,
-    smtpId: string,
-    sentAt: string,
-    emailProcessingTimeMs: number,
     apiKeyId?: string | null,
   ): Promise<void> {
     await this.db.insert(emailLogs).values({
@@ -21,20 +19,33 @@ export class SendEmailRepository implements IEmailRepository {
       apiKeyId: apiKeyId || null,
       to,
       subject,
-      smtpId,
-      sentAt,
-      emailProcessingTimeMs,
+      // smtp_id / sent_at remain NULL until completeEmailLog() runs
     });
   }
+
+  async completeEmailLog(
+    internalId: string,
+    smtpId: string,
+    sentAt: string,
+    emailProcessingTimeMs: number,
+  ): Promise<void> {
+    await this.db
+      .update(emailLogs)
+      .set({ smtpId, sentAt, emailProcessingTimeMs })
+      .where(eq(emailLogs.internalId, internalId));
+  }
+
   async saveEmailHistory(
     emailId: string,
     status: string,
     error?: string,
+    attempts?: number,
   ): Promise<void> {
     await this.db.insert(emailHistories).values({
       emailId,
       status,
       error: error || null,
+      attempts: attempts ?? null,
     });
   }
 }

@@ -45,6 +45,7 @@ import { fetchApi } from "@/lib/api"
 interface HistoryEntry {
   status: string
   error: string | null
+  attempts: number | null
   createdAt: string
 }
 
@@ -52,8 +53,9 @@ interface EmailLog {
   internalId: string
   to: string
   subject: string
-  smtpId: string
-  sentAt: string
+  smtpId: string | null
+  sentAt: string | null
+  createdAt: string
   emailProcessingTimeMs: number | null
   history: HistoryEntry[]
 }
@@ -68,11 +70,13 @@ const statusConfig: Record<string, { color: string; icon: React.ReactNode }> = {
   processing: { color: "text-yellow-600 bg-yellow-50", icon: <LoaderIcon className="size-3 animate-spin" /> },
   cleaned: { color: "text-indigo-600 bg-indigo-50", icon: <CircleCheckIcon className="size-3" /> },
   sent: { color: "text-green-600 bg-green-50", icon: <CircleCheckIcon className="fill-green-500 size-3" /> },
+  attempt_failed: { color: "text-orange-600 bg-orange-50", icon: <CircleXIcon className="fill-orange-500 size-3" /> },
   failed: { color: "text-red-600 bg-red-50", icon: <CircleXIcon className="fill-red-500 size-3" /> },
+  unknown: { color: "text-muted-foreground bg-muted", icon: <LoaderIcon className="size-3" /> },
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const config = statusConfig[status] ?? statusConfig.received
+  const config = statusConfig[status] ?? statusConfig.unknown
   return (
     <Badge variant="outline" className={`gap-1 px-1.5 ${config.color}`}>
       {config.icon}
@@ -89,7 +93,8 @@ function formatTime(dateStr: string) {
   })
 }
 
-function formatDate(dateStr: string) {
+function formatDate(dateStr: string | null | undefined) {
+  if (!dateStr) return "—"
   return new Date(dateStr).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
@@ -172,7 +177,7 @@ export function EmailLogsLayout() {
               />
             </div>
             <Button variant="outline" onClick={handleSearch}>Search</Button>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <Select value={statusFilter} onValueChange={(v) => v && setStatusFilter(v)}>
               <SelectTrigger className="w-[140px]">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
@@ -185,7 +190,7 @@ export function EmailLogsLayout() {
                 <SelectItem value="failed">Failed</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={configFilter} onValueChange={setConfigFilter}>
+            <Select value={configFilter} onValueChange={(v) => v && setConfigFilter(v)}>
               <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="SMTP Config" />
               </SelectTrigger>
@@ -205,7 +210,7 @@ export function EmailLogsLayout() {
                   <TableHead>Recipient</TableHead>
                   <TableHead>Subject</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Sent At</TableHead>
+                  <TableHead>Date</TableHead>
                   <TableHead className="text-right">Duration</TableHead>
                 </TableRow>
               </TableHeader>
@@ -236,7 +241,7 @@ export function EmailLogsLayout() {
                         <TableCell>
                           <StatusBadge status={latestStatus} />
                         </TableCell>
-                        <TableCell>{formatDate(log.sentAt)}</TableCell>
+                        <TableCell>{formatDate(log.sentAt ?? log.createdAt)}</TableCell>
                         <TableCell className="text-right text-muted-foreground">
                           {log.emailProcessingTimeMs ? `${log.emailProcessingTimeMs}ms` : "—"}
                         </TableCell>
@@ -248,7 +253,11 @@ export function EmailLogsLayout() {
             </Table>
           </div>
 
-          <Drawer open={drawerOpen} onOpenChange={setDrawerOpen} direction={isMobile ? "bottom" : "right"}>
+          <Drawer
+            open={drawerOpen}
+            onOpenChange={setDrawerOpen}
+            swipeDirection={isMobile ? "down" : "right"}
+          >
             <DrawerContent>
               {selectedLog && (
                 <>
@@ -262,9 +271,17 @@ export function EmailLogsLayout() {
                       <span>{selectedLog.emailProcessingTimeMs ? `${selectedLog.emailProcessingTimeMs}ms` : "—"}</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Sent At</span>
-                      <span>{formatDate(selectedLog.sentAt)}</span>
+                      <span className="text-muted-foreground">
+                        {selectedLog.sentAt ? "Sent At" : "Queued At"}
+                      </span>
+                      <span>{formatDate(selectedLog.sentAt ?? selectedLog.createdAt)}</span>
                     </div>
+                    {selectedLog.smtpId && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">SMTP ID</span>
+                        <span className="max-w-[60%] truncate font-mono text-xs">{selectedLog.smtpId}</span>
+                      </div>
+                    )}
                     <div className="border-t pt-4">
                       <h4 className="font-medium mb-3">Email Timeline</h4>
                       <div className="relative ml-2 border-l-2 border-muted pl-4">
@@ -275,6 +292,11 @@ export function EmailLogsLayout() {
                               <div className="flex items-center gap-2">
                                 <StatusBadge status={entry.status} />
                                 <span className="text-xs text-muted-foreground">{formatTime(entry.createdAt)}</span>
+                                {entry.attempts != null && entry.attempts > 0 && (
+                                  <span className="text-xs text-muted-foreground">
+                                    attempt {entry.attempts}
+                                  </span>
+                                )}
                               </div>
                               {entry.error && (
                                 <p className="text-xs text-destructive">{entry.error}</p>

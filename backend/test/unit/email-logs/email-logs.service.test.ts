@@ -27,8 +27,16 @@ const mockLog: EmailLogWithHistory = {
   smtpId: "smtp-123",
   sentAt: new Date().toISOString(),
   emailProcessingTimeMs: 150,
+  createdAt: new Date().toISOString(),
   history: [
-    { id: "h1", emailId: LOG_ID, status: "sent", error: null, createdAt: new Date().toISOString() },
+    {
+      id: "h1",
+      emailId: LOG_ID,
+      status: "sent",
+      error: null,
+      attempts: null,
+      createdAt: new Date().toISOString(),
+    },
   ],
 };
 

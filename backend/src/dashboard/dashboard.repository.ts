@@ -9,12 +9,13 @@ export class DashboardRepository implements IDashboardRepository {
   async getStats(userId: string, days?: number): Promise<DashboardStats> {
     const since = days ? this.getSinceDate(days) : undefined;
 
+    // Ordered by created_at (not sent_at): failed/pending emails have sent_at NULL.
     const logs = await this.db
       .select({ internalId: emailLogs.internalId })
       .from(emailLogs)
       .where(
         since
-          ? and(eq(emailLogs.userId, userId), gte(emailLogs.sentAt, since))
+          ? and(eq(emailLogs.userId, userId), gte(emailLogs.createdAt, since))
           : eq(emailLogs.userId, userId),
       );
 
@@ -56,7 +57,7 @@ export class DashboardRepository implements IDashboardRepository {
       .from(emailLogs)
       .where(
         since
-          ? and(sql`${emailLogs.apiKeyId} IN ${keyIds}`, gte(emailLogs.sentAt, since))
+          ? and(sql`${emailLogs.apiKeyId} IN ${keyIds}`, gte(emailLogs.createdAt, since))
           : sql`${emailLogs.apiKeyId} IN ${keyIds}`,
       );
 
@@ -104,16 +105,19 @@ export class DashboardRepository implements IDashboardRepository {
       .select()
       .from(emailLogs)
       .where(eq(emailLogs.userId, userId))
-      .orderBy(desc(emailLogs.sentAt))
+      .orderBy(desc(emailLogs.createdAt))
       .limit(limit || 20);
 
     const result: RecentEmail[] = [];
 
     for (const log of logs) {
+      // Latest history entry wins — the old query returned the FIRST row
+      // (usually "received"), so every badge showed the wrong status.
       const history = await this.db
         .select({ status: emailHistories.status })
         .from(emailHistories)
         .where(eq(emailHistories.emailId, log.internalId))
+        .orderBy(desc(emailHistories.createdAt))
         .limit(1);
 
       result.push({
@@ -121,7 +125,7 @@ export class DashboardRepository implements IDashboardRepository {
         to: log.to,
         subject: log.subject,
         status: history[0]?.status || "unknown",
-        sentAt: log.sentAt,
+        sentAt: log.sentAt ?? log.createdAt,
         emailProcessingTimeMs: log.emailProcessingTimeMs,
       });
     }
@@ -132,13 +136,13 @@ export class DashboardRepository implements IDashboardRepository {
   async getErrors(userId: string, days?: number, limit?: number): Promise<ErrorSummary[]> {
     const since = days ? this.getSinceDate(days) : undefined;
 
-    // Get logs for this user
+    // Get logs for this user (failed emails have sent_at NULL, so filter on created_at)
     const logs = await this.db
       .select({ internalId: emailLogs.internalId })
       .from(emailLogs)
       .where(
         since
-          ? and(eq(emailLogs.userId, userId), gte(emailLogs.sentAt, since))
+          ? and(eq(emailLogs.userId, userId), gte(emailLogs.createdAt, since))
           : eq(emailLogs.userId, userId),
       );
 

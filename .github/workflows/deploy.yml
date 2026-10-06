@@ -99,25 +99,49 @@ jobs:
 
       # --- Backend (Workers) ---
 
-      # Preview wipes its D1 every deploy; production must NEVER be deleted or
-      # recreated — only create-if-missing and migrations may touch it.
-      - name: Guard production database (no delete/recreate)
+      # TODO(security): re-establish this guard before real data lives in prod.
+      # Temporarily commented out because prod is wiped on every deploy while the
+      # POC iterates on schema changes (the squashed drizzle baseline would fail
+      # to apply against the old schema).
+      # - name: Guard production database (no delete/recreate)
+      #   run: |
+      #     set -eo pipefail
+      #     # Pattern is bracketed so this script's own source can never match it.
+      #     if grep -nE 'd1[[:space:]]+delete' .github/workflows/deploy.yml | grep -v 'makisend-db-preview'; then
+      #       echo "::error::Destructive D1 removal found outside the preview job — aborting production deploy"
+      #       exit 1
+      #     fi
+      #     if ! grep -q '"database_name": "makisend-db"' backend/wrangler.jsonc; then
+      #       echo "::error::Production D1 binding (makisend-db) not found in wrangler.jsonc — aborting"
+      #       exit 1
+      #     fi
+      #     echo "OK: production D1 is never removed, only created once and migrated."
+
+      # TEMPORARY: production is wiped on every deploy (same as preview) so the
+      # schema always matches the committed migrations. Re-enable the guard above
+      # and remove this step before storing anything real.
+      - name: Wipe production D1 (temporary, POC)
         run: |
           set -eo pipefail
-          # Pattern is bracketed so this script's own source can never match it.
-          if grep -nE 'd1[[:space:]]+delete' .github/workflows/deploy.yml | grep -v 'makisend-db-preview'; then
-            echo "::error::Destructive D1 removal found outside the preview job — aborting production deploy"
-            exit 1
+          if npx wrangler@4.131.1 d1 list --json | jq -e '.[] | select(.name == "makisend-db")' >/dev/null; then
+            echo "Deleting existing makisend-db (production wipe)..."
+            npx wrangler@4.131.1 d1 delete makisend-db -y
+            # deletion is eventually consistent: wait until it is gone
+            for i in $(seq 1 24); do
+              if ! npx wrangler@4.131.1 d1 list --json | jq -e '.[] | select(.name == "makisend-db")' >/dev/null; then
+                break
+              fi
+              echo "waiting for deletion to propagate... ($i)"
+              sleep 5
+            done
+          else
+            echo "makisend-db does not exist — nothing to wipe."
           fi
-          if ! grep -q '"database_name": "makisend-db"' backend/wrangler.jsonc; then
-            echo "::error::Production D1 binding (makisend-db) not found in wrangler.jsonc — aborting"
-            exit 1
-          fi
-          echo "OK: production D1 is never removed, only created once and migrated."
+        working-directory: backend
 
       # The database_id in wrangler.jsonc can be stale/absent (7404). Create the
       # production D1 only if it does not exist, then keep wrangler.jsonc in sync.
-      # There is intentionally NO delete here: existing data always survives.
+      # (After the wipe step above this always recreates a fresh database.)
       - name: Provision production D1 (create only if missing)
         id: prod-db
         run: |

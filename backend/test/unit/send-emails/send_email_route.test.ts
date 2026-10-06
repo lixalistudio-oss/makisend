@@ -5,28 +5,42 @@ import { errorHandler } from "@/middleware/error.handler";
 import { createSendEmailController } from "@/send-email/send-email.controller";
 import type { SendEmailQueueMessage } from "@/send-email/send-email.types";
 
+const AES_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
 const queueEnv = (send: ReturnType<typeof vi.fn>) => ({
   SEND_EMAIL_QUEUE: { send },
+  AES_256_KEY: AES_KEY,
 });
 
 function buildApp() {
   const mockQueueSend = vi.fn().mockResolvedValue(undefined);
 
+  const mockRepository = {
+    createPendingEmailLog: vi.fn().mockResolvedValue(undefined),
+    completeEmailLog: vi.fn().mockResolvedValue(undefined),
+    saveEmailHistory: vi.fn().mockResolvedValue(undefined),
+  };
+
   const app = new Hono();
   app.onError(errorHandler);
-  app.route("/send-email", createSendEmailController());
-  return { app, mockQueueSend };
+  app.route(
+    "/send-email",
+    createSendEmailController(() => mockRepository),
+  );
+  return { app, mockQueueSend, mockRepository };
 }
 
 describe("SendEmailController", () => {
   let app: Hono;
   let mockQueueSend: ReturnType<typeof vi.fn>;
+  let mockRepository: ReturnType<typeof buildApp>["mockRepository"];
 
   beforeEach(() => {
     vi.clearAllMocks();
     const built = buildApp();
     app = built.app;
     mockQueueSend = built.mockQueueSend;
+    mockRepository = built.mockRepository;
   });
 
   describe("POST /send-email", () => {
@@ -44,6 +58,19 @@ describe("SendEmailController", () => {
 
       expect(res.status).toBe(202);
       expect(mockQueueSend).toHaveBeenCalledTimes(1);
+
+      // Pending row is written before the queue send.
+      expect(mockRepository.createPendingEmailLog).toHaveBeenCalledTimes(1);
+      expect(
+        mockRepository.createPendingEmailLog.mock.invocationCallOrder[0],
+      ).toBeLessThan(mockQueueSend.mock.invocationCallOrder[0]);
+      expect(mockRepository.createPendingEmailLog).toHaveBeenCalledWith(
+        expect.any(String),
+        undefined,
+        expect.any(String),
+        "Testing Feature Modules",
+        undefined,
+      );
 
       const message = mockQueueSend.mock.calls[0][0] as SendEmailQueueMessage;
       expect(message.name).toBe("app/send-email");
@@ -70,6 +97,13 @@ describe("SendEmailController", () => {
 
       expect(res.status).toBe(500);
       expect(mockQueueSend).toHaveBeenCalledTimes(1);
+
+      // The enqueue failure is recorded so the dashboard shows it.
+      expect(mockRepository.saveEmailHistory).toHaveBeenCalledWith(
+        expect.any(String),
+        "failed",
+        "Failed to enqueue: queue unavailable",
+      );
     });
 
     it("should return 400 when payload is invalid", async () => {

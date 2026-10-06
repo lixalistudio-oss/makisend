@@ -10,20 +10,29 @@ export interface EmailSendResult {
 }
 
 export interface IEmailRepository {
-  saveEmailLog(
-    internalId : string,///23
+  /**
+   * Inserts the log row at enqueue time (smtp_id/sent_at stay NULL until the
+   * email is actually delivered). This is what makes failed sends listable.
+   */
+  createPendingEmailLog(
+    internalId: string,
     userId: string,
     to: string,
     subject: string,
+    apiKeyId?: string | null,
+  ): Promise<void>;
+  /** Fills in delivery details once the SMTP send succeeds. */
+  completeEmailLog(
+    internalId: string,
     smtpId: string,
     sentAt: string,
     emailProcessingTimeMs: number,
-    apiKeyId?: string | null,
   ): Promise<void>;
   saveEmailHistory(
     emailId: string,
     status: string,
     error?: string,
+    attempts?: number,
   ): Promise<void>;
 }
 

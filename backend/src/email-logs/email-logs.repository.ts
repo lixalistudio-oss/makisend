@@ -29,7 +29,7 @@ export class EmailLogRepository implements IEmailLogRepository {
             // Filter by apiKeyId — we need to check each one
           ),
         )
-        .orderBy(desc(emailLogs.sentAt));
+        .orderBy(desc(emailLogs.createdAt));
 
       // Filter by apiKeyId in JS since Drizzle doesn't support IN easily with typed arrays
       const filteredLogs = logs.filter((log) => apiKeyIds.includes(log.apiKeyId || ""));
@@ -41,7 +41,7 @@ export class EmailLogRepository implements IEmailLogRepository {
       .select()
       .from(emailLogs)
       .where(eq(emailLogs.userId, userId))
-      .orderBy(desc(emailLogs.sentAt));
+      .orderBy(desc(emailLogs.createdAt));
 
     return this.attachHistory(logs, filters);
   }
@@ -109,6 +109,7 @@ export class EmailLogRepository implements IEmailLogRepository {
       smtpId: row.smtpId,
       sentAt: row.sentAt,
       emailProcessingTimeMs: row.emailProcessingTimeMs,
+      createdAt: row.createdAt,
     };
   }
 
@@ -119,6 +120,7 @@ export class EmailLogRepository implements IEmailLogRepository {
       emailId: row.emailId,
       status: row.status,
       error: row.error,
+      attempts: row.attempts,
       createdAt: row.createdAt,
     };
   }

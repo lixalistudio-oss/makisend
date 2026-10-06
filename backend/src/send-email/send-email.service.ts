@@ -25,6 +25,14 @@ export class SendEmailService {
       const cleanedHtml = cleanHtml(data.html);
       const encryptedReceiver = await encrypt(data.to, this.aesKey);
 
+      // Pending row first so a failed send is still listable (see controller).
+      await this.emailRepository.createPendingEmailLog(
+        emailId,
+        "system",
+        encryptedReceiver,
+        data.subject,
+      );
+
       const { messageId } = await this.emailTransport.send({
         to: data.to,
         subject: data.subject,
@@ -39,11 +47,8 @@ export class SendEmailService {
         "Email successfully dispatched",
       );
 
-      await this.emailRepository.saveEmailLog(
+      await this.emailRepository.completeEmailLog(
         emailId,
-        "system",
-        encryptedReceiver,
-        data.subject,
         messageId,
         new Date().toISOString(),
         durationMs,

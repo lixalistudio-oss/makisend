@@ -325,7 +325,7 @@ app.use("*", async (c, next) => {
 });
 
 // Mount send-email controller — produces to the Cloudflare Queue
-const sendEmailController = createSendEmailController();
+const sendEmailController = createSendEmailController(() => deps.emailRepository!);
 app.route("/send-email", sendEmailController);
 
 // Mount SMTP config controller with session auth

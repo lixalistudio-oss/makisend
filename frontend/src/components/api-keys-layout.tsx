@@ -219,14 +219,15 @@ export function ApiKeysLayout() {
                       <Select
                         value={selectedConfigId}
                         onValueChange={(value) => {
-                          const alreadyUsed = keys.some((k) => k.smtpConfigId === value)
+                          const next = value ?? ""
+                          const alreadyUsed = keys.some((k) => k.smtpConfigId === next)
                           if (alreadyUsed) {
                             setConfigError("This SMTP config already has an API key linked.")
                             setSelectedConfigId("")
                             setTimeout(() => setConfigError(""), 3000)
                           } else {
                             setConfigError("")
-                            setSelectedConfigId(value)
+                            setSelectedConfigId(next)
                           }
                         }}
                       >
