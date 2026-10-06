@@ -4,7 +4,7 @@ import { cleanHtml } from "@/core/html-sanitizer";
 import { pinoLogger } from "@/core/logger";
 import { createId } from "@paralleldrive/cuid2";
 import type {
-  IEmailRepository,
+  IEmailRepository,//
   IEmailTransport,
   EmailInput,
 } from "./send-email.types";
