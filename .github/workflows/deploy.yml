@@ -76,6 +76,9 @@ jobs:
       contents: read
       deployments: write
       pull-requests: write
+      # PR conversation comments are issue comments: without this the bot's
+      # comment call can 403 and the deploy link never shows up.
+      issues: write
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -264,7 +267,10 @@ jobs:
 
       # Prod deploys on every push (any branch). If that branch has an open PR,
       # tell the reviewer where the production build is live.
+      # Runs even when an earlier step failed so the PR always gets the link.
       - name: Comment production URL on PR
+        if: ${{ !cancelled() }}
+        continue-on-error: true
         uses: actions/github-script@v7
         env:
           WORKER_URL: ${{ steps.deploy-worker.outputs.url }}
@@ -336,6 +342,9 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      # PR conversation comments are issue comments: without this the bot's
+      # comment call can 403 and the deploy link never shows up.
+      issues: write
     environment:
       name: preview
     env:
@@ -365,29 +374,66 @@ jobs:
       # always matches the committed migrations. Editing an already-applied migration
       # file is never re-run by `d1 migrations apply`, which left this DB stale and
       # broke sign-up (422 FAILED_TO_CREATE_USER).
+      #
+      # Deletion is eventually consistent: a delete that answers 7404 ("could not be
+      # found") means an earlier wipe already removed it — that is NOT a failure.
+      # This step must never be the reason the job dies, because the PR comment
+      # step runs last and would never post the preview link.
       - name: Recreate preview D1 (fresh database on every deploy)
         id: create-db
         run: |
           set -eo pipefail
-          if npx wrangler@4.131.1 d1 list --json | jq -e '.[] | select(.name == "makisend-db-preview")' >/dev/null; then
-            echo "Deleting existing makisend-db-preview..."
-            npx wrangler@4.131.1 d1 delete makisend-db-preview -y
-            # deletion is eventually consistent: wait until it is gone
-            for i in $(seq 1 24); do
-              if ! npx wrangler@4.131.1 d1 list --json | jq -e '.[] | select(.name == "makisend-db-preview")' >/dev/null; then
-                break
-              fi
-              echo "waiting for deletion to propagate... ($i)"
-              sleep 5
-            done
-          fi
-          echo "Creating makisend-db-preview..."
-          npx wrangler@4.131.1 d1 create makisend-db-preview
-          DB_ID=$(npx wrangler@4.131.1 d1 list --json | jq -r '.[] | select(.name == "makisend-db-preview") | .uuid')
-          if [ -z "$DB_ID" ]; then
-            echo "Failed to resolve makisend-db-preview UUID" >&2
+
+          list_id() {
+            npx wrangler@4.131.1 d1 list --json 2>/dev/null \
+              | jq -r '.[] | select(.name == "makisend-db-preview") | .uuid' \
+              | head -n1 || true
+          }
+          id_exists() {
+            npx wrangler@4.131.1 d1 info "$1" --json >/dev/null 2>&1
+          }
+
+          # --- 1. Make sure the name "makisend-db-preview" is free ------------
+          for i in $(seq 1 6); do
+            ID=$(list_id)
+            if [ -z "$ID" ] || [ "$ID" = "null" ]; then
+              echo "makisend-db-preview name is free."
+              break
+            fi
+            if id_exists "$ID"; then
+              echo "Deleting makisend-db-preview ($ID)... attempt $i"
+              npx wrangler@4.131.1 d1 delete "$ID" -y || true
+            else
+              echo "Listed id $ID is already gone (stale list, 7404) — waiting for it to disappear... ($i)"
+            fi
+            sleep 5
+          done
+
+          # --- 2. Create a brand new preview database -------------------------
+          DB_ID=$(list_id)
+          if [ -n "$DB_ID" ] && [ "$DB_ID" != "null" ]; then
+            echo "::error::makisend-db-preview ($DB_ID) still exists after purge — cannot create a fresh database"
             exit 1
           fi
+
+          echo "Creating makisend-db-preview..."
+          npx wrangler@4.131.1 d1 create makisend-db-preview
+
+          DB_ID=""
+          for i in $(seq 1 12); do
+            CAND=$(list_id)
+            if [ -n "$CAND" ] && [ "$CAND" != "null" ] && id_exists "$CAND"; then
+              DB_ID="$CAND"
+              break
+            fi
+            echo "waiting for the new database to be reachable... ($i)"
+            sleep 5
+          done
+          if [ -z "$DB_ID" ]; then
+            echo "::error::Could not resolve the freshly created makisend-db-preview uuid"
+            exit 1
+          fi
+
           echo "db_id=$DB_ID" >> "$GITHUB_OUTPUT"
           echo "Created preview D1: $DB_ID"
         working-directory: backend
@@ -461,8 +507,11 @@ jobs:
         working-directory: backend
 
       # --- Comment preview URLs on PR ---
-
+      # Always runs (even when an earlier step failed) so the PR never ends up
+      # without a link. The comment is posted/updated by github-actions[bot].
       - name: Comment preview URLs on PR
+        if: ${{ !cancelled() }}
+        continue-on-error: true
         uses: actions/github-script@v7
         env:
           WORKER_URL: ${{ steps.deploy-worker.outputs.url }}
@@ -471,22 +520,34 @@ jobs:
           script: |
             const marker = '<!-- cf-preview -->';
             const branch = context.payload.pull_request.head.ref;
-            const workerUrl = process.env.WORKER_URL;
-            const pagesUrl = process.env.PAGES_URL;
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const workerUrl = process.env.WORKER_URL || '';
+            const pagesUrl = process.env.PAGES_URL || '';
+            const failed = '⚠️ not deployed — [open the run](' + runUrl + ')';
+            const cell = (u) => (u ? `[${u}](${u})` : failed);
+            const prodFrontend = 'https://makisend.pages.dev';
+
             const body = [
               marker,
               '### 🔍 Preview Deployment',
               '',
               '| Service | URL |',
               '|---------|-----|',
-              `| **Frontend** (Pages) | ${pagesUrl} |`,
-              `| **Backend** (Workers) | ${workerUrl} |`,
+              `| **Frontend** (Pages) | ${cell(pagesUrl)} |`,
+              `| **Backend** (Workers) | ${cell(workerUrl)} |`,
               '',
-              `Branch \`${branch}\` — updates on each push.`,
+              '| Production | URL |',
+              '|------------|-----|',
+              `| **Frontend** | [${prodFrontend}](${prodFrontend}) |`,
+              '',
+              `Branch \`${branch}\` — preview updates on each push.`,
+              `Last run: [${context.runId}](${runUrl})`,
             ].join('\n');
+
             const { data: comments } = await github.rest.issues.listComments({
               ...context.repo,
               issue_number: context.issue.number,
+              per_page: 100,
             });
             const existing = comments.find(
               (c) => c.user?.type === 'Bot' && c.body?.includes(marker),
@@ -497,10 +558,12 @@ jobs:
                 comment_id: existing.id,
                 body,
               });
+              core.info(`Updated existing bot comment ${existing.id}`);
             } else {
               await github.rest.issues.createComment({
                 ...context.repo,
                 issue_number: context.issue.number,
                 body,
               });
+              core.info('Created new bot comment');
             }
