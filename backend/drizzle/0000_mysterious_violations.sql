@@ -57,6 +57,7 @@ CREATE TABLE `email_histories` (
 	`created_at` text NOT NULL
 );
 --> statement-breakpoint
+CREATE INDEX `emailHistories_emailId_createdAt_idx` ON `email_histories` (`email_id`,`created_at`);--> statement-breakpoint
 CREATE TABLE `email_logs` (
 	`internalId` text PRIMARY KEY NOT NULL,
 	`user_id` text NOT NULL,
@@ -70,6 +71,8 @@ CREATE TABLE `email_logs` (
 	FOREIGN KEY (`apikey_id`) REFERENCES `apikey`(`id`) ON UPDATE no action ON DELETE set null
 );
 --> statement-breakpoint
+CREATE INDEX `emailLogs_userId_createdAt_idx` ON `email_logs` (`user_id`,`created_at`);--> statement-breakpoint
+CREATE INDEX `emailLogs_apiKeyId_idx` ON `email_logs` (`apikey_id`);--> statement-breakpoint
 CREATE TABLE `session` (
 	`id` text PRIMARY KEY NOT NULL,
 	`expires_at` integer NOT NULL,

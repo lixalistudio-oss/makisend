@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Toaster } from "sonner"
 import { toast } from "sonner"
 import { AppSidebar } from "@/components/app-sidebar"
@@ -25,19 +25,71 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { KeyIcon } from "lucide-react"
+import { fetchApi } from "@/lib/api"
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+async function readErrorMessage(res: Response, fallback: string): Promise<string> {
+  const data = await res.json().catch(() => null)
+  return data?.message || data?.error || fallback
+}
 
 export function SettingsLayout() {
-  const [email, setEmail] = useState("test@example.com")
+  const [email, setEmail] = useState("")
   const [currentPassword, setCurrentPassword] = useState("")
   const [newPassword, setNewPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
+  const [deletePassword, setDeletePassword] = useState("")
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [savingPassword, setSavingPassword] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
-  const handleSaveProfile = () => {
-    toast.success("Profile updated successfully")
+  useEffect(() => {
+    fetchApi("/api/auth/get-session")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        const user = data?.data?.user ?? data?.user
+        if (user?.email) setEmail(user.email)
+      })
+      .catch(() => {})
+  }, [])
+
+  const handleSaveProfile = async () => {
+    const target = email.trim()
+
+    if (!EMAIL_RE.test(target)) {
+      toast.error("Enter a valid email address, e.g. name@example.com")
+      return
+    }
+
+    setSavingProfile(true)
+    try {
+      const res = await fetchApi("/api/auth/change-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newEmail: target }),
+      })
+
+      if (!res.ok) {
+        toast.error(await readErrorMessage(res, "Could not update the email address"))
+        return
+      }
+
+      setEmail(target)
+      toast.success("Email address updated")
+    } catch {
+      toast.error("Network error. Please try again.")
+    } finally {
+      setSavingProfile(false)
+    }
   }
 
-  const handleChangePassword = () => {
+  const handleChangePassword = async () => {
+    if (!currentPassword) {
+      toast.error("Enter your current password")
+      return
+    }
     if (newPassword !== confirmPassword) {
       toast.error("Passwords do not match")
       return
@@ -46,10 +98,58 @@ export function SettingsLayout() {
       toast.error("Password must be at least 8 characters")
       return
     }
-    toast.success("Password changed successfully")
-    setCurrentPassword("")
-    setNewPassword("")
-    setConfirmPassword("")
+
+    setSavingPassword(true)
+    try {
+      const res = await fetchApi("/api/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      })
+
+      if (!res.ok) {
+        toast.error(await readErrorMessage(res, "Could not change the password"))
+        return
+      }
+
+      toast.success("Password changed successfully")
+      setCurrentPassword("")
+      setNewPassword("")
+      setConfirmPassword("")
+    } catch {
+      toast.error("Network error. Please try again.")
+    } finally {
+      setSavingPassword(false)
+    }
+  }
+
+  const handleDeleteAccount = async () => {
+    if (!deletePassword) {
+      toast.error("Enter your current password to confirm deletion")
+      return
+    }
+
+    setDeleting(true)
+    try {
+      const res = await fetchApi("/api/auth/delete-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: deletePassword }),
+      })
+
+      if (!res.ok) {
+        toast.error(await readErrorMessage(res, "Could not delete the account"))
+        return
+      }
+
+      setDeleteOpen(false)
+      toast.success("Account deleted")
+      window.location.href = "/login"
+    } catch {
+      toast.error("Network error. Please try again.")
+    } finally {
+      setDeleting(false)
+    }
   }
 
   return (
@@ -70,22 +170,33 @@ export function SettingsLayout() {
           <Card>
             <CardHeader>
               <div>
-                <CardTitle>Profile</CardTitle>
-                <CardDescription>Update your personal information.</CardDescription>
+                <CardTitle>Email</CardTitle>
+                <CardDescription>
+                  The email address you sign in with. Expects an email address.
+                </CardDescription>
               </div>
             </CardHeader>
             <CardContent>
               <FieldGroup className="gap-4">
                 <Field>
-                  <FieldLabel htmlFor="email">Email</FieldLabel>
+                  <FieldLabel htmlFor="email">Email address</FieldLabel>
                   <Input
                     id="email"
+                    type="email"
+                    autoComplete="email"
+                    placeholder="name@example.com"
+                    required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                   />
+                  <FieldDescription>
+                    Must be a valid email address, e.g. name@example.com.
+                  </FieldDescription>
                 </Field>
                 <div>
-                  <Button onClick={handleSaveProfile}>Save Changes</Button>
+                  <Button onClick={handleSaveProfile} disabled={savingProfile}>
+                    {savingProfile ? "Saving..." : "Save Changes"}
+                  </Button>
                 </div>
               </FieldGroup>
             </CardContent>
@@ -97,26 +208,37 @@ export function SettingsLayout() {
                 <KeyIcon className="size-5 text-muted-foreground" />
                 <div>
                   <CardTitle>Password</CardTitle>
-                  <CardDescription>Change your account password.</CardDescription>
+                  <CardDescription>
+                    Change your account password. Every field below expects a password.
+                  </CardDescription>
                 </div>
               </div>
             </CardHeader>
             <CardContent>
               <FieldGroup className="gap-4">
                 <Field>
-                  <FieldLabel htmlFor="currentPassword">Current Password</FieldLabel>
+                  <FieldLabel htmlFor="currentPassword">Current password</FieldLabel>
                   <Input
                     id="currentPassword"
                     type="password"
+                    autoComplete="current-password"
+                    placeholder="Your current password"
+                    required
                     value={currentPassword}
                     onChange={(e) => setCurrentPassword(e.target.value)}
                   />
+                  <FieldDescription>
+                    The password you use to sign in right now.
+                  </FieldDescription>
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="newPassword">New Password</FieldLabel>
+                  <FieldLabel htmlFor="newPassword">New password</FieldLabel>
                   <Input
                     id="newPassword"
                     type="password"
+                    autoComplete="new-password"
+                    placeholder="Your new password"
+                    required
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                   />
@@ -125,16 +247,24 @@ export function SettingsLayout() {
                   </FieldDescription>
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="confirmPassword">Confirm New Password</FieldLabel>
+                  <FieldLabel htmlFor="confirmPassword">Confirm new password</FieldLabel>
                   <Input
                     id="confirmPassword"
                     type="password"
+                    autoComplete="new-password"
+                    placeholder="Repeat the new password"
+                    required
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                   />
+                  <FieldDescription>
+                    Type the new password again to confirm it.
+                  </FieldDescription>
                 </Field>
                 <div>
-                  <Button onClick={handleChangePassword}>Change Password</Button>
+                  <Button onClick={handleChangePassword} disabled={savingPassword}>
+                    {savingPassword ? "Changing..." : "Change Password"}
+                  </Button>
                 </div>
               </FieldGroup>
             </CardContent>
@@ -153,15 +283,31 @@ export function SettingsLayout() {
                       This action cannot be undone. This will permanently delete your account and remove all your data from our servers.
                     </DialogDescription>
                   </DialogHeader>
+                  <Field>
+                    <FieldLabel htmlFor="deletePassword">Current password</FieldLabel>
+                    <Input
+                      id="deletePassword"
+                      type="password"
+                      autoComplete="current-password"
+                      placeholder="Your current password"
+                      required
+                      value={deletePassword}
+                      onChange={(e) => setDeletePassword(e.target.value)}
+                    />
+                    <FieldDescription>
+                      Enter your current password to confirm. This expects a password, not an email.
+                    </FieldDescription>
+                  </Field>
                   <DialogFooter>
                     <Button variant="outline" onClick={() => setDeleteOpen(false)}>
                       Cancel
                     </Button>
-                    <Button variant="destructive" onClick={() => {
-                      toast.success("Account deleted")
-                      setDeleteOpen(false)
-                    }}>
-                      Yes, delete my account
+                    <Button
+                      variant="destructive"
+                      onClick={handleDeleteAccount}
+                      disabled={deleting}
+                    >
+                      {deleting ? "Deleting..." : "Yes, delete my account"}
                     </Button>
                   </DialogFooter>
                 </DialogContent>

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "c547ee71-266b-4100-90b0-50232a263f05",
+  "id": "07c03eeb-20f2-4fed-a689-10aafd23a0b9",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "account": {
@@ -401,7 +401,16 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "emailHistories_emailId_createdAt_idx": {
+          "name": "emailHistories_emailId_createdAt_idx",
+          "columns": [
+            "email_id",
+            "created_at"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
@@ -474,7 +483,23 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "emailLogs_userId_createdAt_idx": {
+          "name": "emailLogs_userId_createdAt_idx",
+          "columns": [
+            "user_id",
+            "created_at"
+          ],
+          "isUnique": false
+        },
+        "emailLogs_apiKeyId_idx": {
+          "name": "emailLogs_apiKeyId_idx",
+          "columns": [
+            "apikey_id"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {
         "email_logs_apikey_id_apikey_id_fk": {
           "name": "email_logs_apikey_id_apikey_id_fk",

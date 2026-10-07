@@ -22,6 +22,14 @@ export function createAuth(env: Bindings) {
       enabled: true,
     },
     user: {
+      // Lets the settings page POST /api/auth/change-email { newEmail }.
+      // sign-up leaves emailVerified=false and no verification flow is
+      // configured, so updateEmailWithoutVerification applies: the email is
+      // changed immediately instead of requiring a confirmation link.
+      changeEmail: {
+        enabled: true,
+        updateEmailWithoutVerification: true,
+      },
       deleteUser: {
         enabled: true,
         // email_logs has no foreign key to user (it points at apikey), so the
