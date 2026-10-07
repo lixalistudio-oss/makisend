@@ -165,7 +165,7 @@ export function ApiKeysLayout() {
         <SiteHeader />
         <SessionGuard>
         <div className="flex flex-1 flex-col gap-8 p-6">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-2xl font-bold">API Keys</h2>
               <p className="text-sm text-muted-foreground">
@@ -177,7 +177,7 @@ export function ApiKeysLayout() {
                 <PlusIcon />
                 Create API Key
               </DialogTrigger>
-              <DialogContent className="sm:max-w-[425px]">
+              <DialogContent className="max-h-[85dvh] overflow-y-auto gap-3 sm:max-w-[425px] sm:gap-4">
                 <DialogHeader>
                   <DialogTitle>{newKeyValue ? "API Key Created" : "Create API Key"}</DialogTitle>
                   <DialogDescription>
@@ -187,7 +187,7 @@ export function ApiKeysLayout() {
                   </DialogDescription>
                 </DialogHeader>
                 {newKeyValue ? (
-                  <FieldGroup className="py-1 gap-3">
+                  <FieldGroup className="py-1 gap-2 sm:gap-3">
                     <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
                       <div className="flex items-start gap-2">
                         <AlertTriangleIcon className="mt-0.5 size-4 shrink-0" />
@@ -206,14 +206,14 @@ export function ApiKeysLayout() {
                         </Button>
                       </div>
                     </Field>
-                    <DialogFooter>
+                    <DialogFooter className="flex-row justify-end">
                       <Button onClick={() => { setOpen(false); resetForm() }}>
                         I&apos;ve copied the key — Done
                       </Button>
                     </DialogFooter>
                   </FieldGroup>
                 ) : (
-                  <FieldGroup className="py-1 gap-2">
+                  <FieldGroup className="py-1 gap-1.5 sm:gap-2">
                     <Field>
                       <FieldLabel>SMTP Config</FieldLabel>
                       <Select
@@ -248,7 +248,7 @@ export function ApiKeysLayout() {
                           ))}
                         </SelectContent>
                       </Select>
-                      <FieldDescription>
+                      <FieldDescription className="text-xs leading-snug sm:text-sm">
                         The SMTP config this key will be linked to.
                       </FieldDescription>
                       {configError && (
@@ -263,14 +263,14 @@ export function ApiKeysLayout() {
                         value={keyName}
                         onChange={(e) => setKeyName(e.target.value)}
                       />
-                      <FieldDescription>
+                      <FieldDescription className="text-xs leading-snug sm:text-sm">
                         Optional label to identify this key.
                       </FieldDescription>
                     </Field>
                   </FieldGroup>
                 )}
                 {!newKeyValue && (
-                  <DialogFooter>
+                  <DialogFooter className="flex-row justify-end">
                     <Button variant="outline" onClick={() => { setOpen(false); resetForm() }}>
                       Cancel
                     </Button>

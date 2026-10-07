@@ -179,7 +179,11 @@ export function EmailLogsLayout() {
             <Button variant="outline" onClick={handleSearch}>Search</Button>
             <Select value={statusFilter} onValueChange={(v) => v && setStatusFilter(v)}>
               <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder="Status" />
+                <SelectValue placeholder="Status">
+                  {statusFilter === "all"
+                    ? "All Statuses"
+                    : statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Statuses</SelectItem>
@@ -192,7 +196,11 @@ export function EmailLogsLayout() {
             </Select>
             <Select value={configFilter} onValueChange={(v) => v && setConfigFilter(v)}>
               <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="SMTP Config" />
+                <SelectValue placeholder="SMTP Config">
+                  {configFilter === "all"
+                    ? "All Configs"
+                    : (configs.find((c) => c.id === configFilter)?.smtpHostname ?? "All Configs")}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Configs</SelectItem>
@@ -276,12 +284,6 @@ export function EmailLogsLayout() {
                       </span>
                       <span>{formatDate(selectedLog.sentAt ?? selectedLog.createdAt)}</span>
                     </div>
-                    {selectedLog.smtpId && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground">SMTP ID</span>
-                        <span className="max-w-[60%] truncate font-mono text-xs">{selectedLog.smtpId}</span>
-                      </div>
-                    )}
                     <div className="border-t pt-4">
                       <h4 className="font-medium mb-3">Email Timeline</h4>
                       <div className="relative ml-2 border-l-2 border-muted pl-4">

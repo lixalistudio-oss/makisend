@@ -156,7 +156,7 @@ export function SmtpConfigLayout() {
         <SiteHeader />
         <SessionGuard>
         <div className="flex flex-1 flex-col gap-8 p-6">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-2xl font-bold">SMTP Configuration</h2>
               <p className="text-sm text-muted-foreground">
@@ -168,14 +168,14 @@ export function SmtpConfigLayout() {
                 <PlusIcon />
                 Add SMTP Config
               </DialogTrigger>
-              <DialogContent className="sm:max-w-[425px]">
+              <DialogContent className="max-h-[85dvh] overflow-y-auto gap-3 sm:max-w-[425px] sm:gap-4">
                 <DialogHeader>
                   <DialogTitle>{editingId ? "Edit SMTP Configuration" : "Create SMTP Configuration"}</DialogTitle>
                   <DialogDescription>
                     {editingId ? "Update your SMTP server details." : "Add a new SMTP server to send emails through."}
                   </DialogDescription>
                 </DialogHeader>
-                <FieldGroup className="py-1 gap-2">
+                <FieldGroup className="py-1 gap-1.5 sm:gap-2">
                   <Field>
                     <FieldLabel htmlFor="hostname">SMTP Hostname</FieldLabel>
                     <Input
@@ -184,7 +184,7 @@ export function SmtpConfigLayout() {
                       value={hostname}
                       onChange={(e) => setHostname(e.target.value)}
                     />
-                    <FieldDescription>
+                    <FieldDescription className="text-xs leading-snug sm:text-sm">
                       The SMTP server address (e.g., smtp.gmail.com)
                     </FieldDescription>
                   </Field>
@@ -196,7 +196,7 @@ export function SmtpConfigLayout() {
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
                     />
-                    <FieldDescription>
+                    <FieldDescription className="text-xs leading-snug sm:text-sm">
                       Authentication username for the SMTP server.
                     </FieldDescription>
                   </Field>
@@ -209,7 +209,7 @@ export function SmtpConfigLayout() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                     />
-                    <FieldDescription>
+                    <FieldDescription className="text-xs leading-snug sm:text-sm">
                       {editingId ? "Leave blank to keep current password." : "Authentication password for the SMTP server."}
                     </FieldDescription>
                   </Field>
@@ -221,12 +221,12 @@ export function SmtpConfigLayout() {
                       value={senderEmail}
                       onChange={(e) => setSenderEmail(e.target.value)}
                     />
-                    <FieldDescription>
+                    <FieldDescription className="text-xs leading-snug sm:text-sm">
                       The email address emails will be sent from.
                     </FieldDescription>
                   </Field>
                 </FieldGroup>
-                <DialogFooter>
+                <DialogFooter className="flex-row justify-end">
                   <Button variant="outline" onClick={() => { setOpen(false); resetForm() }}>
                     Cancel
                   </Button>
