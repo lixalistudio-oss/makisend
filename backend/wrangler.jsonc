@@ -1,0 +1,91 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "makisend-poc",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-07-10",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	// `vars` are NOT inherited by environments, so preview declares its own below.
+	// PORT is used by nodemailer (SmtpEmailTransport); without it the port silently
+	// falls back to 465.
+	"vars": {
+		"PORT": "465"
+	},
+	"observability": {
+		"logs": {
+			"enabled": true,
+			"invocation_logs": true
+		},
+		"traces": {
+			"enabled": false
+		}
+	},
+	"d1_databases": [
+		{
+			"binding": "makisend_db",
+			"database_name": "makisend-db",
+			"database_id": "fb679c0f-7a52-46c3-a859-0035767c06d2",
+			"migrations_dir": "./drizzle",
+			"migrations_pattern": "drizzle/*.sql"
+		}
+	],
+	// HTTP -> Queue -> Inngest. The queue buffers bursts at the edge; the consumer
+	// forwards events to Inngest (retrying with backoff up to max_retries, then the
+	// DLQ). Inngest keeps owning the actual email-send retries (retries: 4).
+	"queues": {
+		"producers": [
+			{
+				"binding": "SEND_EMAIL_QUEUE",
+				"queue": "makisend-send-email"
+			}
+		],
+		"consumers": [
+			{
+				"queue": "makisend-send-email",
+				"max_batch_size": 10,
+				"max_batch_timeout": 5,
+				"max_retries": 3,
+				"retry_delay": 30,
+				"dead_letter_queue": "makisend-send-email-dlq"
+			}
+		]
+	},
+	"env": {
+		"preview": {
+			"name": "makisend-poc-preview",
+			"vars": {
+				"PORT": "465"
+			},
+			"d1_databases": [
+				{
+					"binding": "makisend_db",
+					"database_name": "makisend-db-preview",
+					"database_id": "PREVIEW_DB_ID_PLACEHOLDER",
+					"migrations_dir": "./drizzle",
+					"migrations_pattern": "drizzle/*.sql"
+				}
+			],
+			// Separate queue names so preview traffic can never be consumed by the
+			// production worker (which would deliver real emails).
+			"queues": {
+				"producers": [
+					{
+						"binding": "SEND_EMAIL_QUEUE",
+						"queue": "makisend-send-email-preview"
+					}
+				],
+				"consumers": [
+					{
+						"queue": "makisend-send-email-preview",
+						"max_batch_size": 10,
+						"max_batch_timeout": 5,
+						"max_retries": 3,
+						"retry_delay": 30,
+						"dead_letter_queue": "makisend-send-email-dlq-preview"
+					}
+				]
+			}
+		}
+	}
+}

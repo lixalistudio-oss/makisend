@@ -1,0 +1,52 @@
+name: Wipe preview database
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  wipe:
+    name: Delete all rows in preview D1
+    runs-on: ubuntu-latest
+    environment:
+      name: preview
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Configure preview database ID
+        run: |
+          set -eo pipefail
+          DB_ID=$(npx wrangler@4.131.1 d1 list --json | jq -r '.[] | select(.name == "makisend-db-preview") | .uuid')
+          if [ -z "$DB_ID" ]; then
+            echo "makisend-db-preview not found" >&2
+            exit 1
+          fi
+          sed -i "s/PREVIEW_DB_ID_PLACEHOLDER/$DB_ID/" wrangler.jsonc
+          echo "Resolved preview DB: $DB_ID"
+        working-directory: backend
+
+      - name: Wipe preview database
+        run: |
+          cat > /tmp/wipe-preview.sql <<'SQL'
+          DELETE FROM email_logs;
+          DELETE FROM email_histories;
+          DELETE FROM apikey;
+          DELETE FROM smtp_config;
+          DELETE FROM session;
+          DELETE FROM account;
+          DELETE FROM verification;
+          DELETE FROM user;
+          SQL
+          npx wrangler@4.131.1 d1 execute makisend_db --remote --env preview --file /tmp/wipe-preview.sql
+        working-directory: backend

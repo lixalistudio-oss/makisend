@@ -1,0 +1,569 @@
+name: Deploy
+
+on:
+  # Production deploys on EVERY push, on any branch (main/dev are protected, so a
+  # push there never comes from us — the latest push is what "prod" serves).
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: write
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Verify and build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint backend
+        run: pnpm lint
+        working-directory: backend
+
+      - name: Test backend
+        run: pnpm test:run
+        working-directory: backend
+
+      - name: Build frontend
+        run: pnpm --filter frontend build
+
+      - name: Upload frontend build
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+          retention-days: 7
+
+  deploy:
+    name: Deploy to Cloudflare (production)
+    needs: build
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    # Any branch can push at the same time: serialize production deploys so two
+    # runs never upload the Worker/Pages at once. Never cancel a deploy mid-flight.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    environment:
+      name: production
+      url: https://makisend.pages.dev
+    # Job-level permissions replace the workflow-level ones, so re-declare read
+    # and add PR write for the production-URL comment below.
+    permissions:
+      contents: read
+      deployments: write
+      pull-requests: write
+      # PR conversation comments are issue comments: without this the bot's
+      # comment call can 403 and the deploy link never shows up.
+      issues: write
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # --- Backend (Workers) ---
+
+      # TODO(security): re-establish this guard before real data lives in prod.
+      # Temporarily commented out because prod is wiped on every deploy while the
+      # POC iterates on schema changes (the squashed drizzle baseline would fail
+      # to apply against the old schema).
+      # - name: Guard production database (no delete/recreate)
+      #   run: |
+      #     set -eo pipefail
+      #     # Pattern is bracketed so this script's own source can never match it.
+      #     if grep -nE 'd1[[:space:]]+delete' .github/workflows/deploy.yml | grep -v 'makisend-db-preview'; then
+      #       echo "::error::Destructive D1 removal found outside the preview job — aborting production deploy"
+      #       exit 1
+      #     fi
+      #     if ! grep -q '"database_name": "makisend-db"' backend/wrangler.jsonc; then
+      #       echo "::error::Production D1 binding (makisend-db) not found in wrangler.jsonc — aborting"
+      #       exit 1
+      #     fi
+      #     echo "OK: production D1 is never removed, only created once and migrated."
+
+      # TEMPORARY (POC): production is rebuilt from scratch on every deploy so
+      # the schema always matches the committed migrations. The goal is always
+      # the same: when this step is done, a brand new makisend-db exists and
+      # wrangler.jsonc points at it. Deletion is eventually consistent, so a
+      # "database could not be found" (7404) during delete is NOT an error —
+      # it just means the previous wipe already removed it.
+      - name: Rebuild production D1 (wipe + create)
+        id: prod-db
+        run: |
+          set -eo pipefail
+
+          list_id() {
+            npx wrangler@4.131.1 d1 list --json 2>/dev/null \
+              | jq -r '.[] | select(.name == "makisend-db") | .uuid' \
+              | head -n1 || true
+          }
+          id_exists() {
+            npx wrangler@4.131.1 d1 info "$1" --json >/dev/null 2>&1
+          }
+
+          # --- 1. Make sure the name "makisend-db" is free -------------------
+          for i in $(seq 1 6); do
+            ID=$(list_id)
+            if [ -z "$ID" ] || [ "$ID" = "null" ]; then
+              echo "makisend-db name is free."
+              break
+            fi
+            if id_exists "$ID"; then
+              echo "Deleting makisend-db ($ID)... attempt $i"
+              npx wrangler@4.131.1 d1 delete "$ID" -y || true
+            else
+              echo "Listed id $ID is already gone (stale list, 7404) — waiting for it to disappear... ($i)"
+            fi
+            sleep 5
+          done
+
+          # --- 2. Create a brand new production database ---------------------
+          DB_ID=$(list_id)
+          if [ -n "$DB_ID" ] && [ "$DB_ID" != "null" ]; then
+            echo "::error::makisend-db ($DB_ID) still exists after purge — cannot create a fresh database"
+            exit 1
+          fi
+
+          echo "Creating fresh makisend-db..."
+          npx wrangler@4.131.1 d1 create makisend-db
+
+          DB_ID=""
+          for i in $(seq 1 12); do
+            CAND=$(list_id)
+            if [ -n "$CAND" ] && [ "$CAND" != "null" ] && id_exists "$CAND"; then
+              DB_ID="$CAND"
+              break
+            fi
+            echo "waiting for the new database to be reachable... ($i)"
+            sleep 5
+          done
+          if [ -z "$DB_ID" ]; then
+            echo "::error::Could not resolve the freshly created makisend-db uuid"
+            exit 1
+          fi
+          echo "Production D1 created: $DB_ID"
+
+          # --- 3. Point wrangler.jsonc at the new database -------------------
+          sed -i "0,/\"database_id\":/s|\"database_id\": \"[^\"]*\"|\"database_id\": \"$DB_ID\"|" wrangler.jsonc
+          if ! grep -q "\"database_id\": \"$DB_ID\"" wrangler.jsonc; then
+            echo "::error::Failed to write production database_id into wrangler.jsonc"
+            exit 1
+          fi
+          echo "db_id=$DB_ID" >> "$GITHUB_OUTPUT"
+        working-directory: backend
+
+      - name: Apply D1 migrations (production)
+        run: npx wrangler@4.131.1 d1 migrations apply makisend_db --remote
+        working-directory: backend
+
+      # The producer binding must point at an existing queue. `queues create`
+      # fails when the queue already exists, hence `|| true`. The DLQ is
+      # auto-created by Cloudflare when the consumer references it.
+      - name: Ensure send-email queue exists (production)
+        run: npx wrangler@4.131.1 queues create makisend-send-email || true
+        working-directory: backend
+
+      - name: Deploy Worker (production)
+        id: deploy-worker
+        run: |
+          OUTPUT=$(npx wrangler@4.131.1 deploy --minify 2>&1)
+          echo "$OUTPUT"
+          WORKER_URL=$(echo "$OUTPUT" | grep -oP 'https://\S+\.workers\.dev' | head -1)
+          echo "url=$WORKER_URL" >> "$GITHUB_OUTPUT"
+        working-directory: backend
+
+      # Secrets are provisioned once by hand and survive every deploy. This only
+      # reports which ones are still missing so the app doesn't fail silently.
+      - name: Check production secrets
+        run: |
+          set -eo pipefail
+          REQUIRED="AES_256_KEY BETTER_AUTH_SECRET INNGEST_EVENT_KEY INNGEST_SIGNING_KEY BETTER_AUTH_URL FRONTEND_URL"
+          SECRETS=$(npx wrangler@4.131.1 secret list 2>/dev/null | jq -r '.[].name' || true)
+          MISSING=""
+          for name in $REQUIRED; do
+            if ! echo "$SECRETS" | grep -qx "$name"; then
+              MISSING="$MISSING $name"
+            fi
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::warning::Missing on production Worker:$MISSING"
+            echo "Set them once with: cd backend && echo \"<value>\" | npx wrangler@4.131.1 secret put <NAME>"
+          else
+            echo "All required production secrets are present."
+          fi
+        working-directory: backend
+
+      # --- Frontend (Pages) ---
+
+      - name: Build frontend with production Worker URL
+        run: pnpm --filter frontend build
+        env:
+          PUBLIC_API_URL: ${{ steps.deploy-worker.outputs.url }}
+
+      - name: Create Pages project if needed
+        run: npx wrangler@4.131.1 pages project create makisend --production-branch=main || true
+
+      - name: Deploy to Cloudflare Pages (production)
+        id: pages-deploy
+        run: |
+          OUTPUT=$(npx wrangler@4.131.1 pages deploy frontend/dist/ --project-name=makisend --branch=main)
+          echo "$OUTPUT"
+          # wrangler prints the per-deployment URL first (noindex) and the alias
+          # second — the alias is the real production link, so take the last one.
+          PAGES_URL=$(echo "$OUTPUT" | grep -oP 'https://\S+\.pages\.dev' | tail -1)
+          if [ -z "$PAGES_URL" ]; then
+            echo "::error::Could not parse the Pages URL from wrangler output"
+            exit 1
+          fi
+          if [ "$PAGES_URL" != "https://makisend.pages.dev" ]; then
+            echo "::warning::Deployment alias is $PAGES_URL, expected https://makisend.pages.dev — check the project's production branch with: npx wrangler pages project list"
+          fi
+          echo "url=$PAGES_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        run: |
+          echo "### Production Deploy" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Backend: ${{ steps.deploy-worker.outputs.url }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Frontend: ${{ steps.pages-deploy.outputs.url }}" >> "$GITHUB_STEP_SUMMARY"
+
+      # Prod deploys on every push (any branch). If that branch has an open PR,
+      # tell the reviewer where the production build is live.
+      # Runs even when an earlier step failed so the PR always gets the link.
+      - name: Comment production URL on PR
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        uses: actions/github-script@v7
+        env:
+          WORKER_URL: ${{ steps.deploy-worker.outputs.url }}
+          PAGES_URL: ${{ steps.pages-deploy.outputs.url }}
+        with:
+          script: |
+            const marker = '<!-- cf-prod -->';
+            const branch = context.ref.replace(/^refs\/heads\//, '');
+            const workerUrl = process.env.WORKER_URL;
+            const pagesUrl = process.env.PAGES_URL;
+
+            const { data: pulls } = await github.rest.pulls.list({
+              ...context.repo,
+              state: 'open',
+              head: `${context.repo.owner}:${branch}`,
+            });
+            if (!pulls.length) {
+              core.info(`No open PR for branch "${branch}" — skipping comment.`);
+              return;
+            }
+
+            const body = [
+              marker,
+              '### 🚀 Production Deploy',
+              '',
+              '| Service | URL |',
+              '|---------|-----|',
+              `| **Frontend** | ${pagesUrl} |`,
+              `| **Backend** | ${workerUrl} |`,
+              '',
+              `Deployed from branch \`${branch}\` — production updates on every push.`,
+            ].join('\n');
+
+            for (const pr of pulls) {
+              const { data: comments } = await github.rest.issues.listComments({
+                ...context.repo,
+                issue_number: pr.number,
+              });
+              const existing = comments.find(
+                (c) => c.user?.type === 'Bot' && c.body?.includes(marker),
+              );
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  ...context.repo,
+                  comment_id: existing.id,
+                  body,
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  ...context.repo,
+                  issue_number: pr.number,
+                  body,
+                });
+              }
+            }
+
+  deploy-preview:
+    name: Deploy preview to Cloudflare
+    needs: build
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    # All PRs share one preview Worker and one preview D1: serialize these jobs so
+    # two deploys never delete/recreate the database at the same time.
+    concurrency:
+      group: deploy-preview
+      cancel-in-progress: true
+    permissions:
+      contents: read
+      pull-requests: write
+      # PR conversation comments are issue comments: without this the bot's
+      # comment call can 403 and the deploy link never shows up.
+      issues: write
+    environment:
+      name: preview
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # --- Backend preview (Workers) ---
+
+      # Preview is disposable: drop and recreate the D1 on every deploy so the schema
+      # always matches the committed migrations. Editing an already-applied migration
+      # file is never re-run by `d1 migrations apply`, which left this DB stale and
+      # broke sign-up (422 FAILED_TO_CREATE_USER).
+      #
+      # Deletion is eventually consistent: a delete that answers 7404 ("could not be
+      # found") means an earlier wipe already removed it — that is NOT a failure.
+      # This step must never be the reason the job dies, because the PR comment
+      # step runs last and would never post the preview link.
+      - name: Recreate preview D1 (fresh database on every deploy)
+        id: create-db
+        run: |
+          set -eo pipefail
+
+          list_id() {
+            npx wrangler@4.131.1 d1 list --json 2>/dev/null \
+              | jq -r '.[] | select(.name == "makisend-db-preview") | .uuid' \
+              | head -n1 || true
+          }
+          id_exists() {
+            npx wrangler@4.131.1 d1 info "$1" --json >/dev/null 2>&1
+          }
+
+          # --- 1. Make sure the name "makisend-db-preview" is free ------------
+          for i in $(seq 1 6); do
+            ID=$(list_id)
+            if [ -z "$ID" ] || [ "$ID" = "null" ]; then
+              echo "makisend-db-preview name is free."
+              break
+            fi
+            if id_exists "$ID"; then
+              echo "Deleting makisend-db-preview ($ID)... attempt $i"
+              npx wrangler@4.131.1 d1 delete "$ID" -y || true
+            else
+              echo "Listed id $ID is already gone (stale list, 7404) — waiting for it to disappear... ($i)"
+            fi
+            sleep 5
+          done
+
+          # --- 2. Create a brand new preview database -------------------------
+          DB_ID=$(list_id)
+          if [ -n "$DB_ID" ] && [ "$DB_ID" != "null" ]; then
+            echo "::error::makisend-db-preview ($DB_ID) still exists after purge — cannot create a fresh database"
+            exit 1
+          fi
+
+          echo "Creating makisend-db-preview..."
+          npx wrangler@4.131.1 d1 create makisend-db-preview
+
+          DB_ID=""
+          for i in $(seq 1 12); do
+            CAND=$(list_id)
+            if [ -n "$CAND" ] && [ "$CAND" != "null" ] && id_exists "$CAND"; then
+              DB_ID="$CAND"
+              break
+            fi
+            echo "waiting for the new database to be reachable... ($i)"
+            sleep 5
+          done
+          if [ -z "$DB_ID" ]; then
+            echo "::error::Could not resolve the freshly created makisend-db-preview uuid"
+            exit 1
+          fi
+
+          echo "db_id=$DB_ID" >> "$GITHUB_OUTPUT"
+          echo "Created preview D1: $DB_ID"
+        working-directory: backend
+
+      - name: Configure preview database ID
+        run: |
+          sed -i "s/PREVIEW_DB_ID_PLACEHOLDER/${{ steps.create-db.outputs.db_id }}/" wrangler.jsonc
+        working-directory: backend
+
+      - name: Apply D1 migrations (preview)
+        run: npx wrangler@4.131.1 d1 migrations apply makisend_db --remote --env preview
+        working-directory: backend
+
+      - name: Set preview Worker secrets
+        run: |
+          echo "${{ secrets.AES_256_KEY }}" | npx wrangler@4.131.1 secret put AES_256_KEY --env preview
+          echo "${{ secrets.BETTER_AUTH_SECRET }}" | npx wrangler@4.131.1 secret put BETTER_AUTH_SECRET --env preview
+          echo "${{ secrets.INNGEST_EVENT_KEY }}" | npx wrangler@4.131.1 secret put INNGEST_EVENT_KEY --env preview
+          # Without this the SDK runs in cloud mode with no signing key, so
+          # GET /api/inngest returns 500 and Inngest can never sync the app.
+          if [ -n "${{ secrets.INNGEST_SIGNING_KEY }}" ]; then
+            echo "${{ secrets.INNGEST_SIGNING_KEY }}" | npx wrangler@4.131.1 secret put INNGEST_SIGNING_KEY --env preview
+          else
+            echo "::warning::INNGEST_SIGNING_KEY secret is not set in GitHub"
+          fi
+        working-directory: backend
+
+      # Preview uses its own queue so preview traffic can never be consumed by
+      # the production worker (which would deliver real emails).
+      - name: Ensure send-email queue exists (preview)
+        run: npx wrangler@4.131.1 queues create makisend-send-email-preview || true
+        working-directory: backend
+
+      - name: Deploy Worker (preview)
+        id: deploy-worker
+        run: |
+          OUTPUT=$(npx wrangler@4.131.1 deploy --minify --env preview 2>&1)
+          echo "$OUTPUT"
+          WORKER_URL=$(echo "$OUTPUT" | grep -oP 'https://\S+\.workers\.dev' | head -1)
+          echo "url=$WORKER_URL" >> "$GITHUB_OUTPUT"
+        working-directory: backend
+
+      - name: Set BETTER_AUTH_URL for preview
+        run: |
+          echo "${{ steps.deploy-worker.outputs.url }}" | npx wrangler@4.131.1 secret put BETTER_AUTH_URL --env preview
+        working-directory: backend
+
+      # --- Frontend preview (Pages) ---
+
+      - name: Build frontend with preview Worker URL
+        run: pnpm --filter frontend build
+        env:
+          PUBLIC_API_URL: ${{ steps.deploy-worker.outputs.url }}
+
+      - name: Create Pages project if needed
+        run: npx wrangler@4.131.1 pages project create makisend --production-branch=main || true
+
+      - name: Deploy to Cloudflare Pages (preview)
+        id: pages-deploy
+        run: |
+          OUTPUT=$(npx wrangler@4.131.1 pages deploy frontend/dist/ --project-name=makisend --branch=${{ github.head_ref }})
+          echo "$OUTPUT"
+          # Last URL is the alias (branch alias / canonical), first is the
+          # per-deployment hash URL.
+          PAGES_URL=$(echo "$OUTPUT" | grep -oP 'https://\S+\.pages\.dev' | tail -1)
+          echo "url=$PAGES_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Set FRONTEND_URL for preview
+        run: |
+          echo "${{ steps.pages-deploy.outputs.url }}" | npx wrangler@4.131.1 secret put FRONTEND_URL --env preview
+        working-directory: backend
+
+      # --- Comment preview URLs on PR ---
+      # Always runs (even when an earlier step failed) so the PR never ends up
+      # without a link. The comment is posted/updated by github-actions[bot].
+      - name: Comment preview URLs on PR
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        uses: actions/github-script@v7
+        env:
+          WORKER_URL: ${{ steps.deploy-worker.outputs.url }}
+          PAGES_URL: ${{ steps.pages-deploy.outputs.url }}
+        with:
+          script: |
+            const marker = '<!-- cf-preview -->';
+            const branch = context.payload.pull_request.head.ref;
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const workerUrl = process.env.WORKER_URL || '';
+            const pagesUrl = process.env.PAGES_URL || '';
+            const failed = '⚠️ not deployed — [open the run](' + runUrl + ')';
+            const cell = (u) => (u ? `[${u}](${u})` : failed);
+            const prodFrontend = 'https://makisend.pages.dev';
+
+            const body = [
+              marker,
+              '### 🔍 Preview Deployment',
+              '',
+              '| Service | URL |',
+              '|---------|-----|',
+              `| **Frontend** (Pages) | ${cell(pagesUrl)} |`,
+              `| **Backend** (Workers) | ${cell(workerUrl)} |`,
+              '',
+              '| Production | URL |',
+              '|------------|-----|',
+              `| **Frontend** | [${prodFrontend}](${prodFrontend}) |`,
+              '',
+              `Branch \`${branch}\` — preview updates on each push.`,
+              `Last run: [${context.runId}](${runUrl})`,
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              ...context.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const existing = comments.find(
+              (c) => c.user?.type === 'Bot' && c.body?.includes(marker),
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({
+                ...context.repo,
+                comment_id: existing.id,
+                body,
+              });
+              core.info(`Updated existing bot comment ${existing.id}`);
+            } else {
+              await github.rest.issues.createComment({
+                ...context.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+              core.info('Created new bot comment');
+            }
