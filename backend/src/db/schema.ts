@@ -17,7 +17,14 @@ export const emailLogs = sqliteTable("email_logs", {
   sentAt: text("sent_at"),
   emailProcessingTimeMs: integer("email_processing_time"),
   createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
-});
+},
+  (table) => [
+    // Every dashboard query filters on user_id (+ optional created_at window);
+    // without this the whole table is scanned on each load.
+    index("emailLogs_userId_createdAt_idx").on(table.userId, table.createdAt),
+    index("emailLogs_apiKeyId_idx").on(table.apiKeyId),
+  ],
+);
 
 export const emailHistories = sqliteTable("email_histories", {
   id: text("id").primaryKey().$defaultFn(() => createId()),
@@ -26,7 +33,12 @@ export const emailHistories = sqliteTable("email_histories", {
   error: text("error"),
   attempts: integer("attempts"),
   createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
-});
+},
+  (table) => [
+    // Status lookups are always "history rows for this email, newest first".
+    index("emailHistories_emailId_createdAt_idx").on(table.emailId, table.createdAt),
+  ],
+);
 
 export const user = sqliteTable("user", {
   id: text("id").primaryKey(),
