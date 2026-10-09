@@ -186,7 +186,7 @@ Avant de déployer, assure-toi que :
 
 - Envoi **asynchrone** : `POST /send-email` répond `202 Accepted` dès la mise en file ; la délivrance (Cloudflare Queues → Inngest → SMTP) se fait ensuite et n’est visible que dans les logs D1.
 - **Un seul fournisseur SMTP** : les identifiants sont stockés par utilisateur dans D1 (chiffrés), sans routage multi-fournisseur ni failover.
-- **Retry borné** : chaque run Inngest dispose d’une fenêtre de 30 s (4 retries). Si le run échoue, l’erreur est classifiée : échec transitoire → retour en file (5 cycles, backoff 1 min → 1 h), échec permanent (auth, TLS, config, 5xx) → abandon avec une raison lisible dans D1.
+- **Retry borné** : chaque run fait **une seule tentative** (`retries: 0`) — un échec fait échouer le run en ~1 s, donc `onFailure` classe toujours l’erreur avant la fenêtre de 30 s (sécurité anti-blocage uniquement). Échec transitoire → retour en file (5 cycles, backoff 1 min → 1 h), échec permanent (auth, TLS, DNS, config, 5xx) → abandon immédiat avec une raison lisible dans D1.
 - **Pas de tracking** : pas de suivi des bounces, ouvertures ou clics. Seuls les logs d’envoi sont stockés.
 - **D1 est une base SQLite serverless** : latence possible, peu adaptée aux très gros volumes sans cache.
 - **Délivrabilité** : SPF, DKIM, DMARC et réputation d’IP dépendent du fournisseur SMTP et du domaine expéditeur.

@@ -24,8 +24,23 @@ interface RunEndContext {
   sendEmailQueue?: Queue<SendEmailQueueMessage>;
 }
 
-const RETRIES = 4;
-const MAX_ATTEMPTS = RETRIES + 1;
+/**
+ * One attempt per run.
+ *
+ * `onFailure` (which owns permanent/transient classification) only fires after
+ * ALL retries are exhausted, but Inngest's default retry backoff (15s, 30s,
+ * 1m, 2m...) can never fit inside the 30s window below: the run would always
+ * be cancelled first, and every failure would fall through to the timeout
+ * companion's transient default — re-queueing bad SMTP config forever.
+ * With 0 retries a failed attempt fails the run in ~1s, so classification
+ * always runs; the queue cycles own the retry ladder.
+ */
+const RETRIES = 0;
+
+/** Which delivery attempt this is across queue cycles (cycle 0 = attempt 1). */
+function attemptOf(data: SendEmailQueueMessage["data"] | undefined): number {
+  return (data?.queueCycles ?? 0) + 1;
+}
 
 /**
  * Maximum times a message may bounce back onto the Cloudflare Queue after an
@@ -75,7 +90,7 @@ export async function resolveSendEmailRunEnd(
       data.emailId,
       "failed",
       `Delivery abandoned after ${MAX_QUEUE_CYCLES} queue cycles. Last error: ${friendly}`,
-      MAX_ATTEMPTS,
+      attemptOf(data),
     );
     return;
   }
@@ -85,7 +100,7 @@ export async function resolveSendEmailRunEnd(
       { emailId: data.emailId, failure },
       "Email delivery abandoned: permanent failure",
     );
-    await emailRepository?.saveEmailHistory(data.emailId, "failed", friendly, MAX_ATTEMPTS);
+    await emailRepository?.saveEmailHistory(data.emailId, "failed", friendly, attemptOf(data));
     return;
   }
 
@@ -98,7 +113,7 @@ export async function resolveSendEmailRunEnd(
       data.emailId,
       "failed",
       `Cannot re-queue transient failure: queue binding unavailable. Last error: ${friendly}`,
-      MAX_ATTEMPTS,
+      attemptOf(data),
     );
     return;
   }
@@ -124,7 +139,7 @@ export async function resolveSendEmailRunEnd(
       data.emailId,
       "failed",
       `Failed to re-queue after cycle ${cycles}: ${reason}. Last error: ${friendly}`,
-      MAX_ATTEMPTS,
+      attemptOf(data),
     );
     return;
   }
@@ -170,13 +185,16 @@ export function getSendEmailFunction() {
         };
         await resolveSendEmailRunEnd(rest as RunEndContext, originalEvent?.data, failure);
       },
-      // The 30s execution window: a run still going after `finish` is
-      // cancelled and handled by the companion function below.
+      // The 30s execution window: a safety net for hung runs (a wedged SMTP
+      // attempt or D1 call). Normal failures fail fast via `retries: 0` and
+      // reach `onFailure`; only a silent hang is cancelled and handled by the
+      // companion function below.
       timeouts: { finish: "30s" },
-      // Global safety cap: smooths bursts (e.g. provider outage + many retries)
-      // so we never hammer the SMTP provider, while staying high enough to never
-      // bottleneck a single email's 5 attempts.
+      // Global safety cap: smooths bursts (e.g. provider outage) so we never
+      // hammer the SMTP provider.
       throttle: { limit: 1000, period: "1m" },
+      // Must stay 0: see RETRIES above — retries can never complete inside the
+      // window, which would hide every error from onFailure's classification.
       retries: RETRIES,
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -184,8 +202,10 @@ export function getSendEmailFunction() {
       const { resolveTransport, emailRepository } = ctx as FunctionContext;
       const startTime = performance.now();
       const emailId = event.data.emailId;
-      // Zero-indexed by the SDK: attempt 0 is the first try.
-      const currentAttempt = ((ctx as FunctionContext).attempt ?? 0) + 1;
+      // Attempt numbering spans queue cycles: cycle 0 = attempt 1, cycle 1 =
+      // attempt 2, ... (`ctx.attempt` is zero-indexed in-run, always 0 now).
+      const currentAttempt =
+        ((ctx as FunctionContext).attempt ?? 0) + (event.data.queueCycles ?? 0) + 1;
 
       // Resolve the SMTP configuration the event was queued with (falls back to the
       // active configuration for events queued before smtpConfigId existed).
@@ -221,9 +241,10 @@ export function getSendEmailFunction() {
             html: cleanedHtml,
           }));
         } catch (err) {
-          // Record every failed attempt with its cause, then rethrow so Inngest's
-          // retries: 4 keeps doing its job. The dashboard timeline shows each one.
-          // No classification here: errors are only read after the run dies.
+          // Record every failed attempt with its cause, then rethrow so the run
+          // fails immediately and `onFailure` can classify the error. The
+          // dashboard timeline shows each one. No classification here: errors
+          // are only read after the run dies.
           const reason = err instanceof Error ? err.message : String(err);
           pinoLogger.error({ receiver: event.data.to, attempt: currentAttempt, err }, "Step: SMTP send failed");
           await emailRepository.saveEmailHistory(emailId, "attempt_failed", reason, currentAttempt);

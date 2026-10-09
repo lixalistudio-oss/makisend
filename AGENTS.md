@@ -238,7 +238,7 @@ Steps run:
 - `POST /send-email` endpoint with per-user API key auth (Better Auth)
 - Async delivery pipeline: Cloudflare Queues → Inngest → SMTP
 - Delivery via nodemailer + raw SMTP
-- Retry loop: 30s Inngest window (`timeouts.finish`) + automatic bounce-back onto the queue (5 cycles, 1min→1h backoff), with permanent/transient error classification
+- Retry loop: one attempt per run (`retries: 0`, so `onFailure` classifies within ~1s — Inngest's 15s+ backoff can never fit the 30s window), 30s window (`timeouts.finish`) as hang safety net, and automatic bounce-back onto the queue (5 cycles, 1min→1h backoff) for transient errors, with permanent/transient classification
 - Encrypted logs stored in D1
 - Unit tests for route / service / middleware
 - GitHub Actions CI (lint + tests) on PRs to `main` and `dev`
@@ -270,7 +270,7 @@ Steps run:
 - **Asynchronous sending only**: the caller gets `202 Accepted` when the email is queued; the actual delivery happens later (Queues → Inngest → SMTP) and is only visible through the D1 logs.
 - **Single SMTP provider**: credentials are stored per user in D1 (encrypted), but there is no multi-provider routing or failover.
 - **No rate limiting**: see Security section.
-- **Bounded retry, not unlimited**: each Inngest run gets a 30s window with 4 retries; if the run still dies, `onFailure` classifies the nodemailer error — transient failures bounce back onto the queue (5 cycles, backoff 1min→1h), permanent failures (auth, TLS, config, 5xx) fail immediately with a human-readable reason in D1.
+- **Bounded retry, not unlimited**: each run makes **one attempt** (`retries: 0`) — a failed attempt fails the run in ~1s so `onFailure` always gets to classify the nodemailer error before the 30s window. Transient failures bounce back onto the queue (5 cycles, backoff 1min→1h), permanent failures (auth, TLS, DNS, config, 5xx) fail immediately with a human-readable reason in D1. The 30s window (`timeouts.finish`) only catches hung runs.
 - **No bounce / open / click tracking**: only send logs are stored.
 - **D1 is a serverless SQLite database**: possible latency, not ideal for very high volumes without caching.
 - **Deliverability**: SPF, DKIM, DMARC and IP reputation are not handled by the code; they depend on the SMTP provider and sender domain.

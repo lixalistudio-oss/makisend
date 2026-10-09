@@ -85,6 +85,24 @@ describe("classifyEmailError", () => {
     expect(classifyEmailError({})).toBe("transient");
   });
 
+  it("recovers the code from the message when StepError dropped err.code", () => {
+    // What onFailure actually receives: StepError keeps only name/message/stack/cause,
+    // so the failure object is codeless — the code only survives inside the text.
+    expect(classifyEmailError({ message: "queryA ENOTFOUND badhostname" })).toBe("permanent");
+    expect(classifyEmailError({ message: "getaddrinfo ENOTFOUND smtp.example.com" })).toBe("permanent");
+    expect(classifyEmailError({ message: "queryA EAI_AGAIN smtp.example.com" })).toBe("transient");
+  });
+
+  it("prefers the message's permanent code when a codeless message carries both a known code and a transient-looking shape", () => {
+    expect(classifyEmailError({ message: "connect ETIMEDOUT then ENOTFOUND" })).toBe("permanent");
+  });
+
+  it("lets an explicit err.code win over conflicting message tokens", () => {
+    expect(classifyEmailError({ code: "ETIMEDOUT", message: "ETIMEDOUT wrapped as ENOTFOUND" })).toBe(
+      "transient",
+    );
+  });
+
   it("treats the timeout companion's message as transient", () => {
     expect(
       classifyEmailError({ message: "The 30s execution window closed before the email was sent" }),
@@ -103,6 +121,10 @@ describe("friendlyErrorMessage", () => {
     expect(friendlyErrorMessage({ code: "ENOTFOUND", message: "query A NOTFOUND smtp.brevo.com" })).toContain(
       "host",
     );
+  });
+
+  it("explains DNS failures even when StepError dropped err.code", () => {
+    expect(friendlyErrorMessage({ message: "queryA ENOTFOUND badhostname" })).toContain("host");
   });
 
   it("explains TLS mismatches for the dashboard", () => {

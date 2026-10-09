@@ -78,12 +78,38 @@ function rawMessage(err: ClassifiableError): string {
 }
 
 /**
+ * Node's DNS resolver embeds the error code inside the message text
+ * ("queryA ENOTFOUND badhostname", "getaddrinfo EAI_AGAIN host") — and
+ * Inngest's `StepError` wrapper drops the enumerable `code` property, so the
+ * failure handler often receives a codeless message only. Tokenizing the
+ * message recovers the code in that case.
+ */
+function codeFromMessage(message: string): string | undefined {
+  const tokens = message.match(/\bE[A-Z][A-Z_]*\b/g);
+  if (!tokens) return undefined;
+  // Permanent wins when a message carries several known codes: misclassifying
+  // a config error as transient re-queues it until the cycle cap, while the
+  // opposite mistake merely stops early with a readable reason.
+  return (
+    tokens.find((token) => PERMANENT_CODES.has(token)) ??
+    tokens.find((token) => TRANSIENT_CODES.has(token))
+  );
+}
+
+/** Best available code: explicit `err.code`, else a known code token in the message. */
+function resolveCode(err: ClassifiableError): string | undefined {
+  if (typeof err.code === "string" && err.code.length > 0) return err.code;
+  return codeFromMessage(rawMessage(err));
+}
+
+/**
  * Decides the fate of a dead run:
  * - "permanent": abandon now, surface a human-readable reason in D1.
  * - "transient": re-enqueue onto the Cloudflare Queue for a later cycle.
  *
  * Order of evidence: explicit responseCode (in-process only) → SMTP status
  * parsed from the message (survives serialization) → nodemailer error code →
+ * known code token embedded in the message (StepError drops `code`) →
  * transient by default, bounded by the queue cycle cap.
  */
 export function classifyEmailError(err: ClassifiableError): FailureVerdict {
@@ -97,7 +123,7 @@ export function classifyEmailError(err: ClassifiableError): FailureVerdict {
     return status < 500 ? "transient" : "permanent";
   }
 
-  const code = typeof err.code === "string" ? err.code : undefined;
+  const code = resolveCode(err);
   if (code) {
     if (PERMANENT_CODES.has(code)) return "permanent";
     if (TRANSIENT_CODES.has(code)) return "transient";
@@ -111,8 +137,8 @@ export function classifyEmailError(err: ClassifiableError): FailureVerdict {
  * why a send stopped instead of a raw nodemailer transcript.
  */
 export function friendlyErrorMessage(err: ClassifiableError): string {
-  const code = typeof err.code === "string" ? err.code : undefined;
   const message = rawMessage(err);
+  const code = resolveCode(err);
   const status = smtpStatusFromMessage(message);
 
   switch (code) {

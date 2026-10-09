@@ -392,7 +392,7 @@ describe("sendEmailFunction", () => {
       "test-email-id-123",
       "failed",
       "Your SMTP provider rejected the credentials — check the SMTP username and password/key in your configuration.",
-      5,
+      1,
     );
   });
 
@@ -424,7 +424,7 @@ describe("sendEmailFunction", () => {
       "test-email-id-123",
       "failed",
       expect.stringContaining("Delivery abandoned after 5 queue cycles"),
-      5,
+      6,
     );
   });
 
@@ -455,7 +455,7 @@ describe("sendEmailFunction", () => {
       "test-email-id-123",
       "failed",
       expect.stringContaining("Cannot re-queue transient failure"),
-      5,
+      1,
     );
   });
 
@@ -559,8 +559,18 @@ describe("sendEmailFunction", () => {
         "test-email-id-123",
         "failed",
         expect.stringContaining("Delivery abandoned after 5 queue cycles"),
-        5,
+        6,
       );
     });
+  });
+
+  it("runs with retries: 0 so a failed attempt reaches onFailure before the 30s window", () => {
+    const fn = getSendEmailFunction() as unknown as {
+      opts: { retries?: number; timeouts?: { finish?: string } };
+    };
+    // Inngest's default backoff (15s+) can never fit in the 30s window; with
+    // retries > 0 every run would be cancelled and classification lost.
+    expect(fn.opts.retries).toBe(0);
+    expect(fn.opts.timeouts?.finish).toBe("30s");
   });
 });

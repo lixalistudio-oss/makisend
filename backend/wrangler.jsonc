@@ -32,7 +32,8 @@
 	],
 	// HTTP -> Queue -> Inngest. The queue buffers bursts at the edge; the consumer
 	// forwards events to Inngest (retrying with backoff up to max_retries, then the
-	// DLQ). Inngest keeps owning the actual email-send retries (retries: 4).
+	// DLQ). Inngest runs send-email with retries: 0 so onFailure classifies each
+	// failure within ~1s; the queue cycles own the retry ladder (1min→1h backoff).
 	"queues": {
 		"producers": [
 			{
