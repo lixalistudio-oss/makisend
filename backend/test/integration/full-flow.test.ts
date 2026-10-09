@@ -180,7 +180,7 @@ describe("POST /send-email — HTTP layer integration", () => {
         expect(clientSendSpy).toHaveBeenCalledTimes(1);
         expect(clientSendSpy).toHaveBeenCalledWith({
           ...message,
-          id: message.data.emailId,
+          id: `${message.data.emailId}:${message.data.queueCycles}`,
         });
       } finally {
         clientSendSpy.mockRestore();

@@ -1,7 +1,11 @@
 import { Inngest, dependencyInjectionMiddleware } from "inngest";
 import { pinoLogger } from "@/core/logger";
 import { AppError } from "@/core/errors";
-import type { IEmailRepository, IEmailTransport } from "@/send-email/send-email.types";
+import type {
+  IEmailRepository,
+  IEmailTransport,
+  SendEmailQueueMessage,
+} from "@/send-email/send-email.types";
 import type { ISmtpConfigRepository } from "@/smtp-config/smtp-config.types";
 
 export type TransportResolver = (smtpConfigId?: string) => Promise<IEmailTransport>;
@@ -22,6 +26,7 @@ let resolveTransportDep: TransportResolver = fallbackTransportResolver;
 let emailRepository: IEmailRepository | null = null;
 let smtpConfigRepository: ISmtpConfigRepository | null = null;
 let aesKey: string | null = null;
+let sendEmailQueue: Queue<SendEmailQueueMessage> | null = null;
 
 function initInngest() {
   if (_inngest) return;
@@ -37,6 +42,9 @@ function initInngest() {
         get emailRepository() { return emailRepository!; },
         get smtpConfigRepository() { return smtpConfigRepository!; },
         get aesKey() { return aesKey!; },
+        // Used by onFailure / the timeout companion to bounce a message back
+        // onto the Cloudflare Queue for another 30s cycle.
+        get sendEmailQueue() { return sendEmailQueue!; },
       }),
     ],
   });
@@ -48,6 +56,7 @@ export function configureDeps(
   k: string,
   scr: ISmtpConfigRepository,
   resolver?: TransportResolver,
+  queue?: Queue<SendEmailQueueMessage>,
 ) {
   transport = t;
   emailRepository = r;
@@ -57,6 +66,7 @@ export function configureDeps(
   // never reuses a stale per-isolate singleton. Callers that don't provide a
   // resolver keep the legacy behaviour: whatever transport was injected here.
   resolveTransportDep = resolver ?? fallbackTransportResolver;
+  sendEmailQueue = queue ?? sendEmailQueue;
   initInngest();
 }
 

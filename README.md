@@ -59,13 +59,17 @@ Les variables suivantes sont définies dans `.env` et mappées dans `src/index.t
 
 | Variable | Description |
 |----------|-------------|
-| `SMTP_USER` | Nom d’utilisateur du serveur SMTP |
-| `SMTP_PASSWORD` | Mot de passe SMTP ou clé d’application |
-| `SENDER_EMAIL` | Adresse d’expédition affichée aux destinataires |
-| `HOST` | Hôte SMTP (ex. `smtp.example.com`) |
-| `PORT` | Port SMTP (`465`, `587`, `2525`, etc.) |
 | `AES_256_KEY` | Clé AES-256 au format hexadécimal 64 caractères. Générer avec : `openssl rand -hex 32` |
-| `API_KEY` | Clé API pour sécuriser `/send-email` (l’implémentation du middleware est actuellement un stub) |
+| `BETTER_AUTH_SECRET` | Secret de signature Better Auth |
+| `BETTER_AUTH_URL` | URL de base du Worker (ex. `http://localhost:8787`) |
+| `FRONTEND_URL` | Origine frontend autorisée (CORS / redirections) |
+| `INNGEST_DEV` | `1` pour utiliser le serveur Inngest en local |
+| `PORT` | Port SMTP de nodemailer (ex. `465`, `587`) |
+
+Plus des variables d'environnement :
+
+- **Identifiants SMTP** (`SMTP_USER`, `SMTP_PASSWORD`, `SENDER_EMAIL`, `HOST`) : stockés par utilisateur, chiffrés dans D1, gérés via le module `smtp-config`.
+- **`API_KEY`** : les clés API sont par utilisateur (module `api-keys`, Better Auth), envoyées dans `x-api-key` ou `Authorization: Bearer`.
 
 Ces variables sont transformées en un objet `Config` typé par `createConfig()` et injectées dans les services.
 
@@ -98,7 +102,7 @@ Envoie un email transactionnel au destinataire spécifié.
 | Header | Valeur |
 |--------|--------|
 | `Content-Type` | `application/json` |
-| `x-api-key` ou `Authorization` | `Bearer <API_KEY>` *(authentification actuellement en TODO)* |
+| `x-api-key` ou `Authorization` | `Bearer <API_KEY>` *(clé API par utilisateur, créée via Better Auth)* |
 
 #### Body
 
@@ -138,22 +142,23 @@ Avant de déployer, assure-toi que :
 
 1. Les secrets sont configurés dans Cloudflare :
    ```bash
-   pnpm wrangler secret put SMTP_USER
-   pnpm wrangler secret put SMTP_PASSWORD
-   pnpm wrangler secret put SENDER_EMAIL
-   pnpm wrangler secret put HOST
-   pnpm wrangler secret put PORT
    pnpm wrangler secret put AES_256_KEY
-   pnpm wrangler secret put API_KEY
+   pnpm wrangler secret put BETTER_AUTH_SECRET
+   pnpm wrangler secret put BETTER_AUTH_URL
+   pnpm wrangler secret put FRONTEND_URL
+   pnpm wrangler secret put INNGEST_DEV
    ```
 2. La base D1 est créée et liée via `wrangler.jsonc`.
 3. Les migrations sont appliquées.
+4. La queue `makisend-send-email` et son DLQ existent (déclarées dans `wrangler.jsonc`).
+
+> Les identifiants SMTP ne sont pas des secrets Worker : ils sont chiffrés dans D1 et gérés par utilisateur (module `smtp-config`).
 
 ---
 
 ## Sécurité
 
-- **Authentification** : le middleware `api_key.middleware.ts` est en place mais marqué **TODO**. Il laisse passer toutes les requêtes pour le moment.
+- **Authentification** : le middleware `api-key.middleware.ts` vérifie les clés API par utilisateur via Better Auth (`401` en-tête manquant, `403` clé invalide), avec `x-api-key: <KEY>` ou `Authorization: Bearer <KEY>`. Les clés sont créées/révoquées via le module `api-keys`.
 - **Chiffrement** : l’adresse du destinataire est chiffrée avec AES-256-GCM avant stockage en base.
 - **Nettoyage HTML** : le contenu HTML est nettoyé avec `sanitize-html` avant envoi.
 - **TLS vérifié** : les connexions SMTP utilisent `rejectUnauthorized: true`.
@@ -162,7 +167,7 @@ Avant de déployer, assure-toi que :
 ### Limites de sécurité actuelles
 
 - Pas de rate limiting.
-- Une seule clé API globale : pas de gestion multi-clés, de scopes ou de rotation.
+- Clés API par utilisateur mais sans scopes ni rotation automatique.
 - Pas de webhook ou de signature de vérification d’origine.
 - Pas de logs d’audit dédiés en dehors des logs applicatifs Pino.
 
@@ -179,9 +184,9 @@ Avant de déployer, assure-toi que :
 
 ### Liées au POC
 
-- Envoi **synchrone uniquement** : l’appelant attend que l’email soit envoyé avant de recevoir une réponse. Pas de file d’attente ni de retry.
-- **Un seul fournisseur SMTP** : les identifiants sont globaux. Pas de multi-fournisseur ni de failover.
-- **Pas de retry** : si le serveur SMTP refuse temporairement l’envoi, l’appel échoue sans nouvelle tentative.
+- Envoi **asynchrone** : `POST /send-email` répond `202 Accepted` dès la mise en file ; la délivrance (Cloudflare Queues → Inngest → SMTP) se fait ensuite et n’est visible que dans les logs D1.
+- **Un seul fournisseur SMTP** : les identifiants sont stockés par utilisateur dans D1 (chiffrés), sans routage multi-fournisseur ni failover.
+- **Retry borné** : chaque run Inngest dispose d’une fenêtre de 30 s (4 retries). Si le run échoue, l’erreur est classifiée : échec transitoire → retour en file (5 cycles, backoff 1 min → 1 h), échec permanent (auth, TLS, config, 5xx) → abandon avec une raison lisible dans D1.
 - **Pas de tracking** : pas de suivi des bounces, ouvertures ou clics. Seuls les logs d’envoi sont stockés.
 - **D1 est une base SQLite serverless** : latence possible, peu adaptée aux très gros volumes sans cache.
 - **Délivrabilité** : SPF, DKIM, DMARC et réputation d’IP dépendent du fournisseur SMTP et du domaine expéditeur.
@@ -193,6 +198,7 @@ Avant de déployer, assure-toi que :
 ### POC (actuel)
 
 - Endpoint `POST /send-email` (authentification API key en TODO)
+- Pipeline asynchrone : Cloudflare Queues → Inngest → SMTP, avec fenêtre de retry 30 s et retour en file (5 cycles)
 - Envoi via nodemailer + SMTP brut
 - Logs chiffrés stockés dans D1
 - Tests unitaires route / service / middleware
@@ -201,13 +207,13 @@ Avant de déployer, assure-toi que :
 
 ### MVP interne
 
-- Sécurisation de l’endpoint
-- Gestion des identifiants SMTP via D1 / seeding
-- Monitoring et métriques de délivrance
+- ~~Sécurisation de l’endpoint~~ (fait : clés API par utilisateur via Better Auth)
+- ~~Gestion des identifiants SMTP via D1 / seeding~~ (fait : module `smtp-config`, chiffrés)
+- ~~Monitoring et métriques de délivrance~~ (fait : modules `dashboard` + `email-logs`)
 
 ### MVP public beta
 
-- Files et jobs de messages (Inngest ou Cloudflare Queues)
+- Files et jobs de messages : déjà en place (voir POC) — reste le réglage de l’échelle et du débit
 - Gestion de l’échelle et du débit
 - Améliorations de délivrabilité (anti-spam, SPF/DKIM/DMARC)
 

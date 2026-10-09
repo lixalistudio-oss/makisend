@@ -32,35 +32,53 @@ The project follows a **NestJS-inspired modular architecture**:
 
 ```
 src/
-├── index.ts                    # Hono entrypoint, Cloudflare bindings
+├── index.ts                    # Hono entrypoint, bindings, route wiring, DI
+├── api-keys/                   # Per-user API key module (Better Auth)
 ├── config/
 │   └── config.ts               # Typed Config object built from Bindings
 ├── core/                       # Shared kernel
 │   ├── errors.ts               # AppError and subclasses
 │   ├── logger.ts               # Edge-compatible Pino logger
 │   ├── crypto.ts               # AES-256-GCM encryption / decryption
-│   └── html-sanitizer.ts       # HTML sanitization
+│   ├── html-sanitizer.ts       # HTML sanitization
+│   └── create-user.ts          # User bootstrap helper
+├── dashboard/                  # Delivery metrics / stats endpoints
 ├── db/
-│   ├── schema.ts               # Drizzle schema (email_logs)
+│   ├── schema.ts               # Drizzle schema (users, apikeys, smtp_config, email_logs, ...)
 │   └── connection.ts           # drizzle(db) factory
+├── email-logs/                 # Email log listing with filters
+├── inngest/                    # Async delivery pipeline
+│   ├── client.ts               # Inngest client + DI middleware (configureDeps)
+│   ├── functions.ts            # Function registry
+│   ├── send-email.ts           # send-email fn (30s window, onFailure) + timeout companion
+│   └── error-classifier.ts     # Permanent/transient verdicts + human-readable messages
+├── lib/
+│   └── auth.ts                 # Better Auth setup (API keys)
 ├── middleware/
-│   ├── api_key.middleware.ts   # API key authentication (TODO stub)
+│   ├── api-key.middleware.ts   # API key auth (401/403, Better Auth verification)
 │   ├── config.middleware.ts    # Injects Config into Hono context
 │   ├── error.handler.ts        # Global error handler
-│   └── request_logger.middleware.ts # Request logging
-└── send-email/                 # Business module (barrel export via index.ts)
-    ├── index.ts
-    ├── send-email.controller.ts
-    ├── send-email.dto.ts       # Zod schemas + types
-    ├── send-email.service.ts   # Business logic
-    ├── send-email.repository.ts # Drizzle/D1 persistence
-    └── send-email.types.ts     # Interfaces / contracts
+│   ├── request-logger.middleware.ts # Request logging
+│   └── session.middleware.ts   # Session/auth middleware
+├── queue/
+│   └── send-email.consumer.ts  # Cloudflare Queue consumer → Inngest events
+├── send-email/                 # Business module (barrel export via index.ts)
+│   ├── index.ts
+│   ├── send-email.controller.ts
+│   ├── send-email.dto.ts       # Zod schemas + types
+│   ├── send-email.service.ts   # Business logic
+│   ├── send-email.repository.ts # Drizzle/D1 persistence
+│   └── send-email.types.ts     # Interfaces / contracts
+└── smtp-config/                # Per-user SMTP credentials (encrypted in D1)
 
 test/
 ├── setup.ts
+├── helpers/d1-setup.ts
+├── integration/full-flow.test.ts
 └── unit/
-    ├── middleware/             # Middleware tests
-    └── send-emails/            # send-email module tests
+    ├── api-keys/ auth/ config/ dashboard/ email-logs/
+    ├── inngest/               # send-email fn, error classifier, timeout companion
+    ├── middleware/ queue/ send-emails/ settings/ smtp-config/
 ```
 
 ## Essential commands
@@ -97,13 +115,17 @@ Copy `.env.example` to `.env` and fill in:
 
 | Variable | Description |
 |----------|-------------|
-| `SMTP_USER` | SMTP server username |
-| `SMTP_PASSWORD` | SMTP password or app key |
-| `SENDER_EMAIL` | Sender email address displayed to recipients |
-| `HOST` | SMTP host (e.g. smtp.example.com) |
-| `PORT` | SMTP port (465, 587, etc.) |
 | `AES_256_KEY` | 64-character hex AES-256 key (`openssl rand -hex 32`) |
-| `API_KEY` | API key for securing `/send-email` (auth implementation is TODO) |
+| `BETTER_AUTH_SECRET` | Better Auth signing secret |
+| `BETTER_AUTH_URL` | Backend URL of the Worker (e.g. `http://localhost:8787`) |
+| `FRONTEND_URL` | Frontend origin allowed for CORS / redirects |
+| `INNGEST_DEV` | `1` to use the local Inngest dev server |
+| `PORT` | SMTP port for nodemailer (`465`, `587`, ...; also a `wrangler.jsonc` var) |
+
+Not environment variables anymore:
+
+- **SMTP credentials** (`SMTP_USER`, `SMTP_PASSWORD`, `SENDER_EMAIL`, `HOST`): stored per user, encrypted in D1, managed through the `smtp-config` module.
+- **`API_KEY`**: API keys are per user, created via the `api-keys` module (Better Auth), and sent as `x-api-key` or `Authorization: Bearer`.
 
 These variables are mapped in `src/index.ts` via the `Bindings` type, transformed into a typed `Config` via `createConfig()`, and injected into services at runtime.
 
@@ -139,9 +161,7 @@ Even though the runtime remains **Hono** (not NestJS), the code organization is 
 
 ## Security
 
-- **API key authentication**: `src/middleware/api_key.middleware.ts` is in place but its implementation is marked **TODO**. For now it lets all requests through. To implement later with:
-  - header `x-api-key: <API_KEY>`, or
-  - header `Authorization: Bearer <API_KEY>`.
+- **API key authentication**: `src/middleware/api-key.middleware.ts` verifies per-user API keys via Better Auth (`401` missing header, `403` invalid key), with header `x-api-key: <KEY>` or `Authorization: Bearer <KEY>`. Keys are created/listed/revoked through the `api-keys` module.
 - **Encryption**: recipient email address is encrypted with AES-256-GCM before database storage.
 - **HTML sanitization**: HTML content is cleaned with `sanitize-html` before sending.
 - **Verified TLS**: SMTP connections use `rejectUnauthorized: true`.
@@ -150,7 +170,6 @@ Even though the runtime remains **Hono** (not NestJS), the code organization is 
 ### Current security limitations
 
 - **No rate limiting**: a client with a valid API key could spam requests without a ceiling. Implement with Cloudflare KV, D1, or Workers Analytics Engine for distributed rate limiting.
-- **Single global API key**: no multi-key / scopes / rotation management yet.
 - **No webhook / signature**: no request origin verification beyond the API key.
 - **No dedicated audit logs**: only Pino application logs are present.
 
@@ -168,9 +187,10 @@ Even though the runtime remains **Hono** (not NestJS), the code organization is 
 - Config: `vitest.config.ts`
 - Global setup: `test/setup.ts`
 - Current coverage:
-  - `POST /send-email` route (validation + 201 response)
+  - `POST /send-email` route (validation + 202 response)
   - Email service (mock transport, repository, encryption)
-  - API key middleware tests are currently TODO
+  - Retry pipeline: error classifier, `onFailure` re-queue / abandonment, 30s timeout companion, queue consumer dedup
+  - API key middleware (401/403 + context wiring)
 - Mocks are reset in `beforeEach`
 - Run `pnpm test:run` before committing
 
@@ -215,8 +235,10 @@ Steps run:
 
 ### POC (current)
 
-- `POST /send-email` endpoint (API key auth is TODO)
+- `POST /send-email` endpoint with per-user API key auth (Better Auth)
+- Async delivery pipeline: Cloudflare Queues → Inngest → SMTP
 - Delivery via nodemailer + raw SMTP
+- Retry loop: 30s Inngest window (`timeouts.finish`) + automatic bounce-back onto the queue (5 cycles, 1min→1h backoff), with permanent/transient error classification
 - Encrypted logs stored in D1
 - Unit tests for route / service / middleware
 - GitHub Actions CI (lint + tests) on PRs to `main` and `dev`
@@ -224,13 +246,13 @@ Steps run:
 
 ### Internal MVP
 
-- Endpoint security
-- SMTP credentials management via D1 / seeding
-- Monitoring and delivery metrics
+- ~~Endpoint security~~ (done: per-user API keys via Better Auth)
+- ~~SMTP credentials management via D1 / seeding~~ (done: `smtp-config` module, encrypted at rest)
+- ~~Monitoring and delivery metrics~~ (done: `dashboard` + `email-logs` modules)
 
 ### Public Beta MVP
 
-- Message and job queues (Inngest or Cloudflare Queues)
+- **Message and job queues**: Cloudflare Queues + Inngest are already in place (see POC); remaining work is scale/throughput tuning
 - Scale and throughput management
 - Deliverability improvements (anti-spam, SPF/DKIM/DMARC)
 
@@ -245,10 +267,10 @@ Steps run:
 
 ### POC-related
 
-- **Synchronous sending only**: the caller waits for the email to be sent before getting a response. No queue / retry yet.
-- **Single SMTP provider**: SMTP credentials are global (`SMTP_USER`, `SMTP_PASSWORD`). No multi-provider or failover.
+- **Asynchronous sending only**: the caller gets `202 Accepted` when the email is queued; the actual delivery happens later (Queues → Inngest → SMTP) and is only visible through the D1 logs.
+- **Single SMTP provider**: credentials are stored per user in D1 (encrypted), but there is no multi-provider routing or failover.
 - **No rate limiting**: see Security section.
-- **No retry**: if the SMTP server temporarily refuses the send, the call fails without retry.
+- **Bounded retry, not unlimited**: each Inngest run gets a 30s window with 4 retries; if the run still dies, `onFailure` classifies the nodemailer error — transient failures bounce back onto the queue (5 cycles, backoff 1min→1h), permanent failures (auth, TLS, config, 5xx) fail immediately with a human-readable reason in D1.
 - **No bounce / open / click tracking**: only send logs are stored.
 - **D1 is a serverless SQLite database**: possible latency, not ideal for very high volumes without caching.
 - **Deliverability**: SPF, DKIM, DMARC and IP reputation are not handled by the code; they depend on the SMTP provider and sender domain.

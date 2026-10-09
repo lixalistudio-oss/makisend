@@ -40,10 +40,13 @@ export async function sendEmailQueueConsumer(
 
   for (const msg of batch.messages) {
     try {
-      // `id` lets Inngest deduplicate the event if a redelivery ever slips through.
+      // `id` lets Inngest deduplicate the event if a redelivery ever slips
+      // through. It is also an idempotency key for 24h, so it must include the
+      // queue cycle: a message bounced back by `onFailure` carries the same
+      // emailId and must still trigger a fresh run.
       await inngest.send({
         ...msg.body,
-        id: msg.body.data.emailId,
+        id: `${msg.body.data.emailId}:${msg.body.data.queueCycles ?? 0}`,
       });
       msg.ack();
     } catch (err) {

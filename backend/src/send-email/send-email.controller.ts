@@ -45,7 +45,7 @@ export function createSendEmailController(
 
       const message: SendEmailQueueMessage = {
         name: "app/send-email",
-        data: { ...data, emailId, userId, apiKeyId, smtpConfigId },
+        data: { ...data, emailId, userId, apiKeyId, smtpConfigId, queueCycles: 0 },
       };
 
       // Buffered in Cloudflare Queues first; the consumer forwards it to Inngest.

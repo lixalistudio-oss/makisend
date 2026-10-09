@@ -1,8 +1,12 @@
 import { describe, it, vi, expect, beforeEach } from "vitest";
 import { InngestTestEngine } from "@inngest/test";
 import { configureDeps } from "@/inngest/client";
-import { getSendEmailFunction } from "@/inngest/send-email";
-import type { IEmailRepository, IEmailTransport } from "@/send-email/send-email.types";
+import { getSendEmailFunction, getSendEmailTimeoutFunction } from "@/inngest/send-email";
+import type {
+  IEmailRepository,
+  IEmailTransport,
+  SendEmailQueueMessage,
+} from "@/send-email/send-email.types";
 import type { ISmtpConfigRepository } from "@/smtp-config/smtp-config.types";
 import { encrypt } from "@/core/crypto";
 import { cleanHtml } from "@/core/html-sanitizer";
@@ -305,7 +309,7 @@ describe("sendEmailFunction", () => {
     expect(mockRepository.completeEmailLog).not.toHaveBeenCalled();
   });
 
-  it("records a failed history row when all retries are exhausted", async () => {
+  it("re-enqueues a transient failure onto the queue with a cycle backoff", async () => {
     // InngestTestEngine cannot trigger onFailure, so invoke the handler directly
     // with the wrapped `inngest/function.failed` payload it receives in production.
     const onFailure = (getSendEmailFunction() as unknown as {
@@ -313,11 +317,127 @@ describe("sendEmailFunction", () => {
     }).onFailureFn;
     expect(onFailure).toBeTypeOf("function");
 
+    const mockQueueSend = vi.fn().mockResolvedValue(undefined);
+
     await onFailure!({
       event: {
         name: "inngest/function.failed",
         data: {
-          function_id: "send-email",
+          function_id: "makisend-send-email",
+          run_id: "run-123",
+          error: { name: "Error", message: "SMTP down" },
+          event: mockEvent,
+        },
+      },
+      // No `code` and no SMTP status in the message → transient by default.
+      error: new Error("SMTP down"),
+      emailRepository: mockRepository,
+      transport: mockTransport,
+      aesKey: "test-aes-key",
+      sendEmailQueue: { send: mockQueueSend },
+    });
+
+    expect(mockQueueSend).toHaveBeenCalledTimes(1);
+    expect(mockQueueSend).toHaveBeenCalledWith(
+      {
+        name: "app/send-email",
+        data: { ...mockEvent.data, queueCycles: 1 },
+      },
+      { delaySeconds: 60 },
+    );
+    expect(mockRepository.saveEmailHistory).toHaveBeenCalledWith(
+      "test-email-id-123",
+      "attempt_failed",
+      expect.stringContaining("Re-queued: next attempt in 60s (cycle 1 of 5)"),
+    );
+    expect(mockRepository.saveEmailHistory).not.toHaveBeenCalledWith(
+      "test-email-id-123",
+      "failed",
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it("abandons a permanent failure with an explanatory message and does not re-enqueue", async () => {
+    const onFailure = (getSendEmailFunction() as unknown as {
+      onFailureFn?: (ctx: unknown) => Promise<void>;
+    }).onFailureFn;
+    const mockQueueSend = vi.fn().mockResolvedValue(undefined);
+
+    const permanentError = Object.assign(
+      new Error("Invalid login: 535 5.7.8 Authentication failed"),
+      { code: "EAUTH" },
+    );
+
+    await onFailure!({
+      event: {
+        name: "inngest/function.failed",
+        data: {
+          function_id: "makisend-send-email",
+          run_id: "run-123",
+          error: { name: "Error", message: permanentError.message },
+          event: mockEvent,
+        },
+      },
+      error: permanentError,
+      emailRepository: mockRepository,
+      transport: mockTransport,
+      aesKey: "test-aes-key",
+      sendEmailQueue: { send: mockQueueSend },
+    });
+
+    expect(mockQueueSend).not.toHaveBeenCalled();
+    expect(mockRepository.saveEmailHistory).toHaveBeenCalledTimes(1);
+    expect(mockRepository.saveEmailHistory).toHaveBeenCalledWith(
+      "test-email-id-123",
+      "failed",
+      "Your SMTP provider rejected the credentials — check the SMTP username and password/key in your configuration.",
+      5,
+    );
+  });
+
+  it("abandons once the queue cycle cap is reached, even for a transient error", async () => {
+    const onFailure = (getSendEmailFunction() as unknown as {
+      onFailureFn?: (ctx: unknown) => Promise<void>;
+    }).onFailureFn;
+    const mockQueueSend = vi.fn().mockResolvedValue(undefined);
+
+    await onFailure!({
+      event: {
+        name: "inngest/function.failed",
+        data: {
+          function_id: "makisend-send-email",
+          run_id: "run-123",
+          error: { name: "Error", message: "SMTP down" },
+          event: { ...mockEvent, data: { ...mockEvent.data, queueCycles: 5 } },
+        },
+      },
+      error: new Error("SMTP down"),
+      emailRepository: mockRepository,
+      transport: mockTransport,
+      aesKey: "test-aes-key",
+      sendEmailQueue: { send: mockQueueSend },
+    });
+
+    expect(mockQueueSend).not.toHaveBeenCalled();
+    expect(mockRepository.saveEmailHistory).toHaveBeenCalledWith(
+      "test-email-id-123",
+      "failed",
+      expect.stringContaining("Delivery abandoned after 5 queue cycles"),
+      5,
+    );
+  });
+
+  it("records a failed row when a transient failure cannot be re-enqueued", async () => {
+    const onFailure = (getSendEmailFunction() as unknown as {
+      onFailureFn?: (ctx: unknown) => Promise<void>;
+    }).onFailureFn;
+
+    await onFailure!({
+      event: {
+        name: "inngest/function.failed",
+        data: {
+          function_id: "makisend-send-email",
           run_id: "run-123",
           error: { name: "Error", message: "SMTP down" },
           event: mockEvent,
@@ -327,13 +447,14 @@ describe("sendEmailFunction", () => {
       emailRepository: mockRepository,
       transport: mockTransport,
       aesKey: "test-aes-key",
+      // No sendEmailQueue binding available.
     });
 
     expect(mockRepository.saveEmailHistory).toHaveBeenCalledTimes(1);
     expect(mockRepository.saveEmailHistory).toHaveBeenCalledWith(
       "test-email-id-123",
       "failed",
-      "SMTP down",
+      expect.stringContaining("Cannot re-queue transient failure"),
       5,
     );
   });
@@ -352,5 +473,94 @@ describe("sendEmailFunction", () => {
     ).resolves.toBeUndefined();
 
     expect(mockRepository.saveEmailHistory).not.toHaveBeenCalled();
+  });
+
+  describe("sendEmailTimeoutFunction (30s window blown)", () => {
+    const cancelledEvent = {
+      name: "inngest/function.cancelled" as const,
+      data: {
+        // Absolute id of send-email: client id "makisend" + function id.
+        function_id: "makisend-send-email",
+        event: mockEvent,
+      },
+    };
+
+    it("re-queues the cancelled run with a cycle backoff", async () => {
+      const mockQueueSend = vi.fn().mockResolvedValue(undefined);
+      // The DI middleware injects the queue from module state AFTER transformCtx,
+      // so the binding must be registered exactly like `index.ts` does in production.
+      configureDeps(
+        mockTransport,
+        mockRepository,
+        "test-aes-key",
+        mockSmtpConfigRepository,
+        undefined,
+        { send: mockQueueSend } as unknown as Queue<SendEmailQueueMessage>,
+      );
+
+      const t = new InngestTestEngine({
+        function: getSendEmailTimeoutFunction(),
+        events: [cancelledEvent],
+        transformCtx: (ctx) => ({
+          ...ctx,
+          emailRepository: mockRepository,
+        }),
+      });
+
+      await t.execute();
+
+      expect(mockQueueSend).toHaveBeenCalledTimes(1);
+      expect(mockQueueSend).toHaveBeenCalledWith(
+        {
+          name: "app/send-email",
+          data: { ...mockEvent.data, queueCycles: 1 },
+        },
+        { delaySeconds: 60 },
+      );
+      expect(mockRepository.saveEmailHistory).toHaveBeenCalledWith(
+        "test-email-id-123",
+        "attempt_failed",
+        expect.stringContaining("Re-queued: next attempt in 60s (cycle 1 of 5)"),
+      );
+      // A cancelled run is never a terminal failure.
+      expect(mockRepository.saveEmailHistory).not.toHaveBeenCalledWith(
+        "test-email-id-123",
+        "failed",
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+
+    it("abandons a cancelled run that already reached the cycle cap", async () => {
+      const mockQueueSend = vi.fn().mockResolvedValue(undefined);
+
+      const t = new InngestTestEngine({
+        function: getSendEmailTimeoutFunction(),
+        events: [
+          {
+            ...cancelledEvent,
+            data: {
+              ...cancelledEvent.data,
+              event: { ...mockEvent, data: { ...mockEvent.data, queueCycles: 5 } },
+            },
+          },
+        ],
+        transformCtx: (ctx) => ({
+          ...ctx,
+          emailRepository: mockRepository,
+          sendEmailQueue: { send: mockQueueSend },
+        }),
+      });
+
+      await t.execute();
+
+      expect(mockQueueSend).not.toHaveBeenCalled();
+      expect(mockRepository.saveEmailHistory).toHaveBeenCalledWith(
+        "test-email-id-123",
+        "failed",
+        expect.stringContaining("Delivery abandoned after 5 queue cycles"),
+        5,
+      );
+    });
   });
 });

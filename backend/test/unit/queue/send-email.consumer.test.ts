@@ -24,6 +24,7 @@ const message = (overrides?: Partial<SendEmailQueueMessage["data"]>): SendEmailQ
     userId: "user-id-123",
     apiKeyId: "apikey-id-123",
     smtpConfigId: "smtp-config-id-123",
+    queueCycles: 0,
     ...overrides,
   },
 });
@@ -63,7 +64,7 @@ describe("sendEmailQueueConsumer", () => {
     vi.mocked(getInngestClient).mockReturnValue({ send: mockSend } as never);
   });
 
-  it("forwards the event to Inngest with a dedup id and acknowledges it", async () => {
+  it("forwards the event to Inngest with a cycle-scoped dedup id and acknowledges it", async () => {
     mockSend.mockResolvedValue(undefined);
     const msg = buildMessage(message());
 
@@ -72,10 +73,22 @@ describe("sendEmailQueueConsumer", () => {
     expect(mockSend).toHaveBeenCalledTimes(1);
     expect(mockSend).toHaveBeenCalledWith({
       ...message(),
-      id: "email-id-123",
+      id: "email-id-123:0",
     });
     expect(msg.ack).toHaveBeenCalledTimes(1);
     expect(msg.retry).not.toHaveBeenCalled();
+  });
+
+  it("scopes the dedup id to the queue cycle so a re-enqueued message triggers a fresh run", async () => {
+    mockSend.mockResolvedValue(undefined);
+    const msg = buildMessage(message({ queueCycles: 2 }));
+
+    await sendEmailQueueConsumer({ messages: [msg] } as never, env);
+
+    expect(mockSend).toHaveBeenCalledWith({
+      ...message({ queueCycles: 2 }),
+      id: "email-id-123:2",
+    });
   });
 
   it("schedules a retry with exponential backoff when Inngest rejects the event", async () => {
