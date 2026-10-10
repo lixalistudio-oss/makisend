@@ -10,7 +10,7 @@ import { apiKeyMiddleware } from "@/middleware/api-key.middleware";
 import { createSendEmailController } from "@/send-email/send-email.controller";
 import { SendEmailRepository } from "@/send-email/send-email.repository";
 import { createDatabase } from "@/db/connection";
-import { configureDeps, getInngestClient } from "@/inngest/client";
+import { configureDeps } from "@/inngest/client";
 import { getSendEmailFunction } from "@/inngest/send-email";
 import { sendEmailQueueConsumer } from "@/queue/send-email.consumer";
 import { encrypt, decrypt } from "@/core/crypto";
@@ -40,6 +40,8 @@ describe("POST /send-email — HTTP layer integration", () => {
   let testApiKey: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let mockQueueSend: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let mockWorkflowCreate: any;
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -103,6 +105,7 @@ describe("POST /send-email — HTTP layer integration", () => {
       .where(eq(apikey.id, latestKey[0].id));
 
     mockQueueSend = vi.fn().mockResolvedValue(undefined);
+    mockWorkflowCreate = vi.fn().mockResolvedValue({ id: "instance-123" });
 
     app = new Hono<AppEnv>();
     app.onError(errorHandler);
@@ -135,6 +138,7 @@ describe("POST /send-email — HTTP layer integration", () => {
       BETTER_AUTH_URL: "http://localhost:8787",
       FRONTEND_URL: "http://localhost:4321",
       SEND_EMAIL_QUEUE: { send: mockQueueSend } as unknown as Bindings["SEND_EMAIL_QUEUE"],
+      SEND_EMAIL_WORKFLOW: { create: mockWorkflowCreate } as unknown as Bindings["SEND_EMAIL_WORKFLOW"],
     };
   }
 
@@ -166,25 +170,20 @@ describe("POST /send-email — HTTP layer integration", () => {
       expect(logs[0].sentAt).toBeNull();
       expect(logs[0].createdAt).toBeTruthy();
 
-      // The consumer forwards the buffered message to Inngest exactly once.
-      const clientSendSpy = vi.spyOn(getInngestClient(), "send").mockResolvedValue(undefined as never);
-      try {
-        await sendEmailQueueConsumer(
-          {
-            messages: [{ body: message, attempts: 1, ack: vi.fn(), retry: vi.fn() }],
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          } as any,
-          mockEnvWithD1(d1),
-        );
+      // The consumer starts a workflow instance for the buffered message exactly once.
+      await sendEmailQueueConsumer(
+        {
+          messages: [{ body: message, attempts: 1, ack: vi.fn(), retry: vi.fn() }],
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any,
+        mockEnvWithD1(d1),
+      );
 
-        expect(clientSendSpy).toHaveBeenCalledTimes(1);
-        expect(clientSendSpy).toHaveBeenCalledWith({
-          ...message,
-          id: `${message.data.emailId}:${message.data.queueCycles}`,
-        });
-      } finally {
-        clientSendSpy.mockRestore();
-      }
+      expect(mockWorkflowCreate).toHaveBeenCalledTimes(1);
+      expect(mockWorkflowCreate).toHaveBeenCalledWith({
+        id: `${message.data.emailId}:${message.data.queueCycles}`,
+        params: message.data,
+      });
     });
 
     it("should return 202 with Bearer header", async () => {

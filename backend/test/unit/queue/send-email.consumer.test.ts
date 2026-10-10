@@ -1,10 +1,4 @@
 import { describe, it, vi, expect, beforeEach, beforeAll, afterAll } from "vitest";
-
-vi.mock("@/inngest/client", () => ({
-  getInngestClient: vi.fn(),
-}));
-
-import { getInngestClient } from "@/inngest/client";
 import { sendEmailQueueConsumer } from "@/queue/send-email.consumer";
 import { createTestD1, cleanupTestD1 } from "../../helpers/d1-setup";
 import { emailHistories } from "@/db/schema";
@@ -42,7 +36,7 @@ function buildMessage(
 }
 
 describe("sendEmailQueueConsumer", () => {
-  const mockSend = vi.fn();
+  const mockCreate = vi.fn();
   let mf: Miniflare;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let db: any;
@@ -52,7 +46,10 @@ describe("sendEmailQueueConsumer", () => {
     const testD1 = await createTestD1();
     mf = testD1.mf;
     db = testD1.db;
-    env = { makisend_db: testD1.d1 } as unknown as Bindings;
+    env = {
+      makisend_db: testD1.d1,
+      SEND_EMAIL_WORKFLOW: { create: mockCreate },
+    } as unknown as Bindings;
   });
 
   afterAll(async () => {
@@ -61,38 +58,36 @@ describe("sendEmailQueueConsumer", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(getInngestClient).mockReturnValue({ send: mockSend } as never);
+    mockCreate.mockResolvedValue({ id: "instance-123" });
   });
 
-  it("forwards the event to Inngest with a cycle-scoped dedup id and acknowledges it", async () => {
-    mockSend.mockResolvedValue(undefined);
+  it("starts a workflow instance with a cycle-scoped id and acknowledges the message", async () => {
     const msg = buildMessage(message());
 
     await sendEmailQueueConsumer({ messages: [msg] } as never, env);
 
-    expect(mockSend).toHaveBeenCalledTimes(1);
-    expect(mockSend).toHaveBeenCalledWith({
-      ...message(),
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    expect(mockCreate).toHaveBeenCalledWith({
       id: "email-id-123:0",
+      params: message().data,
     });
     expect(msg.ack).toHaveBeenCalledTimes(1);
     expect(msg.retry).not.toHaveBeenCalled();
   });
 
-  it("scopes the dedup id to the queue cycle so a re-enqueued message triggers a fresh run", async () => {
-    mockSend.mockResolvedValue(undefined);
+  it("scopes the instance id to the queue cycle so a re-enqueued message triggers a fresh run", async () => {
     const msg = buildMessage(message({ queueCycles: 2 }));
 
     await sendEmailQueueConsumer({ messages: [msg] } as never, env);
 
-    expect(mockSend).toHaveBeenCalledWith({
-      ...message({ queueCycles: 2 }),
+    expect(mockCreate).toHaveBeenCalledWith({
       id: "email-id-123:2",
+      params: message({ queueCycles: 2 }).data,
     });
   });
 
-  it("schedules a retry with exponential backoff when Inngest rejects the event", async () => {
-    mockSend.mockRejectedValue(new Error("Inngest unavailable"));
+  it("schedules a retry with exponential backoff when workflow creation fails", async () => {
+    mockCreate.mockRejectedValue(new Error("Workflow unavailable"));
     const msg = buildMessage(message(), 1);
 
     await sendEmailQueueConsumer({ messages: [msg] } as never, env);
@@ -109,7 +104,7 @@ describe("sendEmailQueueConsumer", () => {
   });
 
   it("increases the backoff delay with each delivery attempt", async () => {
-    mockSend.mockRejectedValue(new Error("Inngest unavailable"));
+    mockCreate.mockRejectedValue(new Error("Workflow unavailable"));
     const msg = buildMessage(message(), 3);
 
     await sendEmailQueueConsumer({ messages: [msg] } as never, env);
@@ -118,7 +113,7 @@ describe("sendEmailQueueConsumer", () => {
   });
 
   it("caps the backoff delay at 5 minutes", async () => {
-    mockSend.mockRejectedValue(new Error("Inngest unavailable"));
+    mockCreate.mockRejectedValue(new Error("Workflow unavailable"));
     const msg = buildMessage(message({ emailId: "capped-delay-id" }), 50);
 
     await sendEmailQueueConsumer({ messages: [msg] } as never, env);
@@ -127,7 +122,7 @@ describe("sendEmailQueueConsumer", () => {
   });
 
   it("writes a failed history row when the retry budget is exhausted", async () => {
-    mockSend.mockRejectedValue(new Error("Inngest unavailable"));
+    mockCreate.mockRejectedValue(new Error("Workflow unavailable"));
     const msg = buildMessage(message(), 4);
 
     await sendEmailQueueConsumer({ messages: [msg] } as never, env);
@@ -143,14 +138,14 @@ describe("sendEmailQueueConsumer", () => {
     expect(histories[0].emailId).toBe("email-id-123");
     expect(histories[0].status).toBe("failed");
     expect(histories[0].attempts).toBe(4);
-    expect(histories[0].error).toContain("Failed to deliver to Inngest after 4 attempts");
-    expect(histories[0].error).toContain("Inngest unavailable");
+    expect(histories[0].error).toContain("Failed to start workflow after 4 attempts");
+    expect(histories[0].error).toContain("Workflow unavailable");
   });
 
   it("continues processing the batch after a message fails", async () => {
-    mockSend
+    mockCreate
       .mockRejectedValueOnce(new Error("boom"))
-      .mockResolvedValueOnce(undefined);
+      .mockResolvedValueOnce({ id: "instance-ok" });
 
     const failing = buildMessage(message({ emailId: "failing-id" }), 1);
     const succeeding = buildMessage(message({ emailId: "succeeding-id" }), 1);
@@ -161,6 +156,6 @@ describe("sendEmailQueueConsumer", () => {
     expect(failing.ack).not.toHaveBeenCalled();
     expect(succeeding.ack).toHaveBeenCalledTimes(1);
     expect(succeeding.retry).not.toHaveBeenCalled();
-    expect(mockSend).toHaveBeenCalledTimes(2);
+    expect(mockCreate).toHaveBeenCalledTimes(2);
   });
 });

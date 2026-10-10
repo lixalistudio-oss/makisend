@@ -1,5 +1,4 @@
 import { pinoLogger } from "@/core/logger";
-import { getInngestClient } from "@/inngest/client";
 import { createDatabase } from "@/db/connection";
 import { SendEmailRepository } from "@/send-email/send-email.repository";
 import type { Bindings } from "@/index";
@@ -19,41 +18,41 @@ function backoffDelaySeconds(attempts: number): number {
 }
 
 /**
- * Cloudflare Queue consumer: forwards buffered HTTP requests to Inngest.
+ * Cloudflare Queue consumer: starts a SendEmailWorkflow instance per message.
  *
- * This is retry system 1 (queue -> Inngest). Each message is individually
+ * This is retry system 1 (queue -> Workflow). Each message is individually
  * acknowledged or scheduled for redelivery so one failing message never causes
- * the whole batch to be reprocessed (which would duplicate events already
- * accepted by Inngest). When the retry budget is exhausted the message goes to
- * the dead-letter queue AND a `failed` history row is written, so the email
+ * the whole batch to be reprocessed (which would duplicate instances already
+ * accepted by Workflows). When the retry budget is exhausted the message goes
+ * to the dead-letter queue AND a `failed` history row is written, so the email
  * never disappears silently.
  *
- * Retry system 2 (Inngest -> SMTP) stays owned by the `send-email` function
- * (`retries: 4`).
+ * Retry system 2 (Workflow -> SMTP) is owned by the SendEmailWorkflow steps and
+ * the queue-cycle ladder in `resolveSendEmailRunEnd`.
  */
 export async function sendEmailQueueConsumer(
   batch: MessageBatch<SendEmailQueueMessage>,
   env: Bindings,
 ): Promise<void> {
-  const inngest = getInngestClient();
   const repository = new SendEmailRepository(createDatabase(env.makisend_db));
 
   for (const msg of batch.messages) {
     try {
-      // `id` lets Inngest deduplicate the event if a redelivery ever slips
-      // through. It is also an idempotency key for 24h, so it must include the
-      // queue cycle: a message bounced back by `onFailure` carries the same
-      // emailId and must still trigger a fresh run.
-      await inngest.send({
-        ...msg.body,
+      // The instance id doubles as the idempotency key: Workflows rejects a
+      // create with a duplicate id, so a redelivery that slips through cannot
+      // start a second run. It must include the queue cycle — a message bounced
+      // back by resolveSendEmailRunEnd carries the same emailId and must still
+      // trigger a fresh instance.
+      await env.SEND_EMAIL_WORKFLOW.create({
         id: `${msg.body.data.emailId}:${msg.body.data.queueCycles ?? 0}`,
+        params: msg.body.data,
       });
       msg.ack();
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       pinoLogger.error(
         { err, attempts: msg.attempts, emailId: msg.body.data.emailId },
-        "Failed to forward send-email event to Inngest; scheduling retry",
+        "Failed to start SendEmailWorkflow instance; scheduling retry",
       );
 
       // Last chance before the DLQ: record the failure so the dashboard can show it.
@@ -62,7 +61,7 @@ export async function sendEmailQueueConsumer(
           await repository.saveEmailHistory(
             msg.body.data.emailId,
             "failed",
-            `Failed to deliver to Inngest after ${msg.attempts} attempts: ${reason}`,
+            `Failed to start workflow after ${msg.attempts} attempts: ${reason}`,
             msg.attempts,
           );
         } catch (historyErr) {
