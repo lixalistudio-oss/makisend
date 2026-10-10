@@ -52,6 +52,7 @@ export type Bindings = {
   BETTER_AUTH_URL: string;
   FRONTEND_URL: string;
   SEND_EMAIL_QUEUE: Queue<SendEmailQueueMessage>;
+  SEND_EMAIL_WORKFLOW: Workflow;
 };
 
 // --- Hono context variables (per-request) ---
@@ -294,7 +295,10 @@ app.on(
 
 // Worker entrypoint: HTTP requests via Hono, queue messages via the consumer.
 // The Hono app is also exported by name so tests can call `app.request(...)`.
+// SendEmailWorkflow must be exported from the entrypoint for wrangler's
+// `class_name` to resolve.
 export { app };
+export { SendEmailWorkflow } from "@/send-email/send-email.workflow";
 export default {
   fetch: app.fetch,
   queue: sendEmailQueueConsumer,
