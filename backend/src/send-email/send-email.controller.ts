@@ -48,7 +48,8 @@ export function createSendEmailController(
         data: { ...data, emailId, userId, apiKeyId, smtpConfigId, queueCycles: 0 },
       };
 
-      // Buffered in Cloudflare Queues first; the consumer forwards it to Inngest.
+      // Buffered in Cloudflare Queues first; the consumer starts the
+      // SendEmailWorkflow from it.
       // No retry here: if the queue refuses the message the caller gets a 5xx and
       // retries the POST itself — but the failure is recorded first.
       try {

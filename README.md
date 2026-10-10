@@ -63,7 +63,6 @@ Les variables suivantes sont définies dans `.env` et mappées dans `src/index.t
 | `BETTER_AUTH_SECRET` | Secret de signature Better Auth |
 | `BETTER_AUTH_URL` | URL de base du Worker (ex. `http://localhost:8787`) |
 | `FRONTEND_URL` | Origine frontend autorisée (CORS / redirections) |
-| `INNGEST_DEV` | `1` pour utiliser le serveur Inngest en local |
 | `PORT` | Port SMTP de nodemailer (ex. `465`, `587`) |
 
 Plus des variables d'environnement :
@@ -146,7 +145,6 @@ Avant de déployer, assure-toi que :
    pnpm wrangler secret put BETTER_AUTH_SECRET
    pnpm wrangler secret put BETTER_AUTH_URL
    pnpm wrangler secret put FRONTEND_URL
-   pnpm wrangler secret put INNGEST_DEV
    ```
 2. La base D1 est créée et liée via `wrangler.jsonc`.
 3. Les migrations sont appliquées.
@@ -184,9 +182,9 @@ Avant de déployer, assure-toi que :
 
 ### Liées au POC
 
-- Envoi **asynchrone** : `POST /send-email` répond `202 Accepted` dès la mise en file ; la délivrance (Cloudflare Queues → Inngest → SMTP) se fait ensuite et n’est visible que dans les logs D1.
+- Envoi **asynchrone** : `POST /send-email` répond `202 Accepted` dès la mise en file ; la délivrance (Cloudflare Queues → Workflow → SMTP) se fait ensuite et n’est visible que dans les logs D1.
 - **Un seul fournisseur SMTP** : les identifiants sont stockés par utilisateur dans D1 (chiffrés), sans routage multi-fournisseur ni failover.
-- **Retry borné** : chaque run fait **une seule tentative** (`retries: 0`) — un échec fait échouer le run en ~1 s, donc `onFailure` classe toujours l’erreur avant la fenêtre de 30 s (sécurité anti-blocage uniquement). Échec transitoire → retour en file (5 cycles, backoff 1 min → 1 h), échec permanent (auth, TLS, DNS, config, 5xx) → abandon immédiat avec une raison lisible dans D1.
+- **Retry borné** : chaque exécution du workflow fait **une seule tentative** — un échec fait échouer rapidement l’exécution, permettant de classifier l’erreur de nodemailer en interne. Échec transitoire → retour en file (5 cycles, backoff 1 min → 1 h), échec permanent (auth, TLS, DNS, config, 5xx) → abandon immédiat avec une raison lisible dans D1.
 - **Pas de tracking** : pas de suivi des bounces, ouvertures ou clics. Seuls les logs d’envoi sont stockés.
 - **D1 est une base SQLite serverless** : latence possible, peu adaptée aux très gros volumes sans cache.
 - **Délivrabilité** : SPF, DKIM, DMARC et réputation d’IP dépendent du fournisseur SMTP et du domaine expéditeur.
@@ -198,7 +196,7 @@ Avant de déployer, assure-toi que :
 ### POC (actuel)
 
 - Endpoint `POST /send-email` (authentification API key en TODO)
-- Pipeline asynchrone : Cloudflare Queues → Inngest → SMTP, avec fenêtre de retry 30 s et retour en file (5 cycles)
+- Pipeline asynchrone : Cloudflare Queues → Workflow durable → SMTP, avec retour en file (5 cycles)
 - Envoi via nodemailer + SMTP brut
 - Logs chiffrés stockés dans D1
 - Tests unitaires route / service / middleware

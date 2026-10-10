@@ -6,8 +6,8 @@ import {
 
 describe("classifyEmailError", () => {
   it("treats a 5xx SMTP status embedded in the message as permanent", () => {
-    // What onFailure actually sees: `responseCode` is stripped by Inngest's
-    // serialization, but nodemailer appended the raw response to the message.
+    // nodemailer sometimes omits `responseCode` but always appended the raw
+    // SMTP response to the message, so the status must be recovered from text.
     expect(
       classifyEmailError({ code: "EAUTH", message: "Invalid login: 535 5.7.8 Authentication failed" }),
     ).toBe("permanent");
@@ -85,9 +85,9 @@ describe("classifyEmailError", () => {
     expect(classifyEmailError({})).toBe("transient");
   });
 
-  it("recovers the code from the message when StepError dropped err.code", () => {
-    // What onFailure actually receives: StepError keeps only name/message/stack/cause,
-    // so the failure object is codeless — the code only survives inside the text.
+  it("recovers the code from the message when err.code is missing", () => {
+    // DNS errors often carry no enumerable `code` — the code only survives
+    // inside the message text.
     expect(classifyEmailError({ message: "queryA ENOTFOUND badhostname" })).toBe("permanent");
     expect(classifyEmailError({ message: "getaddrinfo ENOTFOUND smtp.example.com" })).toBe("permanent");
     expect(classifyEmailError({ message: "queryA EAI_AGAIN smtp.example.com" })).toBe("transient");

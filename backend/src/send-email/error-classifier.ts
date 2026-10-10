@@ -1,13 +1,12 @@
 /**
- * Classifies a failed send-email run AFTER it dies (retries exhausted or the
- * 30s execution budget blown). The verdict decides whether `onFailure` gives
- * up permanently or bounces the message back onto the Cloudflare Queue.
+ * Classifies a failed send attempt. The verdict decides whether the workflow
+ * gives up permanently (dead per the user) or bounces the message back onto
+ * the Cloudflare Queue for another cycle.
  *
- * Only fields that survive Inngest's error serialization are read: `name`,
- * `message`, `stack`, `code` and `cause`. Nodemailer's `responseCode` and
- * `command` are stripped during transport, so the SMTP status a server
- * actually replied with (e.g. "535 5.7.8 ...") is recovered from the end of
- * `message` — nodemailer always appends the raw response as ": <response>".
+ * `responseCode` is read when the error carries it, but nodemailer does not
+ * always attach it — so the SMTP status a server actually replied with
+ * (e.g. "535 5.7.8 ...") is also recovered from the end of `message`;
+ * nodemailer appends the raw response as ": <response>".
  */
 export type FailureVerdict = "permanent" | "transient";
 
@@ -79,10 +78,9 @@ function rawMessage(err: ClassifiableError): string {
 
 /**
  * Node's DNS resolver embeds the error code inside the message text
- * ("queryA ENOTFOUND badhostname", "getaddrinfo EAI_AGAIN host") — and
- * Inngest's `StepError` wrapper drops the enumerable `code` property, so the
- * failure handler often receives a codeless message only. Tokenizing the
- * message recovers the code in that case.
+ * ("queryA ENOTFOUND badhostname", "getaddrinfo EAI_AGAIN host") — and some
+ * error wrappers drop the enumerable `code` property, so a codeless message
+ * is common. Tokenizing the message recovers the code in that case.
  */
 function codeFromMessage(message: string): string | undefined {
   const tokens = message.match(/\bE[A-Z][A-Z_]*\b/g);
