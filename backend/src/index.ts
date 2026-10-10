@@ -10,19 +10,11 @@ import { apiKeyMiddleware } from "@/middleware/api-key.middleware";
 import { sessionMiddleware } from "@/middleware/session.middleware";
 
 // --- Module imports ---
-import { createSendEmailController, SmtpEmailTransport } from "@/send-email";
-import {
-  buildTransportConfig,
-  loadActiveSmtpConfig,
-  resolveTransportFor,
-} from "@/send-email/transport-resolver";
+import { createSendEmailController } from "@/send-email";
 import { createSmtpConfigController, SmtpConfigRepository, SmtpConfigService } from "@/smtp-config";
 import { createApiKeysController, ApiKeyRepository, ApiKeyService } from "@/api-keys";
 import { createEmailLogsController, EmailLogRepository, EmailLogService } from "@/email-logs";
 import { createDashboardController, DashboardRepository, DashboardService } from "@/dashboard";
-import { configureDeps, getInngestClient } from "@/inngest/client";
-import { getFunctions } from "@/inngest/functions";
-import { serve } from "inngest/hono";
 import { sendEmailQueueConsumer } from "@/queue/send-email.consumer";
 
 // --- Better Auth ---
@@ -32,11 +24,10 @@ import { createAuth } from "@/lib/auth";
 import { createDatabase } from "@/db/connection";
 import { SendEmailRepository } from "@/send-email/send-email.repository";
 import { user } from "@/db/schema";
-import { pinoLogger } from "@/core/logger";
 
 // --- Type imports ---
 import type { SmtpConfig, UserConfig } from "./config/config";
-import type { IEmailTransport, IEmailRepository, SendEmailQueueMessage } from "@/send-email/send-email.types";
+import type { IEmailRepository, SendEmailQueueMessage } from "@/send-email/send-email.types";
 import type { ISmtpConfigRepository } from "@/smtp-config/smtp-config.types";
 import type { IApiKeyRepository } from "@/api-keys/api-keys.types";
 import type { IEmailLogRepository } from "@/email-logs/email-logs.types";
@@ -47,7 +38,6 @@ export type Bindings = {
   AES_256_KEY: string;
   makisend_db: D1Database;
   PORT: number;
-  INNGEST_DEV: number;
   BETTER_AUTH_SECRET: string;
   BETTER_AUTH_URL: string;
   FRONTEND_URL: string;
@@ -84,7 +74,6 @@ function getAuthInstance(env: Bindings) {
 
 // --- Lazy dependency container ---
 const deps = {
-  transport: null as IEmailTransport | null,
   emailRepository: null as IEmailRepository | null,
   smtpConfigRepository: null as ISmtpConfigRepository | null,
   apiKeyRepository: null as IApiKeyRepository | null,
@@ -109,30 +98,6 @@ const deps = {
     this.dashboardRepository = new DashboardRepository(db);
     this.aesKey = env.AES_256_KEY;
     this.dbInitialized = true;
-
-    configureDeps(
-      this.transport!,
-      this.emailRepository!,
-      this.aesKey!,
-      this.smtpConfigRepository!,
-      (smtpConfigId) => resolveTransportFor(env, smtpConfigId),
-      env.SEND_EMAIL_QUEUE,
-    );
-  },
-
-  initTransport(env: Bindings, smtpConfig: SmtpConfig) {
-    if (this.transport) return;
-
-    this.transport = new SmtpEmailTransport(buildTransportConfig(env), smtpConfig);
-
-    configureDeps(
-      this.transport,
-      this.emailRepository!,
-      this.aesKey!,
-      this.smtpConfigRepository!,
-      (smtpConfigId) => resolveTransportFor(env, smtpConfigId),
-      env.SEND_EMAIL_QUEUE,
-    );
   },
 
   initServices() {
@@ -224,19 +189,6 @@ app.use("*", async (c, next) => {
   await next();
 });
 
-// Initialize transport once a smtpConfig is available (for send-email)
-app.use("*", async (c, next) => {
-  if (!deps.transport) {
-    const smtpConfig = c.get("smtpConfig") ?? (await loadActiveSmtpConfig(c.env));
-    if (smtpConfig) {
-      deps.initTransport(c.env, smtpConfig);
-    } else {
-      pinoLogger.warn("No SMTP configuration available; email transport not initialized");
-    }
-  }
-  await next();
-});
-
 // Mount send-email controller — produces to the Cloudflare Queue
 const sendEmailController = createSendEmailController(() => deps.emailRepository!);
 app.route("/send-email", sendEmailController);
@@ -280,18 +232,6 @@ app.use("/dashboard/*", async (c, next) => {
   return sessionMiddleware(auth)(c, next);
 });
 app.route("/dashboard", dashboardController);
-
-// Inngest webhook endpoint
-app.on(
-  ["GET", "PUT", "POST"],
-  "/api/inngest",
-  async (c) => {
-    return serve({
-      client: getInngestClient(),
-      functions: getFunctions(),
-    })(c);
-  },
-);
 
 // Worker entrypoint: HTTP requests via Hono, queue messages via the consumer.
 // The Hono app is also exported by name so tests can call `app.request(...)`.

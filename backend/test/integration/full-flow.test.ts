@@ -1,6 +1,5 @@
 import { describe, it, vi, expect, beforeEach, afterEach } from "vitest";
 import { Hono } from "hono";
-import { InngestTestEngine } from "@inngest/test";
 import { betterAuth } from "better-auth";
 import { apiKey } from "@better-auth/api-key";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
@@ -9,9 +8,8 @@ import { configMiddleware } from "@/middleware/config.middleware";
 import { apiKeyMiddleware } from "@/middleware/api-key.middleware";
 import { createSendEmailController } from "@/send-email/send-email.controller";
 import { SendEmailRepository } from "@/send-email/send-email.repository";
+import { SendEmailWorkflow } from "@/send-email/send-email.workflow";
 import { createDatabase } from "@/db/connection";
-import { configureDeps } from "@/inngest/client";
-import { getSendEmailFunction } from "@/inngest/send-email";
 import { sendEmailQueueConsumer } from "@/queue/send-email.consumer";
 import { encrypt, decrypt } from "@/core/crypto";
 import { user, emailLogs, emailHistories, smtpConfig, apikey } from "@/db/schema";
@@ -19,7 +17,7 @@ import { createTestD1, cleanupTestD1 } from "../helpers/d1-setup";
 import type { Bindings, UserInfoVariables } from "@/index";
 import type { SendEmailQueueMessage } from "@/send-email/send-email.types";
 import type { Miniflare } from "miniflare";
-import type { ISmtpConfigRepository } from "@/smtp-config/smtp-config.types";
+import type { WorkflowStep } from "cloudflare:workers";
 import { eq } from "drizzle-orm";
 
 type AppEnv = {
@@ -133,7 +131,6 @@ describe("POST /send-email — HTTP layer integration", () => {
       AES_256_KEY: AES_KEY,
       makisend_db: d1,
       PORT: 587,
-      INNGEST_DEV: 1,
       BETTER_AUTH_SECRET: "test-secret-for-integration",
       BETTER_AUTH_URL: "http://localhost:8787",
       FRONTEND_URL: "http://localhost:4321",
@@ -275,7 +272,6 @@ describe("POST /send-email — HTTP layer integration", () => {
         AES_256_KEY: AES_KEY,
         makisend_db: {} as D1Database,
         PORT: 587,
-        INNGEST_DEV: 1,
         HOST: "smtp.test.com",
         SMTP_USER: "user@test.com",
         SMTP_PASSWORD: "pass",
@@ -291,10 +287,24 @@ describe("POST /send-email — HTTP layer integration", () => {
   });
 });
 
-describe("Inngest send-email function — full step execution", () => {
+const { mockResolveTransportFor } = vi.hoisted(() => ({
+  mockResolveTransportFor: vi.fn(),
+}));
+
+vi.mock("@/send-email/transport-resolver", () => ({
+  resolveTransportFor: mockResolveTransportFor,
+  // Remaining exports are unused by the workflow under test but keep the
+  // module surface complete for other importers in this file.
+  buildTransportConfig: vi.fn(),
+  findSmtpRecord: vi.fn(),
+  decryptSmtpRecord: vi.fn(),
+}));
+
+describe("SendEmailWorkflow — full step execution", () => {
   let mf: Miniflare;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let db: any;
+  let d1: D1Database;
   let realRepository: SendEmailRepository;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let mockTransport: any;
@@ -305,13 +315,14 @@ describe("Inngest send-email function — full step execution", () => {
     mockTransport = {
       send: vi.fn().mockResolvedValue({ messageId: "<test@mock-smtp.com>" }),
     };
+    mockResolveTransportFor.mockResolvedValue(mockTransport);
 
     const testD1 = await createTestD1();
     mf = testD1.mf;
     db = testD1.db;
+    d1 = testD1.d1;
 
     realRepository = new SendEmailRepository(db);
-    configureDeps(mockTransport, realRepository, AES_KEY, {} as ISmtpConfigRepository);
   });
 
   afterEach(async () => {
@@ -320,39 +331,18 @@ describe("Inngest send-email function — full step execution", () => {
 
   it("should execute all steps and persist to real D1", async () => {
     const emailId = "integration-test-email-id";
-    const event = {
-      name: "app/send-email" as const,
-      data: {
-        emailId,
-        userId: "test-user-id",
-        to: "gedeon@example.com",
-        subject: "Integration Test",
-        text: "This is a test email body long enough.",
-        html: "<p>Integration test content</p>",
-      },
+    const payload = {
+      emailId,
+      userId: "test-user-id",
+      to: "gedeon@example.com",
+      subject: "Integration Test",
+      text: "This is a test email body long enough.",
+      html: "<p>Integration test content</p>",
+      queueCycles: 0,
     };
 
-    const resolveTransport = vi.fn(async () => mockTransport);
-    configureDeps(
-      mockTransport,
-      realRepository,
-      AES_KEY,
-      {} as ISmtpConfigRepository,
-      resolveTransport,
-    );
-
-    const engine = new InngestTestEngine({
-      function: getSendEmailFunction(),
-      events: [event],
-      transformCtx: (ctx) => ({
-        ...ctx,
-        repository: realRepository,
-        aesKey: AES_KEY,
-      }),
-    });
-
     // The controller writes this row at enqueue time; simulate it here since
-    // this test invokes the Inngest function directly (no HTTP layer).
+    // this test invokes the workflow directly (no HTTP layer).
     await realRepository.createPendingEmailLog(
       emailId,
       "test-user-id",
@@ -360,11 +350,24 @@ describe("Inngest send-email function — full step execution", () => {
       "Integration Test",
     );
 
-    const { error } = await engine.execute();
-    expect(error).toBeUndefined();
+    const env = {
+      makisend_db: d1,
+      SEND_EMAIL_QUEUE: { send: vi.fn() },
+    } as unknown as Bindings;
 
-    // Legacy events queued without smtpConfigId still resolve a transport.
-    expect(resolveTransport).toHaveBeenCalledWith(undefined);
+    const workflow = new SendEmailWorkflow({} as never, env);
+    const step = {
+      do: async (_name: string, cfgOrFn: unknown, maybeFn?: unknown) => {
+        const fn = typeof cfgOrFn === "function" ? cfgOrFn : maybeFn;
+        return (fn as () => Promise<unknown>)();
+      },
+    } as unknown as WorkflowStep;
+
+    const result = await workflow.run({ payload } as never, step);
+    expect(result).toMatchObject({ outcome: "sent", messageId: "<test@mock-smtp.com>" });
+
+    // Events carry smtpConfigId in production; this legacy-shaped payload does not.
+    expect(mockResolveTransportFor).toHaveBeenCalledWith(expect.anything(), undefined);
 
     expect(mockTransport.send).toHaveBeenCalledWith({
       to: "gedeon@example.com",

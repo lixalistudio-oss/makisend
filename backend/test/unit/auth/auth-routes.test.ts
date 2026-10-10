@@ -45,7 +45,6 @@ describe("auth routes (email + password only)", () => {
         "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
       makisend_db: testD1.d1,
       PORT: 587,
-      INNGEST_DEV: 1,
       BETTER_AUTH_SECRET: "test-secret",
       BETTER_AUTH_URL: BASE_URL,
     } as unknown as Bindings;

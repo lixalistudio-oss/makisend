@@ -14,7 +14,6 @@ export function buildTransportConfig(env: Bindings): Config {
     port: env.PORT,
     aesKey: env.AES_256_KEY,
     db: env.makisend_db,
-    inngestConfig: env.INNGEST_DEV,
     better_auth_secret: env.BETTER_AUTH_SECRET,
     better_auth_url: env.BETTER_AUTH_URL,
   };
@@ -64,27 +63,10 @@ export async function decryptSmtpRecord(
 }
 
 /**
- * Inngest callbacks (`/api/inngest`) arrive without an API key, so they never get
- * `smtpConfig` from the context. Without a fallback the isolate that runs the
- * send-email function would receive `transport === null` and crash with
- * "Cannot read properties of null (reading 'send')". Load the active SMTP
- * configuration from the database instead.
- */
-export async function loadActiveSmtpConfig(env: Bindings): Promise<SmtpConfig | undefined> {
-  try {
-    const record = await findSmtpRecord(env);
-    return record ? await decryptSmtpRecord(env, record) : undefined;
-  } catch (err) {
-    pinoLogger.error({ err }, "Failed to load SMTP configuration for the transport");
-    return undefined;
-  }
-}
-
-/**
- * Transport factory injected into the Inngest send-email function. It builds a
- * fresh nodemailer transport from the configuration referenced by the event, so
- * credential edits apply immediately and each tenant sends with its own SMTP
- * account instead of a per-isolate singleton.
+ * Transport factory used by the SendEmailWorkflow. It builds a fresh nodemailer
+ * transport from the configuration referenced by the event, so credential edits
+ * apply immediately and each tenant sends with its own SMTP account instead of
+ * a per-isolate singleton.
  */
 export async function resolveTransportFor(
   env: Bindings,
