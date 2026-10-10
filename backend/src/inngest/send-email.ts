@@ -1,8 +1,8 @@
 import { pinoLogger } from "@/core/logger";
 import { cleanHtml } from "@/core/html-sanitizer";
 import { getInngestClient } from "./client";
-import { classifyEmailError, friendlyErrorMessage } from "./error-classifier";
-import type { ClassifiableError } from "./error-classifier";
+import { classifyEmailError, friendlyErrorMessage } from "@/send-email/error-classifier";
+import type { ClassifiableError } from "@/send-email/error-classifier";
 import type {
   IEmailRepository,
   IEmailTransport,

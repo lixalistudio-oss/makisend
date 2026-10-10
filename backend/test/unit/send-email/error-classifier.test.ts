@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   classifyEmailError,
   friendlyErrorMessage,
-} from "@/inngest/error-classifier";
+} from "@/send-email/error-classifier";
 
 describe("classifyEmailError", () => {
   it("treats a 5xx SMTP status embedded in the message as permanent", () => {
