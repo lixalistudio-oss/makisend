@@ -8,7 +8,7 @@ import { configMiddleware } from "@/middleware/config.middleware";
 import { apiKeyMiddleware } from "@/middleware/api-key.middleware";
 import { createSendEmailController } from "@/send-email/send-email.controller";
 import { SendEmailRepository } from "@/send-email/send-email.repository";
-import { SendEmailWorkflow } from "@/send-email/send-email.workflow";
+import { SendEmailWorkflow } from "@/workflows/send-email.workflow";
 import { createDatabase } from "@/db/connection";
 import { sendEmailQueueConsumer } from "@/queue/send-email.consumer";
 import { encrypt, decrypt } from "@/core/crypto";

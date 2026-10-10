@@ -1,6 +1,7 @@
 // vitest.config.ts
 import { defineConfig } from 'vitest/config';
 import tsconfigPaths from 'vite-tsconfig-paths';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 
@@ -10,8 +11,9 @@ export default defineConfig({
     alias: {
       // workerd built-in that does not exist under Node; tests only need a
       // WorkflowEntrypoint base class to extend (see test/mocks/).
-      'cloudflare:workers': fileURLToPath(
-        new URL('./test/mocks/cloudflare-workers.ts', import.meta.url),
+      'cloudflare:workers': resolve(
+        dirname(fileURLToPath(import.meta.url)),
+        'test/mocks/cloudflare-workers.ts',
       ),
     },
   },

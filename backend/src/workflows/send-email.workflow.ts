@@ -3,15 +3,15 @@ import type { WorkflowEvent, WorkflowStep } from "cloudflare:workers";
 import { pinoLogger } from "@/core/logger";
 import { cleanHtml } from "@/core/html-sanitizer";
 import { createDatabase } from "@/db/connection";
-import { SendEmailRepository } from "./send-email.repository";
-import { resolveTransportFor } from "./transport-resolver";
-import { classifyEmailError, friendlyErrorMessage } from "./error-classifier";
-import type { ClassifiableError } from "./error-classifier";
+import { SendEmailRepository } from "@/send-email/send-email.repository";
+import { resolveTransportFor } from "@/send-email/transport-resolver";
+import { classifyEmailError, friendlyErrorMessage } from "@/send-email/error-classifier";
+import type { ClassifiableError } from "@/send-email/error-classifier";
 import type { Bindings } from "@/index";
 import type {
   IEmailRepository,
   SendEmailQueueMessage,
-} from "./send-email.types";
+} from "@/send-email/send-email.types";
 
 /** Workflow instance payload — the queue message body. */
 export type SendEmailParams = SendEmailQueueMessage["data"];
@@ -163,6 +163,9 @@ export async function resolveSendEmailRunEnd(
  *
  * Parity notes vs the Inngest version:
  * - One SMTP attempt per instance, same five sequential steps.
+ * - The SMTP step passes `retries: { limit: 0 }`: Workflows auto-retries
+ *   steps by default (5 retries), which would send duplicate emails on a
+ *   lost ack and defeat one-attempt-per-run classification.
  * - Failures are classified in-process (try/catch) instead of `onFailure`.
  * - The Cloudflare Queue still owns the retry ladder via queue cycles
  *   (1min→1h backoff, capped at MAX_QUEUE_CYCLES).
@@ -186,7 +189,7 @@ export class SendEmailWorkflow extends WorkflowEntrypoint<Bindings, SendEmailPar
     try {
       // Fresh transport per event: credential edits apply immediately and each
       // tenant sends with its own SMTP account.
-      const transport = await resolveTransportFor(env, data.smtpConfigId);
+      const transport = await resolveTransportFor(env, data.smtpConfigId ?? undefined);
 
       await step.do("email-received-and-update-history", async () => {
         pinoLogger.info({ receiver: data.to }, "Email sending request pending");
@@ -208,6 +211,13 @@ export class SendEmailWorkflow extends WorkflowEntrypoint<Bindings, SendEmailPar
 
       const { messageId, durationMs } = await step.do(
         "send-mail-via-nodemailer",
+        {
+          // SMTP is not idempotent: Workflows would otherwise auto-retry this
+          // step up to 5 times (default limit), sending duplicate emails when
+          // the send succeeded but the ack was lost, and defeating the
+          // one-attempt-per-run + queue-cycle classification below.
+          retries: { limit: 0, delay: 0, backoff: "constant" },
+        },
         async () => {
           pinoLogger.info({ receiver: data.to, attempt: currentAttempt }, "Step: sending email via SMTP");
 

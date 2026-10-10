@@ -3,8 +3,8 @@ import {
   SendEmailWorkflow,
   resolveSendEmailRunEnd,
   MAX_QUEUE_CYCLES,
-} from "@/send-email/send-email.workflow";
-import type { SendEmailParams } from "@/send-email/send-email.workflow";
+} from "@/workflows/send-email.workflow";
+import type { SendEmailParams, SendEmailRunOutcome } from "@/workflows/send-email.workflow";
 import type { Bindings } from "@/index";
 import type { WorkflowStep } from "cloudflare:workers";
 
@@ -55,14 +55,17 @@ const payload: SendEmailParams = {
   queueCycles: 0,
 };
 
-/** Stub WorkflowStep: `step.do(name, fn)` just runs the callback. */
-function stubStep(): WorkflowStep {
+/** Stub WorkflowStep: runs the callback, recording any step config passed. */
+function stubStep(stepConfigs?: Record<string, unknown>): WorkflowStep {
   const doFn = async (
-    _name: string,
+    name: string,
     cfgOrFn: unknown,
     maybeFn?: unknown,
   ): Promise<unknown> => {
     const fn = typeof cfgOrFn === "function" ? cfgOrFn : maybeFn;
+    if (stepConfigs && typeof cfgOrFn === "object" && cfgOrFn !== null) {
+      stepConfigs[name] = cfgOrFn;
+    }
     return (fn as () => Promise<unknown>)();
   };
   return { do: doFn } as unknown as WorkflowStep;
@@ -76,12 +79,18 @@ function buildEnv(overrides?: Partial<Bindings>): Bindings {
   } as unknown as Bindings;
 }
 
-function runWorkflow(
-  env: Bindings,
-  data: SendEmailParams = payload,
-): Promise<ReturnType<SendEmailWorkflow["run"]>> {
+function runWorkflow(env: Bindings, data: SendEmailParams = payload): Promise<SendEmailRunOutcome> {
   const wf = new SendEmailWorkflow({} as never, env);
   return wf.run({ payload: data } as never, stubStep());
+}
+
+function runWorkflowCapturingConfigs(
+  env: Bindings,
+  configs: Record<string, unknown>,
+  data: SendEmailParams = payload,
+): Promise<SendEmailRunOutcome> {
+  const wf = new SendEmailWorkflow({} as never, env);
+  return wf.run({ payload: data } as never, stubStep(configs));
 }
 
 describe("SendEmailWorkflow", () => {
@@ -107,6 +116,17 @@ describe("SendEmailWorkflow", () => {
       outcome: "sent",
       messageId: "<mock-id@gmail.com>",
       attempt: 1,
+    });
+  });
+
+  it("disables Workflows auto-retry on the SMTP step (one attempt per run)", async () => {
+    // Workflows defaults step.do to 5 auto-retries; without limit: 0 a single
+    // run would send up to 6 emails and never reach in-run classification.
+    const configs: Record<string, unknown> = {};
+    await runWorkflowCapturingConfigs(buildEnv(), configs);
+
+    expect(configs["send-mail-via-nodemailer"]).toMatchObject({
+      retries: { limit: 0 },
     });
   });
 
@@ -243,7 +263,7 @@ describe("resolveSendEmailRunEnd", () => {
   it("does not throw when the payload carries no emailId", async () => {
     const result = await resolveSendEmailRunEnd(
       { emailRepository: mockRepository, sendEmailQueue: { send: mockQueueSend } as never },
-      {},
+      undefined,
       { message: "SMTP down" },
     );
 

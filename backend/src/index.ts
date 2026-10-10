@@ -238,7 +238,7 @@ app.route("/dashboard", dashboardController);
 // SendEmailWorkflow must be exported from the entrypoint for wrangler's
 // `class_name` to resolve.
 export { app };
-export { SendEmailWorkflow } from "@/send-email/send-email.workflow";
+export { SendEmailWorkflow } from "@/workflows";
 export default {
   fetch: app.fetch,
   queue: sendEmailQueueConsumer,
