@@ -90,6 +90,40 @@ Ces variables sont transformées en un objet `Config` typé par `createConfig()`
 
 ---
 
+## Développement avec Docker
+
+Pour développer sans rien installer localement (hormis Docker), le projet fournit une stack de développement locale :
+
+```bash
+docker compose build   # ou: pnpm docker:build
+docker compose up -d   # ou: pnpm docker:up
+```
+
+| URL | Service | Contenu |
+|-----|---------|---------|
+| `http://localhost:8787` | `backend` | Worker via `wrangler dev --local` (D1, Queues et Workflows simulés localement par Miniflare) |
+| `http://localhost:4321` | `frontend` | Serveur de dev Astro, proxy Vite vers `http://backend:8787` |
+
+- Le hot reload fonctionne sur les deux services (le dépôt est monté en volume).
+- L'état local D1/Queues/Workflows est celui de `backend/.wrangler` (monté depuis l'hôte, persiste après `docker compose down`).
+- `.env` et `.dev.vars` sont lus par Wrangler depuis le répertoire de travail monté — aucun secret n'est copié dans l'image (exclus via `.dockerignore`).
+- **Ne pas lancer `pnpm dev` sur l'hôte en même temps** (conflit sur le port 8787).
+
+Commandes hors-ligne (sans rien installer sur l'hôte) :
+
+```bash
+pnpm docker:test       # docker compose run --rm backend pnpm test:run
+pnpm docker:lint       # docker compose run --rm backend pnpm lint
+pnpm docker:migrate    # applique les migrations D1 en local
+pnpm docker:down       # arrête la stack
+```
+
+Le déploiement sur Cloudflare (`pnpm deploy`) reste inchangé et se fait depuis l'hôte ou depuis le conteneur (avec `CLOUDFLARE_API_TOKEN`).
+
+Un devcontainer (` .devcontainer/`) réutilise la même compose pour ouvrir le projet dans VS Code / Cursor.
+
+---
+
 ## Endpoints
 
 ### `POST /send-email`

@@ -178,7 +178,7 @@ describe("POST /send-email — HTTP layer integration", () => {
 
       expect(mockWorkflowCreate).toHaveBeenCalledTimes(1);
       expect(mockWorkflowCreate).toHaveBeenCalledWith({
-        id: `${message.data.emailId}:${message.data.queueCycles}`,
+        id: `${message.data.emailId}-${message.data.queueCycles}`,
         params: message.data,
       });
     });

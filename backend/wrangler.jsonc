@@ -31,8 +31,8 @@
 		}
 	],
 	// HTTP -> Queue -> Workflow. The queue buffers bursts at the edge; the consumer
-	// creates a SendEmailWorkflow instance per message (instance id = emailId:queueCycles
-	// for idempotency). The workflow's steps own the SMTP delivery attempt.
+	// creates a SendEmailWorkflow instance per message (instance id = emailId-queueCycles
+	// for idempotency; only [a-zA-Z0-9-_] allowed). The workflow's steps own the SMTP delivery attempt.
 	"queues": {
 		"producers": [
 			{

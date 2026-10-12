@@ -61,12 +61,14 @@ src/
 │   ├── index.ts
 │   ├── send-email.controller.ts
 │   ├── send-email.dto.ts       # Zod schemas + types
-│   ├── send-email.workflow.ts  # SendEmailWorkflow (5 durable steps + queue-cycle retry)
 │   ├── send-email.repository.ts # Drizzle/D1 persistence
 │   ├── transport-resolver.ts   # Per-event SMTP transport factory
 │   ├── error-classifier.ts     # Permanent/transient verdicts + human-readable messages
 │   └── send-email.types.ts     # Interfaces / contracts
-└── smtp-config/                # Per-user SMTP credentials (encrypted in D1)
+├── smtp-config/                # Per-user SMTP credentials (encrypted in D1)
+└── workflows/                  # Cloudflare Workflows (durable async orchestration)
+    ├── index.ts                # Barrel export
+    └── send-email.workflow.ts  # SendEmailWorkflow (5 durable steps + queue-cycle retry)
 
 test/
 ├── setup.ts
@@ -74,7 +76,8 @@ test/
 ├── integration/full-flow.test.ts
 └── unit/
     ├── api-keys/ auth/ config/ dashboard/ email-logs/
-    ├── send-email/             # workflow, error classifier, transport resolver, controller
+    ├── send-email/             # error classifier, transport resolver, controller
+    ├── workflows/              # send-email workflow + run-end resolver
     ├── middleware/ queue/ send-emails/ settings/ smtp-config/
 ```
 

@@ -68,7 +68,7 @@ describe("sendEmailQueueConsumer", () => {
 
     expect(mockCreate).toHaveBeenCalledTimes(1);
     expect(mockCreate).toHaveBeenCalledWith({
-      id: "email-id-123:0",
+      id: "email-id-123-0",
       params: message().data,
     });
     expect(msg.ack).toHaveBeenCalledTimes(1);
@@ -81,7 +81,7 @@ describe("sendEmailQueueConsumer", () => {
     await sendEmailQueueConsumer({ messages: [msg] } as never, env);
 
     expect(mockCreate).toHaveBeenCalledWith({
-      id: "email-id-123:2",
+      id: "email-id-123-2",
       params: message({ queueCycles: 2 }).data,
     });
   });
