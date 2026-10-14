@@ -1,5 +1,5 @@
-const BASE = import.meta.env.PUBLIC_API_URL ?? ""
-
+// Same-origin: the Worker serves both the frontend (static assets) and the
+// Hono API, so no absolute base URL is needed anymore.
 export function fetchApi(path: string, init?: RequestInit) {
-  return fetch(`${BASE}${path}`, { credentials: "include", ...init })
+  return fetch(path, { credentials: "include", ...init })
 }

@@ -207,7 +207,8 @@ Even though the runtime remains **Hono** (not NestJS), the code organization is 
 Deployment is done via Wrangler:
 
 ```bash
-pnpm deploy
+pnpm --filter frontend build   # required first: the Worker serves frontend/dist
+pnpm deploy                    # backend/ — uploads Worker + static assets
 ```
 
 Config: `wrangler.jsonc`
@@ -217,6 +218,9 @@ Config: `wrangler.jsonc`
 - Compatibility: `2026-07-10` with `nodejs_compat` flag
 - Observability: logs enabled
 - D1 binding: `makisend_db`
+- Static assets: `../frontend/dist` (Astro build output) — the Worker serves the
+  frontend and the API on the **same origin**, so there is no Cloudflare Pages
+  project and no CORS between UI and API
 
 ## CI / GitHub Actions
 

@@ -43,6 +43,9 @@ export type Bindings = {
   FRONTEND_URL: string;
   SEND_EMAIL_QUEUE: Queue<SendEmailQueueMessage>;
   SEND_EMAIL_WORKFLOW: Workflow;
+  // Static assets binding (frontend/dist) — handled by the platform before the
+  // Worker script; declared so the Bindings type matches wrangler.jsonc.
+  ASSETS: Fetcher;
 };
 
 // --- Hono context variables (per-request) ---

@@ -69,7 +69,7 @@ jobs:
       cancel-in-progress: false
     environment:
       name: production
-      url: https://makisend.pages.dev
+      url: https://makisend-poc.mute-hat-0e69.workers.dev
     # Job-level permissions replace the workflow-level ones, so re-declare read
     # and add PR write for the production-URL comment below.
     permissions:
@@ -99,6 +99,15 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # The Worker serves the frontend itself (Static Assets) — one deployment,
+      # one URL. The build job already produced the frontend once; no
+      # PUBLIC_API_URL is needed anymore because UI and API share an origin.
+      - name: Download frontend build
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
 
       # --- Backend (Workers) ---
 
@@ -213,6 +222,8 @@ jobs:
 
       # Secrets are provisioned once by hand and survive every deploy. This only
       # reports which ones are still missing so the app doesn't fail silently.
+      # FRONTEND_URL and BETTER_AUTH_URL must equal the production Worker URL —
+      # the Worker serves both the UI and the API on the same origin.
       - name: Check production secrets
         run: |
           set -eo pipefail
@@ -232,38 +243,10 @@ jobs:
           fi
         working-directory: backend
 
-      # --- Frontend (Pages) ---
-
-      - name: Build frontend with production Worker URL
-        run: pnpm --filter frontend build
-        env:
-          PUBLIC_API_URL: ${{ steps.deploy-worker.outputs.url }}
-
-      - name: Create Pages project if needed
-        run: npx wrangler@4.131.1 pages project create makisend --production-branch=main || true
-
-      - name: Deploy to Cloudflare Pages (production)
-        id: pages-deploy
-        run: |
-          OUTPUT=$(npx wrangler@4.131.1 pages deploy frontend/dist/ --project-name=makisend --branch=main)
-          echo "$OUTPUT"
-          # wrangler prints the per-deployment URL first (noindex) and the alias
-          # second — the alias is the real production link, so take the last one.
-          PAGES_URL=$(echo "$OUTPUT" | grep -oP 'https://\S+\.pages\.dev' | tail -1)
-          if [ -z "$PAGES_URL" ]; then
-            echo "::error::Could not parse the Pages URL from wrangler output"
-            exit 1
-          fi
-          if [ "$PAGES_URL" != "https://makisend.pages.dev" ]; then
-            echo "::warning::Deployment alias is $PAGES_URL, expected https://makisend.pages.dev — check the project's production branch with: npx wrangler pages project list"
-          fi
-          echo "url=$PAGES_URL" >> "$GITHUB_OUTPUT"
-
       - name: Summary
         run: |
           echo "### Production Deploy" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Backend: ${{ steps.deploy-worker.outputs.url }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Frontend: ${{ steps.pages-deploy.outputs.url }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- App (UI + API): ${{ steps.deploy-worker.outputs.url }}" >> "$GITHUB_STEP_SUMMARY"
 
       # Prod deploys on every push (any branch). If that branch has an open PR,
       # tell the reviewer where the production build is live.
@@ -274,13 +257,11 @@ jobs:
         uses: actions/github-script@v7
         env:
           WORKER_URL: ${{ steps.deploy-worker.outputs.url }}
-          PAGES_URL: ${{ steps.pages-deploy.outputs.url }}
         with:
           script: |
             const marker = '<!-- cf-prod -->';
             const branch = context.ref.replace(/^refs\/heads\//, '');
-            const workerUrl = process.env.WORKER_URL;
-            const pagesUrl = process.env.PAGES_URL;
+            const appUrl = process.env.WORKER_URL;
 
             const { data: pulls } = await github.rest.pulls.list({
               ...context.repo,
@@ -296,10 +277,7 @@ jobs:
               marker,
               '### 🚀 Production Deploy',
               '',
-              '| Service | URL |',
-              '|---------|-----|',
-              `| **Frontend** | ${pagesUrl} |`,
-              `| **Backend** | ${workerUrl} |`,
+              `**App (UI + API):** ${appUrl}`,
               '',
               `Deployed from branch \`${branch}\` — production updates on every push.`,
             ].join('\n');
@@ -367,6 +345,14 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # One Worker serves the preview UI + API (Static Assets), so the preview
+      # URL in the PR comment is both the site and the backend.
+      - name: Download frontend build
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
 
       # --- Backend preview (Workers) ---
 
@@ -468,37 +454,13 @@ jobs:
           echo "url=$WORKER_URL" >> "$GITHUB_OUTPUT"
         working-directory: backend
 
-      - name: Set BETTER_AUTH_URL for preview
+      - name: Set preview Worker secrets (same-origin URLs)
         run: |
           echo "${{ steps.deploy-worker.outputs.url }}" | npx wrangler@4.131.1 secret put BETTER_AUTH_URL --env preview
+          echo "${{ steps.deploy-worker.outputs.url }}" | npx wrangler@4.131.1 secret put FRONTEND_URL --env preview
         working-directory: backend
 
-      # --- Frontend preview (Pages) ---
-
-      - name: Build frontend with preview Worker URL
-        run: pnpm --filter frontend build
-        env:
-          PUBLIC_API_URL: ${{ steps.deploy-worker.outputs.url }}
-
-      - name: Create Pages project if needed
-        run: npx wrangler@4.131.1 pages project create makisend --production-branch=main || true
-
-      - name: Deploy to Cloudflare Pages (preview)
-        id: pages-deploy
-        run: |
-          OUTPUT=$(npx wrangler@4.131.1 pages deploy frontend/dist/ --project-name=makisend --branch=${{ github.head_ref }})
-          echo "$OUTPUT"
-          # Last URL is the alias (branch alias / canonical), first is the
-          # per-deployment hash URL.
-          PAGES_URL=$(echo "$OUTPUT" | grep -oP 'https://\S+\.pages\.dev' | tail -1)
-          echo "url=$PAGES_URL" >> "$GITHUB_OUTPUT"
-
-      - name: Set FRONTEND_URL for preview
-        run: |
-          echo "${{ steps.pages-deploy.outputs.url }}" | npx wrangler@4.131.1 secret put FRONTEND_URL --env preview
-        working-directory: backend
-
-      # --- Comment preview URLs on PR ---
+      # --- Comment preview URL on PR ---
       # Always runs (even when an earlier step failed) so the PR never ends up
       # without a link. The comment is posted/updated by github-actions[bot].
       - name: Comment preview URLs on PR
@@ -507,30 +469,25 @@ jobs:
         uses: actions/github-script@v7
         env:
           WORKER_URL: ${{ steps.deploy-worker.outputs.url }}
-          PAGES_URL: ${{ steps.pages-deploy.outputs.url }}
         with:
           script: |
             const marker = '<!-- cf-preview -->';
             const branch = context.payload.pull_request.head.ref;
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            const workerUrl = process.env.WORKER_URL || '';
-            const pagesUrl = process.env.PAGES_URL || '';
+            const appUrl = process.env.WORKER_URL || '';
             const failed = '⚠️ not deployed — [open the run](' + runUrl + ')';
-            const cell = (u) => (u ? `[${u}](${u})` : failed);
-            const prodFrontend = 'https://makisend.pages.dev';
+            const link = appUrl ? `[${appUrl}](${appUrl})` : failed;
+            const prodApp = 'https://makisend-poc.mute-hat-0e69.workers.dev';
 
             const body = [
               marker,
               '### 🔍 Preview Deployment',
               '',
-              '| Service | URL |',
-              '|---------|-----|',
-              `| **Frontend** (Pages) | ${cell(pagesUrl)} |`,
-              `| **Backend** (Workers) | ${cell(workerUrl)} |`,
+              `**App (UI + API):** ${link}`,
               '',
               '| Production | URL |',
               '|------------|-----|',
-              `| **Frontend** | [${prodFrontend}](${prodFrontend}) |`,
+              `| **App** | [${prodApp}](${prodApp}) |`,
               '',
               `Branch \`${branch}\` — preview updates on each push.`,
               `Last run: [${context.runId}](${runUrl})`,

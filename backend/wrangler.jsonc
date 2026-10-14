@@ -6,6 +6,14 @@
 	"compatibility_flags": [
 		"nodejs_compat"
 	],
+	// The Worker also serves the Astro frontend: matching static files are served
+	// from this directory first, everything else falls through to the Hono API.
+	// One deployment = one URL, no Cloudflare Pages. Inherited by env.preview.
+	// Build the frontend BEFORE deploying: pnpm --filter frontend build
+	"assets": {
+		"directory": "../frontend/dist",
+		"binding": "ASSETS"
+	},
 	// `vars` are NOT inherited by environments, so preview declares its own below.
 	// PORT is used by nodemailer (SmtpEmailTransport); without it the port silently
 	// falls back to 465.
