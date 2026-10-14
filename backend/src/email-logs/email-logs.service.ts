@@ -1,6 +1,11 @@
 import { decrypt } from "@/core/crypto";
 import { pinoLogger } from "@/core/logger";
-import type { IEmailLogRepository, EmailLogFilters, EmailLogWithHistory } from "./email-logs.types";
+import type {
+  IEmailLogRepository,
+  EmailLogPageFilters,
+  EmailLogPage,
+  EmailLogWithHistory,
+} from "./email-logs.types";
 
 export class EmailLogService {
   constructor(
@@ -8,16 +13,19 @@ export class EmailLogService {
     private readonly aesKey: string,
   ) {}
 
-  async findAllByUser(userId: string, filters?: EmailLogFilters): Promise<EmailLogWithHistory[]> {
-    pinoLogger.info({ userId, filters }, "Fetching email logs for user");
-    let logs = await this.emailLogRepo.findByUserId(userId, filters);
-    logs = await Promise.all(logs.map((log) => this.decryptLog(log)));
+  async findPageByUser(userId: string, filters?: EmailLogPageFilters): Promise<EmailLogPage> {
+    pinoLogger.info({ userId, filters }, "Fetching email logs page for user");
+    const { logs, nextCursor } = await this.emailLogRepo.findPageByUserId(userId, filters);
 
+    let decrypted = await Promise.all(logs.map((log) => this.decryptLog(log)));
+
+    // `to` is stored AES-encrypted, so substring matching can only happen after
+    // decryption — it applies to the fetched page, not the whole table.
     if (filters?.to) {
-      logs = logs.filter((log) => log.to.toLowerCase().includes(filters.to!.toLowerCase()));
+      decrypted = decrypted.filter((log) => log.to.toLowerCase().includes(filters.to!.toLowerCase()));
     }
 
-    return logs;
+    return { logs: decrypted, nextCursor };
   }
 
   async findById(id: string, userId: string): Promise<EmailLogWithHistory> {

@@ -46,32 +46,62 @@ describe("EmailLogService", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockDecryptFn.mockResolvedValue("decrypted_value");
+    mockDecryptFn.mockImplementation(async (value: string) => `decrypted_${value}`);
 
     mockRepo = {
-      findByUserId: vi.fn() as IEmailLogRepository["findByUserId"],
+      findPageByUserId: vi.fn() as IEmailLogRepository["findPageByUserId"],
       findById: vi.fn() as IEmailLogRepository["findById"],
     };
-    (mockRepo.findByUserId as ReturnType<typeof vi.fn>).mockResolvedValue([mockLog]);
+    (mockRepo.findPageByUserId as ReturnType<typeof vi.fn>).mockResolvedValue({
+      logs: [mockLog],
+      nextCursor: null,
+    });
     (mockRepo.findById as ReturnType<typeof vi.fn>).mockResolvedValue(mockLog);
 
     service = new EmailLogService(mockRepo, TEST_AES_KEY);
   });
 
-  describe("findAllByUser", () => {
-    it("should return logs for user", async () => {
-      const result = await service.findAllByUser(USER_ID);
-      expect(result).toEqual([{
-        ...mockLog,
-        to: "decrypted_value",
-      }]);
-      expect(mockRepo.findByUserId).toHaveBeenCalledWith(USER_ID, undefined);
+  describe("findPageByUser", () => {
+    it("should return decrypted logs and the next cursor", async () => {
+      (mockRepo.findPageByUserId as ReturnType<typeof vi.fn>).mockResolvedValue({
+        logs: [mockLog],
+        nextCursor: "2026-01-01T00:00:00.000Z:log-123",
+      });
+
+      const result = await service.findPageByUser(USER_ID);
+
+      expect(result.logs).toEqual([
+        {
+          ...mockLog,
+          to: "decrypted_encrypted_to",
+        },
+      ]);
+      expect(result.nextCursor).toBe("2026-01-01T00:00:00.000Z:log-123");
+      expect(mockRepo.findPageByUserId).toHaveBeenCalledWith(USER_ID, undefined);
     });
 
-    it("should pass filters to repo", async () => {
-      const filters = { status: "sent" };
-      await service.findAllByUser(USER_ID, filters);
-      expect(mockRepo.findByUserId).toHaveBeenCalledWith(USER_ID, filters);
+    it("should pass filters (including pagination) to the repo", async () => {
+      const filters = { status: "sent", limit: 25, cursor: "c1:x" };
+      await service.findPageByUser(USER_ID, filters);
+      expect(mockRepo.findPageByUserId).toHaveBeenCalledWith(USER_ID, filters);
+    });
+
+    it("should filter decrypted recipients by the to filter", async () => {
+      (mockRepo.findPageByUserId as ReturnType<typeof vi.fn>).mockResolvedValue({
+        logs: [
+          mockLog,
+          { ...mockLog, internalId: "log-456", to: "encrypted_other" },
+        ],
+        nextCursor: null,
+      });
+      mockDecryptFn.mockImplementation(async (value: string) =>
+        value === "encrypted_to" ? "alice@example.com" : "bob@example.com",
+      );
+
+      const result = await service.findPageByUser(USER_ID, { to: "alice" });
+
+      expect(result.logs).toHaveLength(1);
+      expect(result.logs[0].to).toBe("alice@example.com");
     });
   });
 
@@ -80,7 +110,7 @@ describe("EmailLogService", () => {
       const result = await service.findById(LOG_ID, USER_ID);
       expect(result).toEqual({
         ...mockLog,
-        to: "decrypted_value",
+        to: "decrypted_encrypted_to",
       });
     });
 

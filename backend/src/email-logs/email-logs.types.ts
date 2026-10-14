@@ -29,7 +29,20 @@ export interface EmailLogFilters {
   status?: string;
 }
 
+export interface EmailLogPageFilters extends EmailLogFilters {
+  /** Page size, capped at MAX_PAGE_SIZE by the repository. */
+  limit?: number;
+  /** Opaque cursor: "<createdAt>:<internalId>" of the last row of the previous page. */
+  cursor?: string;
+}
+
+export interface EmailLogPage {
+  logs: EmailLogWithHistory[];
+  /** Pass back as `cursor` to fetch the next page; null when there are no more rows. */
+  nextCursor: string | null;
+}
+
 export interface IEmailLogRepository {
-  findByUserId(userId: string, filters?: EmailLogFilters): Promise<EmailLogWithHistory[]>;
+  findPageByUserId(userId: string, filters?: EmailLogPageFilters): Promise<EmailLogPage>;
   findById(internalId: string): Promise<EmailLogWithHistory | null>;
 }
