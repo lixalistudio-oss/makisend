@@ -18,9 +18,22 @@ export interface Config {
   better_auth_secret: string;
 }
 
+// AES-256-GCM requires a 256-bit key. We accept it as 64 hexadecimal
+// characters, i.e. the exact output of `openssl rand -hex 32`.
+const AES_256_KEY_HEX = /^[0-9a-fA-F]{64}$/;
+
 export function createConfig(env: Bindings): Config {
   if (!env.AES_256_KEY) {
     throw new AppError(500, "AES_256_KEY environment variable is required");
+  }
+
+  if (!AES_256_KEY_HEX.test(env.AES_256_KEY)) {
+    // Refuse to serve requests with a malformed key instead of letting
+    // encrypt/decrypt fail later with an opaque OperationError.
+    throw new AppError(
+      500,
+      "AES_256_KEY must be a 64-character hexadecimal string (generate one with: openssl rand -hex 32)",
+    );
   }
 
   if (!env.makisend_db) {
