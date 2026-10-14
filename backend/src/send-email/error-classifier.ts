@@ -153,6 +153,17 @@ export function friendlyErrorMessage(err: ClassifiableError): string {
       return "TLS negotiation failed — check that the port matches the encryption mode (465 = implicit TLS, 587 = STARTTLS).";
     case "EPROTOCOL":
       return "The server did not speak SMTP — check the host and port in your configuration.";
+    case "ECONNECTION":
+    case "ESOCKET":
+      // Cloudflare Workers block outbound port 25, so a 25 config lands here
+      // with the platform's own "port 25 is blocked" text — call it out.
+      return /port 25 is blocked/i.test(message)
+        ? "Outbound port 25 is blocked on Cloudflare Workers — use port 465 (TLS) or 587 (STARTTLS) instead."
+        : "Could not connect to the SMTP server — check that the host and port are correct, that the port matches the encryption mode (465 = TLS, 587 = STARTTLS), and that the provider allows connections from Cloudflare Workers.";
+    case "ETIMEDOUT":
+      return "The SMTP server did not respond in time — check the host and port, and whether a firewall allows outbound connections on that port.";
+    case "ESTREAM":
+      return "The email content could not be streamed to the SMTP provider — try sending the email again.";
     case "EENVELOPE":
       return status !== undefined && status < 500
         ? `The SMTP provider temporarily rejected the sender or recipient (status ${status}).`
@@ -171,8 +182,10 @@ export function friendlyErrorMessage(err: ClassifiableError): string {
   }
 
   if (status !== undefined && status >= 500) {
-    return `Your SMTP provider permanently rejected this email: ${message}`;
+    // The raw provider response is intentionally not forwarded to the user:
+    // it can contain internal hostnames and server details.
+    return `Your SMTP provider permanently rejected this email (status ${status}).`;
   }
 
-  return `Email delivery failed: ${message}`;
+  return "Email delivery failed unexpectedly — please try again, and contact support if the problem persists.";
 }

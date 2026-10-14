@@ -131,14 +131,54 @@ describe("friendlyErrorMessage", () => {
     expect(friendlyErrorMessage({ code: "ETLS", message: "self signed certificate" })).toContain("port");
   });
 
-  it("falls back to the raw provider text for unknown 5xx rejections", () => {
-    const message = "Message size larger than allowed: 550 5.3.4 Message too big";
-    expect(friendlyErrorMessage({ code: "EMAXRECIPIENTS", message })).toBe(
-      `Your SMTP provider permanently rejected this email: ${message}`,
+  it("explains connection failures for the dashboard", () => {
+    expect(
+      friendlyErrorMessage({ code: "ECONNECTION", message: "Connection closed unexpectedly" }),
+    ).toContain("Could not connect to the SMTP server");
+  });
+
+  it("calls out the Cloudflare port 25 block explicitly", () => {
+    expect(
+      friendlyErrorMessage({
+        code: "ECONNECTION",
+        message:
+          "The worker could not open a connection to that address and port. Check the hostname and the port. Outbound port 25 is blocked on Cloudflare Workers",
+      }),
+    ).toBe(
+      "Outbound port 25 is blocked on Cloudflare Workers — use port 465 (TLS) or 587 (STARTTLS) instead.",
     );
   });
 
-  it("falls back to the raw message when nothing matches", () => {
-    expect(friendlyErrorMessage({ message: "SMTP down" })).toBe("Email delivery failed: SMTP down");
+  it("explains socket failures for the dashboard", () => {
+    expect(friendlyErrorMessage({ code: "ESOCKET", message: "socket hang up" })).toContain(
+      "Could not connect to the SMTP server",
+    );
+  });
+
+  it("explains timeouts for the dashboard", () => {
+    expect(friendlyErrorMessage({ code: "ETIMEDOUT", message: "Greeting never received" })).toContain(
+      "did not respond in time",
+    );
+  });
+
+  it("explains message stream failures for the dashboard", () => {
+    expect(friendlyErrorMessage({ code: "ESTREAM", message: "stream error" })).toContain(
+      "could not be streamed",
+    );
+  });
+
+  it("hides the raw provider response for unknown 5xx rejections", () => {
+    const message = "Message size larger than allowed: 550 5.3.4 Message too big";
+    const friendly = friendlyErrorMessage({ code: "EMAXRECIPIENTS", message });
+    expect(friendly).toContain("permanently rejected");
+    expect(friendly).not.toContain(message);
+  });
+
+  it("falls back to a generic message without leaking raw text", () => {
+    const friendly = friendlyErrorMessage({ message: "SMTP down at internal-host-01.corp.local" });
+    expect(friendly).toBe(
+      "Email delivery failed unexpectedly — please try again, and contact support if the problem persists.",
+    );
+    expect(friendly).not.toContain("internal-host-01");
   });
 });
