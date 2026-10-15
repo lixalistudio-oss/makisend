@@ -261,12 +261,15 @@ export class SendEmailWorkflow extends WorkflowEntrypoint<Bindings, SendEmailPar
       // Returns the cleaned HTML into the run's durable state: if this instance
       // is ever resumed after a crash, the next step reads it from the
       // checkpoint instead of re-running this callback.
-      const { cleanedHtml } = await step.do("cleaning-html-input", async () => {
+      // Must be a primitive: returning an *object* from step.do makes the
+      // Workflows runtime emit a false "code had hung" cancellation right
+      // after the run (workerd#6925 / workers-sdk#14959).
+      const cleanedHtml = await step.do("cleaning-html-input", async () => {
         pinoLogger.info({ receiver: data.to }, "Step: cleaning HTML input");
         const cleanedHtml = cleanHtml(data.html);
         pinoLogger.info({ receiver: data.to }, "Step: HTML cleaned");
         await emailRepository.saveEmailHistory(emailId, "cleaned");
-        return { cleanedHtml };
+        return cleanedHtml;
       });
 
       // --- Step 4: SMTP send (the one non-idempotent step) -----------------------
@@ -274,7 +277,10 @@ export class SendEmailWorkflow extends WorkflowEntrypoint<Bindings, SendEmailPar
       // this step up to 5 times (default), which would (a) send duplicate
       // emails when the send succeeded but the ack was lost, and (b) never let
       // the outer catch classify the error for the queue-cycle ladder.
-      const { messageId, durationMs } = await step.do(
+      // Two values must survive the checkpoint, so the step returns them as a
+      // JSON string — object returns trigger the false "code had hung"
+      // cancellation (see step 3) — and the run parses it back below.
+      const sendReceipt = await step.do(
         "send-mail-via-nodemailer",
         {
           retries: { limit: 0, delay: 0, backoff: "constant" },
@@ -304,9 +310,14 @@ export class SendEmailWorkflow extends WorkflowEntrypoint<Bindings, SendEmailPar
           pinoLogger.info({ smtpId: messageId, durationMs }, "Step: email dispatched via SMTP");
           // Record which attempt succeeded so the timeline shows retries on success too.
           await emailRepository.saveEmailHistory(emailId, "sent", undefined, currentAttempt);
-          return { messageId, durationMs };
+          return JSON.stringify({ messageId, durationMs });
         },
       );
+
+      const { messageId, durationMs } = JSON.parse(sendReceipt) as {
+        messageId: string;
+        durationMs: number;
+      };
 
       // --- Step 5: persist the delivery receipt -----------------------------------
       await step.do("save-infos-in-db", async () => {

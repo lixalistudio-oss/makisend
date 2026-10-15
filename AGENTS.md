@@ -184,6 +184,7 @@ Even though the runtime remains **Hono** (not NestJS), the code organization is 
 ## Technical notes
 
 - **Forced IPv4** in nodemailer (`family: 4`) to avoid `workerd` network warnings
+- **Workflow steps return primitives**: a `step.do` callback must never return an object — the Workflows runtime then emits a false "code had hung" cancellation right after the run (workerd#6925 / workers-sdk#14959); multi-value steps return a `JSON.stringify` string that the run parses back
 - **Verified TLS** (`rejectUnauthorized: true`) to prevent MITM attacks
 - **Encryption** of recipient email address before database storage
 - **HTML sanitization** of incoming content before sending
