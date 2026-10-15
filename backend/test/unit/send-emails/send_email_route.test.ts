@@ -4,13 +4,27 @@ import { Hono } from "hono";
 import { errorHandler } from "@/middleware/error.handler";
 import { createSendEmailController } from "@/send-email/send-email.controller";
 import type { SendEmailQueueMessage } from "@/send-email/send-email.types";
+import type { ITemplateRepository, TemplateRecord } from "@/templates/templates.types";
 
 const AES_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+const USER_ID = "user-123";
 
 const queueEnv = (send: ReturnType<typeof vi.fn>) => ({
   SEND_EMAIL_QUEUE: { send },
   AES_256_KEY: AES_KEY,
 });
+
+const OWNED_TEMPLATE: TemplateRecord = {
+  id: "tpl-1",
+  userId: USER_ID,
+  name: "Welcome",
+  subject: "Bienvenue {{username}} !",
+  html: "<h1>Bonjour {{username}}</h1><p>Compte : {{email}}</p>",
+  text: "Bonjour {{username}}, compte {{email}}",
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
 
 function buildApp() {
   const mockQueueSend = vi.fn().mockResolvedValue(undefined);
@@ -21,19 +35,33 @@ function buildApp() {
     saveEmailHistory: vi.fn().mockResolvedValue(undefined),
   };
 
-  const app = new Hono();
+  const mockTemplateRepository = {
+    findById: vi.fn().mockResolvedValue(null),
+  } as unknown as ITemplateRepository & { findById: ReturnType<typeof vi.fn> };
+
+  // Mirrors what apiKeyMiddleware puts in the context in production.
+  const app = new Hono<{
+    Variables: { userId: string; apiKeyId: string; smtpConfigId: string };
+  }>();
+  app.use("*", async (c, next) => {
+    c.set("userId", USER_ID);
+    c.set("apiKeyId", "key-123");
+    c.set("smtpConfigId", "smtp-123");
+    await next();
+  });
   app.onError(errorHandler);
   app.route(
     "/send-email",
-    createSendEmailController(() => mockRepository),
+    createSendEmailController(() => mockRepository, () => mockTemplateRepository),
   );
-  return { app, mockQueueSend, mockRepository };
+  return { app, mockQueueSend, mockRepository, mockTemplateRepository };
 }
 
 describe("SendEmailController", () => {
   let app: Hono;
   let mockQueueSend: ReturnType<typeof vi.fn>;
   let mockRepository: ReturnType<typeof buildApp>["mockRepository"];
+  let mockTemplateRepository: ReturnType<typeof buildApp>["mockTemplateRepository"];
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -41,6 +69,8 @@ describe("SendEmailController", () => {
     app = built.app;
     mockQueueSend = built.mockQueueSend;
     mockRepository = built.mockRepository;
+    mockTemplateRepository = built.mockTemplateRepository;
+    mockTemplateRepository.findById.mockResolvedValue(null);
   });
 
   describe("POST /send-email", () => {
@@ -66,16 +96,17 @@ describe("SendEmailController", () => {
       ).toBeLessThan(mockQueueSend.mock.invocationCallOrder[0]);
       expect(mockRepository.createPendingEmailLog).toHaveBeenCalledWith(
         expect.any(String),
-        undefined,
+        USER_ID,
         expect.any(String),
         "Testing Feature Modules",
-        undefined,
+        "key-123",
       );
 
       const message = mockQueueSend.mock.calls[0][0] as SendEmailQueueMessage;
       expect(message.name).toBe("app/send-email");
       expect(message.data.to).toBe("gedeon@example.com");
       expect(message.data.emailId).toBeTruthy();
+      expect(message.data.userId).toBe(USER_ID);
 
       const json = (await res.json()) as { success: boolean; message: string };
       expect(json.success).toBe(true);
@@ -190,6 +221,166 @@ describe("SendEmailController", () => {
         details: { fieldErrors: Record<string, string[] | undefined> };
       };
       expect(json.details.fieldErrors.text?.[0]).toContain("at most 20000");
+    });
+  });
+
+  describe("POST /send-email with templateId", () => {
+    it("renders the template variables and queues the result", async () => {
+      mockTemplateRepository.findById.mockResolvedValue(OWNED_TEMPLATE);
+
+      const res = await app.request("/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: "joel@example.com",
+          templateId: "tpl-1",
+          variables: { username: "Joel", email: "joel@example.com" },
+        }),
+      }, queueEnv(mockQueueSend));
+
+      expect(res.status).toBe(202);
+      expect(mockTemplateRepository.findById).toHaveBeenCalledWith("tpl-1");
+
+      // The pending log stores the RENDERED subject, not the raw template.
+      expect(mockRepository.createPendingEmailLog).toHaveBeenCalledWith(
+        expect.any(String),
+        USER_ID,
+        expect.any(String),
+        "Bienvenue Joel !",
+        "key-123",
+      );
+
+      // The queue message carries fully rendered inline content — the workflow
+      // and SMTP layer never see templateId.
+      const message = mockQueueSend.mock.calls[0][0] as SendEmailQueueMessage;
+      expect(message.data.subject).toBe("Bienvenue Joel !");
+      expect(message.data.html).toBe("<h1>Bonjour Joel</h1><p>Compte : joel@example.com</p>");
+      expect(message.data.text).toBe("Bonjour Joel, compte joel@example.com");
+      expect(message.data).not.toHaveProperty("templateId");
+      expect(message.data).not.toHaveProperty("variables");
+    });
+
+    it("HTML-escapes variable values before queueing", async () => {
+      mockTemplateRepository.findById.mockResolvedValue({
+        ...OWNED_TEMPLATE,
+        subject: "Hi",
+        html: "<p>{{username}}</p>",
+        text: "Hi",
+      });
+
+      const res = await app.request("/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: "joel@example.com",
+          templateId: "tpl-1",
+          variables: { username: "<script>alert(1)</script>" },
+        }),
+      }, queueEnv(mockQueueSend));
+
+      expect(res.status).toBe(202);
+      const message = mockQueueSend.mock.calls[0][0] as SendEmailQueueMessage;
+      expect(message.data.html).toBe("<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>");
+    });
+
+    it("coerces numeric variable values to strings", async () => {
+      mockTemplateRepository.findById.mockResolvedValue({
+        ...OWNED_TEMPLATE,
+        subject: "Order {{orderId}}",
+        html: "<p>Order {{orderId}}</p>",
+        text: "Order {{orderId}}",
+      });
+
+      const res = await app.request("/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: "joel@example.com",
+          templateId: "tpl-1",
+          variables: { orderId: 123 },
+        }),
+      }, queueEnv(mockQueueSend));
+
+      expect(res.status).toBe(202);
+      const message = mockQueueSend.mock.calls[0][0] as SendEmailQueueMessage;
+      expect(message.data.subject).toBe("Order 123");
+    });
+
+    it("rejects with 400 listing the missing variables", async () => {
+      mockTemplateRepository.findById.mockResolvedValue(OWNED_TEMPLATE);
+
+      const res = await app.request("/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: "joel@example.com",
+          templateId: "tpl-1",
+          variables: { username: "Joel" },
+        }),
+      }, queueEnv(mockQueueSend));
+
+      expect(res.status).toBe(400);
+      expect(mockQueueSend).not.toHaveBeenCalled();
+      const json = (await res.json()) as { error: string };
+      expect(json.error).toBe("Missing template variables: email");
+    });
+
+    it("answers 404 for a template owned by another user", async () => {
+      mockTemplateRepository.findById.mockResolvedValue({
+        ...OWNED_TEMPLATE,
+        userId: "someone-else",
+      });
+
+      const res = await app.request("/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: "joel@example.com",
+          templateId: "tpl-1",
+          variables: { username: "Joel", email: "joel@example.com" },
+        }),
+      }, queueEnv(mockQueueSend));
+
+      expect(res.status).toBe(404);
+      expect(mockQueueSend).not.toHaveBeenCalled();
+      const json = (await res.json()) as { error: string };
+      expect(json.error).toBe("Template not found");
+    });
+
+    it("answers 404 for an unknown templateId", async () => {
+      mockTemplateRepository.findById.mockResolvedValue(null);
+
+      const res = await app.request("/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: "joel@example.com",
+          templateId: "nope",
+          variables: {},
+        }),
+      }, queueEnv(mockQueueSend));
+
+      expect(res.status).toBe(404);
+      expect(mockQueueSend).not.toHaveBeenCalled();
+    });
+
+    it("rejects a payload mixing templateId and inline content", async () => {
+      const res = await app.request("/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: "joel@example.com",
+          subject: "Inline subject",
+          text: "This text body is long enough.",
+          html: "<p>Inline</p>",
+          templateId: "tpl-1",
+        }),
+      }, queueEnv(mockQueueSend));
+
+      expect(res.status).toBe(400);
+      expect(mockQueueSend).not.toHaveBeenCalled();
+      const json = (await res.json()) as { error: string };
+      expect(json.error).toBe("Validation failed");
     });
   });
 });

@@ -150,6 +150,30 @@ export const smtpConfig = sqliteTable(
   (table) => [index("smtpConfig_userId_idx").on(table.userId)],
 );
 
+// User-defined email templates: subject/html/text may contain {{variable}}
+// placeholders that are replaced at send time (POST /send-email with templateId).
+export const templates = sqliteTable(
+  "templates",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    subject: text("subject").notNull(),
+    html: text("html").notNull(),
+    text: text("text").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [index("templates_userId_idx").on(table.userId)],
+);
+
 export const apikey = sqliteTable(
   "apikey",
   {

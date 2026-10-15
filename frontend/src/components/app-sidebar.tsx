@@ -17,6 +17,7 @@ import {
   MailIcon,
   KeyIcon,
   FileTextIcon,
+  LayoutTemplateIcon,
   Settings2Icon,
   CommandIcon,
 } from "lucide-react"
@@ -42,6 +43,11 @@ const data = {
       title: "Email Logs",
       url: "/dashboard/email-logs",
       icon: <FileTextIcon />,
+    },
+    {
+      title: "Templates",
+      url: "/dashboard/templates",
+      icon: <LayoutTemplateIcon />,
     },
   ],
   navSecondary: [

@@ -22,6 +22,7 @@ export default defineConfig({
         "/smtp-config": backendUrl,
         "/api-keys": backendUrl,
         "/email-logs": backendUrl,
+        "/templates": backendUrl,
         "/dashboard/stats": backendUrl,
         "/dashboard/by-config": backendUrl,
         "/dashboard/recent": backendUrl,

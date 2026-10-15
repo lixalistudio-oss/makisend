@@ -66,6 +66,14 @@ src/
 │   ├── error-classifier.ts     # Permanent/transient verdicts + human-readable messages
 │   └── send-email.types.ts     # Interfaces / contracts
 ├── smtp-config/                # Per-user SMTP credentials (encrypted in D1)
+├── templates/                  # Email templates with {{variable}} placeholders
+│   ├── index.ts                # Barrel export
+│   ├── templates.types.ts      # Contracts / repository interface
+│   ├── templates.dto.ts        # Create/Update Zod schemas
+│   ├── templates.repository.ts # Drizzle/D1 persistence
+│   ├── templates.service.ts    # CRUD + ownership checks
+│   ├── templates.controller.ts # /templates routes (session auth)
+│   └── template-renderer.ts    # extractVariables / renderTemplate / renderHtmlTemplate
 └── workflows/                  # Cloudflare Workflows (durable async orchestration)
     ├── index.ts                # Barrel export
     └── send-email.workflow.ts  # SendEmailWorkflow (5 durable steps + queue-cycle retry)
@@ -163,6 +171,7 @@ Even though the runtime remains **Hono** (not NestJS), the code organization is 
 - **API key authentication**: `src/middleware/api-key.middleware.ts` verifies per-user API keys via Better Auth (`401` missing header, `403` invalid key), with header `x-api-key: <KEY>` or `Authorization: Bearer <KEY>`. Keys are created/listed/revoked through the `api-keys` module.
 - **Encryption**: recipient email address is encrypted with AES-256-GCM before database storage.
 - **HTML sanitization**: HTML content is cleaned with `sanitize-html` before sending.
+- **Template ownership**: the `templateId` branch of `POST /send-email` checks that the template belongs to the API key's user (a foreign or unknown id answers the same `404` so ids cannot be probed).
 - **Verified TLS**: SMTP connections use `rejectUnauthorized: true`.
 - **Strict validation**: payloads are validated with Zod (`strict()` blocks unexpected fields).
 
@@ -178,6 +187,7 @@ Even though the runtime remains **Hono** (not NestJS), the code organization is 
 - **Verified TLS** (`rejectUnauthorized: true`) to prevent MITM attacks
 - **Encryption** of recipient email address before database storage
 - **HTML sanitization** of incoming content before sending
+- **Templates render at request time**: `templateId` payloads are resolved (load → missing-variable check → render → HTML-escape) into the same inline shape before enqueueing, so the queue, workflow and SMTP layer never learn that templates exist; missing variables fail fast with `400` and a list of names
 - No Node.js `Buffer`: use `Uint8Array`, `TextEncoder` / `TextDecoder`, and Web Crypto API
 
 ## Tests
@@ -186,8 +196,9 @@ Even though the runtime remains **Hono** (not NestJS), the code organization is 
 - Config: `vitest.config.ts`
 - Global setup: `test/setup.ts`
 - Current coverage:
-  - `POST /send-email` route (validation + 202 response)
+  - `POST /send-email` route (validation + 202 response, inline and `templateId` branches: rendering, missing variables → 400, foreign template → 404, mixed payload → 400)
   - Email service (mock transport, repository, encryption)
+  - Template renderer (`extractVariables` / `renderTemplate` / `renderHtmlTemplate` with HTML escaping)
   - Retry pipeline: error classifier, workflow re-queue / abandonment, queue consumer dedup
   - API key middleware (401/403 + context wiring)
 - Mocks are reset in `beforeEach`
@@ -239,6 +250,7 @@ Steps run:
 ### POC (current)
 
 - `POST /send-email` endpoint with per-user API key auth (Better Auth)
+- Email templates: `/templates` CRUD (session auth) + `templateId`/`variables` branch on `POST /send-email` (API key auth), rendered at request time before enqueueing; frontend page at `/dashboard/templates` with live preview
 - Async delivery pipeline: Cloudflare Queues → SendEmailWorkflow → SMTP
 - Delivery via nodemailer + raw SMTP
 - Retry loop: one attempt per workflow run, transient failures bounce back onto the queue (5 cycles, 1min→1h backoff), permanent failures (auth, TLS, DNS, config, 5xx) fail immediately with a human-readable reason in D1
