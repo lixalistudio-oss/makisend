@@ -31,15 +31,23 @@ export class SmtpEmailTransport implements IEmailTransport {
   }
 
   async send(input: EmailInput): Promise<EmailSendResult> {
-    const info = await this.transporter.sendMail({
-      from: this.senderEmail,
-      to: input.to,
-      subject: input.subject,
-      text: input.text,
-      html: input.html,
-    });
+    try {
+      const info = await this.transporter.sendMail({
+        from: this.senderEmail,
+        to: input.to,
+        subject: input.subject,
+        text: input.text,
+        html: input.html,
+      });
 
-    return { messageId: info.messageId };
+      return { messageId: info.messageId };
+    } finally {
+      // Always release the SMTP socket. Nodemailer keeps the connection (and
+      // its idle timers) open after sendMail; workerd then cancels the request
+      // with "code had hung" once the workflow run returns. close() is
+      // safe to call even if the dial never completed.
+      this.transporter.close();
+    }
   }
 }
 
