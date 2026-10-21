@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { pinoLogger } from "@/core/logger";
+import { MAX_ID_LENGTH } from "@/core/validation";
 import type { Bindings, UserInfoVariables } from "@/index";
 import { CreateApiKeyDto } from "./api-keys.dto";
 import type { ApiKeyService } from "./api-keys.service";
@@ -52,7 +53,7 @@ export function createApiKeysController(
 
   controller.delete(
     "/:id",
-    zValidator("param", z.object({ id: z.string().min(1) })),
+    zValidator("param", z.object({ id: z.string().min(1).max(MAX_ID_LENGTH) })),
     async (c) => {
       const userId = c.get("userId");
       const { id } = c.req.valid("param");

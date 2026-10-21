@@ -40,7 +40,21 @@ export function createAuth(env: Bindings) {
         },
       },
     },
+    // Better Auth only turns its rate limiter on when NODE_ENV=production, which Workers
+    // never sets: without this block sign-in could be brute-forced without limit.
+    // - database storage: in-memory counters live per isolate, so they limit nothing here;
+    // - cf-connecting-ip: Cloudflare sets it and strips client-supplied values, unlike
+    //   x-forwarded-for (Better Auth's default), which Cloudflare does not provide.
+    rateLimit: {
+      enabled: env.RATE_LIMIT !== "off",
+      storage: "database",
+      window: 60,
+      max: 100,
+    },
     advanced: {
+      ipAddress: {
+        ipAddressHeaders: ["cf-connecting-ip"],
+      },
       // pages.dev and workers.dev are different sites: SameSite=Lax would make the
       // browser drop the session cookie on every cross-origin fetch.
       // SameSite=None is only accepted together with Secure.

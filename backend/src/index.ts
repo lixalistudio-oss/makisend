@@ -5,6 +5,7 @@ import { cors } from "hono/cors";
 // --- Middleware imports ---
 import { errorHandler } from "@/middleware/error.handler";
 import { requestLoggerMiddleware } from "@/middleware/request-logger.middleware";
+import { securityHeadersMiddleware } from "@/middleware/security-headers.middleware";
 import { configMiddleware } from "@/middleware/config.middleware";
 import { apiKeyMiddleware } from "@/middleware/api-key.middleware";
 import { sessionMiddleware } from "@/middleware/session.middleware";
@@ -43,6 +44,9 @@ export type Bindings = {
   BETTER_AUTH_SECRET: string;
   BETTER_AUTH_URL: string;
   FRONTEND_URL: string;
+  // "off" disables the auth rate limiter (local dev and tests only). Anything else, or
+  // unset, keeps it on: production and preview never set it.
+  RATE_LIMIT?: string;
   SEND_EMAIL_QUEUE: Queue<SendEmailQueueMessage>;
   SEND_EMAIL_WORKFLOW: Workflow;
   // Static assets binding (frontend/dist) — handled by the platform before the
@@ -124,13 +128,36 @@ const deps = {
 // --- Hono app setup ---
 const app = new Hono<{ Bindings: Bindings; Variables: UserInfoVariables }>();
 
-// Global middleware: CORS, request logging, error handling, config injection
-app.use("*", cors({
-  origin: (origin) => origin,
-  credentials: true,
-  allowHeaders: ["Content-Type", "Authorization"],
-  allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-}));
+/**
+ * CORS allowlist: the dashboard origin (`FRONTEND_URL`) and nothing else.
+ *
+ * The session cookie is `SameSite=None` (dashboard and API live on different sites),
+ * and credentialed responses include decrypted SMTP credentials. Reflecting any
+ * origin would let every website a logged-in admin visits read them, so an origin
+ * that is not exactly the dashboard gets no CORS headers at all.
+ */
+function allowedOrigin(origin: string | undefined, env: Bindings): string | null {
+  const frontend = env.FRONTEND_URL?.replace(/\/+$/, "");
+  return origin && frontend && origin === frontend ? origin : null;
+}
+
+// Global middleware: security headers, CORS, request logging, error handling, config injection
+app.use("*", securityHeadersMiddleware());
+app.use("*", async (c, next) => {
+  // Any other origin gets no CORS headers at all (Hono's middleware would still send
+  // `Allow-Credentials: true` once `credentials` is on): a preflight is answered
+  // empty, so the browser refuses the request.
+  if (!allowedOrigin(c.req.header("origin"), c.env)) {
+    if (c.req.method === "OPTIONS") return c.body(null, 204);
+    return next();
+  }
+  return cors({
+    origin: (origin) => allowedOrigin(origin, c.env),
+    credentials: true,
+    allowHeaders: ["Content-Type", "Authorization"],
+    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  })(c, next);
+});
 app.use("*", requestLoggerMiddleware());
 app.onError(errorHandler);
 app.use(configMiddleware());
@@ -139,11 +166,17 @@ app.use(configMiddleware());
 // We wrap the result to add CORS headers that Hono's middleware can't inject into
 // raw Response objects.
 
-function addCorsHeaders(result: Response, origin: string | undefined): Response {
+function addCorsHeaders(
+  result: Response,
+  origin: string | undefined,
+  env: Bindings,
+): Response {
   const headers = new Headers(result.headers);
-  if (origin) {
-    headers.set("Access-Control-Allow-Origin", origin);
+  const allowed = allowedOrigin(origin, env);
+  if (allowed) {
+    headers.set("Access-Control-Allow-Origin", allowed);
     headers.set("Access-Control-Allow-Credentials", "true");
+    headers.append("Vary", "Origin");
   }
   return new Response(result.body, {
     status: result.status,
@@ -171,13 +204,13 @@ app.post("/api/auth/sign-up/email", async (c) => {
       body: JSON.stringify({ ...body, name: body.name || fallbackName }),
     }),
   );
-  return addCorsHeaders(result, c.req.header("origin"));
+  return addCorsHeaders(result, c.req.header("origin"), c.env);
 });
 
 app.all("/api/auth/*", async (c) => {
   const auth = getAuthInstance(c.env);
   const result = await auth.handler(c.req.raw);
-  return addCorsHeaders(result, c.req.header("origin"));
+  return addCorsHeaders(result, c.req.header("origin"), c.env);
 });
 
 // API key auth (Better Auth) on send-email routes

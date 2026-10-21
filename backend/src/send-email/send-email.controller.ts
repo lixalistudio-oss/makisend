@@ -13,6 +13,12 @@ import {
 } from "@/templates/template-renderer";
 import { AppError } from "@/core/errors";
 import { encrypt } from "@/core/crypto";
+import {
+  hasLineBreak,
+  MAX_HTML_LENGTH,
+  MAX_SUBJECT_LENGTH,
+  MAX_TEXT_LENGTH,
+} from "@/core/validation";
 import { createId } from "@paralleldrive/cuid2";
 
 /**
@@ -40,11 +46,37 @@ async function resolveTemplatePayload(
     throw new AppError(400, `Missing template variables: ${missing.join(", ")}`);
   }
 
+  const subject = renderTemplate(template.subject, variables);
+  const html = renderHtmlTemplate(template.html, variables);
+  const text = renderTemplate(template.text, variables);
+
+  if (hasLineBreak(subject)) {
+    throw new AppError(400, "Rendered subject must not contain line breaks.");
+  }
+  if (subject.length > MAX_SUBJECT_LENGTH) {
+    throw new AppError(
+      400,
+      `Rendered subject must be at most ${MAX_SUBJECT_LENGTH} characters.`,
+    );
+  }
+  if (html.length > MAX_HTML_LENGTH) {
+    throw new AppError(
+      400,
+      `Rendered HTML must be at most ${MAX_HTML_LENGTH} characters.`,
+    );
+  }
+  if (text.length > MAX_TEXT_LENGTH) {
+    throw new AppError(
+      400,
+      `Rendered text must be at most ${MAX_TEXT_LENGTH} characters.`,
+    );
+  }
+
   return {
     to: payload.to,
-    subject: renderTemplate(template.subject, variables),
-    html: renderHtmlTemplate(template.html, variables),
-    text: renderTemplate(template.text, variables),
+    subject,
+    html,
+    text,
   };
 }
 

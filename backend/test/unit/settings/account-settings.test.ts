@@ -63,6 +63,8 @@ describe("settings account routes", () => {
       BETTER_AUTH_SECRET: "test-secret",
       BETTER_AUTH_URL: BASE_URL,
       FRONTEND_URL: ORIGIN,
+      // This suite exercises account settings, not brute-force protection.
+      RATE_LIMIT: "off",
     } as unknown as Bindings;
 
     const res = await app.request(

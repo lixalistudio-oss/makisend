@@ -26,6 +26,15 @@ export const emailLogs = sqliteTable("email_logs", {
   ],
 );
 
+// Better Auth rate limiter storage (model "rateLimit"). In-memory storage would be
+// per-isolate on Workers, i.e. no limit at all, so the counters live in D1.
+export const rateLimit = sqliteTable("rate_limit", {
+  id: text("id").primaryKey().$defaultFn(() => createId()),
+  key: text("key").notNull().unique(),
+  count: integer("count").notNull(),
+  lastRequest: integer("last_request").notNull(),
+});
+
 export const emailHistories = sqliteTable("email_histories", {
   id: text("id").primaryKey().$defaultFn(() => createId()),
   emailId: text("email_id").notNull(),

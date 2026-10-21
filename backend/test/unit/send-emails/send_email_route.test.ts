@@ -224,6 +224,40 @@ describe("SendEmailController", () => {
     });
   });
 
+  describe("input hardening", () => {
+    it("rejects a subject containing CR/LF", async () => {
+      const res = await app.request("/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: "valid@example.com",
+          subject: "Valid subject\r\nBcc: victim@example.com",
+          text: "This text body is long enough.",
+          html: "<p>Valid HTML</p>",
+        }),
+      }, queueEnv(mockQueueSend));
+
+      expect(res.status).toBe(400);
+      expect(mockQueueSend).not.toHaveBeenCalled();
+    });
+
+    it("rejects a subject over 500 characters", async () => {
+      const res = await app.request("/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: "valid@example.com",
+          subject: "a".repeat(501),
+          text: "This text body is long enough.",
+          html: "<p>Valid HTML</p>",
+        }),
+      }, queueEnv(mockQueueSend));
+
+      expect(res.status).toBe(400);
+      expect(mockQueueSend).not.toHaveBeenCalled();
+    });
+  });
+
   describe("POST /send-email with templateId", () => {
     it("renders the template variables and queues the result", async () => {
       mockTemplateRepository.findById.mockResolvedValue(OWNED_TEMPLATE);
@@ -381,6 +415,57 @@ describe("SendEmailController", () => {
       expect(mockQueueSend).not.toHaveBeenCalled();
       const json = (await res.json()) as { error: string };
       expect(json.error).toBe("Validation failed");
+    });
+
+    it("rejects more than 50 template variables", async () => {
+      const variables = Object.fromEntries(
+        Array.from({ length: 51 }, (_, i) => [`v${i}`, "x"]),
+      );
+
+      const res = await app.request("/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to: "joel@example.com", templateId: "tpl-1", variables }),
+      }, queueEnv(mockQueueSend));
+
+      expect(res.status).toBe(400);
+      expect(mockQueueSend).not.toHaveBeenCalled();
+    });
+
+    it("rejects a template variable value over 10000 characters", async () => {
+      mockTemplateRepository.findById.mockResolvedValue(OWNED_TEMPLATE);
+
+      const res = await app.request("/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: "joel@example.com",
+          templateId: "tpl-1",
+          variables: { username: "a".repeat(10_001), email: "joel@example.com" },
+        }),
+      }, queueEnv(mockQueueSend));
+
+      expect(res.status).toBe(400);
+      expect(mockQueueSend).not.toHaveBeenCalled();
+    });
+
+    it("rejects a rendered subject that gains a line break from a variable", async () => {
+      mockTemplateRepository.findById.mockResolvedValue(OWNED_TEMPLATE);
+
+      const res = await app.request("/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: "joel@example.com",
+          templateId: "tpl-1",
+          variables: { username: "Joel\r\nBcc: victim@example.com", email: "joel@example.com" },
+        }),
+      }, queueEnv(mockQueueSend));
+
+      expect(res.status).toBe(400);
+      expect(mockQueueSend).not.toHaveBeenCalled();
+      const json = (await res.json()) as { error: string };
+      expect(json.error).toContain("line breaks");
     });
   });
 });

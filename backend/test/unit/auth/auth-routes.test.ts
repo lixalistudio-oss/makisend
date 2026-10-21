@@ -47,6 +47,7 @@ describe("auth routes (email + password only)", () => {
       PORT: 587,
       BETTER_AUTH_SECRET: "test-secret",
       BETTER_AUTH_URL: BASE_URL,
+      FRONTEND_URL: ORIGIN,
     } as unknown as Bindings;
   });
 
