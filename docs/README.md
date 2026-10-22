@@ -71,7 +71,7 @@ Docs existantes associées :
 ## Snapshot / Instantané
 
 - Branch: `feat/new-features-patch-from-notifier`
-- API reference: `GET /docs` (Scalar) and `GET /openapi.json` (OpenAPI 3.1)
+- API reference: `GET /dashboard/api-docs` (guided), `GET /docs` (Scalar), `GET /openapi.json` (OpenAPI 3.1)
 - Tests: 26 files / 288 tests pass (`cd backend && pnpm test:run`)
 - Lint: passes (`cd backend && pnpm lint`)
 - Typecheck: passes (`cd backend && pnpm exec tsc --noEmit`)

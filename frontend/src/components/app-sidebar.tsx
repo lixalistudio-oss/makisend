@@ -18,6 +18,7 @@ import {
   KeyIcon,
   FileTextIcon,
   LayoutTemplateIcon,
+  BookOpenIcon,
   Settings2Icon,
   CommandIcon,
 } from "lucide-react"
@@ -51,6 +52,11 @@ const data = {
     },
   ],
   navSecondary: [
+    {
+      title: "API Reference",
+      url: "/dashboard/api-docs",
+      icon: <BookOpenIcon />,
+    },
     {
       title: "Settings",
       url: "/dashboard/settings",

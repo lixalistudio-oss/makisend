@@ -1,0 +1,9 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import "../../styles/global.css";
+import { ApiDocsLayout } from "@/components/api-docs-layout";
+---
+
+<Layout title="API Reference - MakiSend">
+  <ApiDocsLayout client:load />
+</Layout>

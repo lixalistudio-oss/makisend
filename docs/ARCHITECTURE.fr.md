@@ -8,6 +8,11 @@
 > **Public :** ingénieurs, relecteurs et futurs mainteneurs qui doivent
 > comprendre comment une requête devient un email délivré, et où se trouvent
 > les points sensibles.
+>
+> **Note de maintenance :** certaines parties de ce document précèdent le
+> pipeline de livraison et le dashboard actuels. Consultez `AGENTS.md`,
+> `README.md`, `/dashboard/api-docs` et `/openapi.json` comme référence à jour
+> jusqu'à ce que ce document soit entièrement révisé.
 
 ---
 

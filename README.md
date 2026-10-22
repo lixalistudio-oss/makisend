@@ -128,6 +128,7 @@ Un devcontainer (` .devcontainer/`) réutilise la même compose pour ouvrir le p
 
 Une référence interactive est servie par le Worker :
 
+- **Guide intégré au dashboard** : `/dashboard/api-docs` (authentification, cycle de livraison, SMTP, templates, endpoints, erreurs)
 - **Scalar** : `http://localhost:8787/docs` (ou l'URL du Worker déployé)
 - **OpenAPI 3.1** : `http://localhost:8787/openapi.json`
 
@@ -246,7 +247,7 @@ Avant de déployer, assure-toi que :
 
 - Envoi **asynchrone** : `POST /send-email` répond `202 Accepted` dès la mise en file ; la délivrance (Cloudflare Queues → Workflow → SMTP) se fait ensuite et n’est visible que dans les logs D1.
 - **Un seul fournisseur SMTP par configuration** : les identifiants sont stockés par utilisateur dans D1 (chiffrés), sans routage multi-fournisseur ni failover. Le port et le mode TLS sont configurables par configuration.
-- **Retry borné** : une seule tentative SMTP par exécution du workflow. Un échec transitoire remet l’email en file, jusqu’à **5 cycles** avec un backoff de 1 min → 1 h ; un échec permanent (auth, TLS, DNS, config, 5xx) s’arrête immédiatement avec une raison lisible dans D1. Le consumer Queue retente 3 fois uniquement si le lancement du workflow échoue (puis DLQ).
+- **Retry borné** : une tentative SMTP initiale + **3 retries espacés de 30 s** dans le même workflow. Un échec permanent (auth, TLS, DNS, config, 5xx) s’arrête immédiatement ; après épuisement du budget, l’email passe à `failed` et part en DLQ. Le consumer Queue retente uniquement le démarrage du workflow (backoff exponentiel, puis DLQ).
 - **Pas de tracking** : pas de suivi des bounces, ouvertures ou clics. Seuls les logs d’envoi sont stockés.
 - **D1 est une base SQLite serverless** : latence possible, peu adaptée aux très gros volumes sans cache.
 - **Délivrabilité** : SPF, DKIM, DMARC et réputation d’IP dépendent du fournisseur SMTP et du domaine expéditeur.

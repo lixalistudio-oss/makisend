@@ -8,6 +8,11 @@
 > **Audience:** engineers, reviewers and future maintainers who need to
 > understand how a request becomes a delivered email, and where the sharp edges
 > are.
+>
+> **Maintenance note:** parts of this document predate the current delivery
+> pipeline and dashboard. Treat `AGENTS.md`, `README.md`,
+> `/dashboard/api-docs`, and `/openapi.json` as the current reference until
+> this document is fully refreshed.
 
 ---
 

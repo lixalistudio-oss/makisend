@@ -254,6 +254,7 @@ Config: `wrangler.jsonc`
 
 The Worker serves its own reference:
 
+- `GET /dashboard/api-docs` — guided in-app reference (signed-in dashboard users)
 - `GET /docs` — Scalar UI (CDN script, nonce-based CSP)
 - `GET /openapi.json` — OpenAPI 3.1 document
 
@@ -285,7 +286,7 @@ Steps run:
 - Email templates: `/templates` CRUD (session auth) + `templateId`/`variables` branch on `POST /send-email` (API key auth), rendered at request time before enqueueing; frontend page at `/dashboard/templates` with live preview
 - Async delivery pipeline: Cloudflare Queues → SendEmailWorkflow → SMTP
 - Delivery via nodemailer + raw SMTP
-- Retry loop: one SMTP attempt per workflow run; transient failures re-enqueue for up to 5 cycles with a 1 min → 1 h backoff, then fail with a human-readable reason in D1. The Queue consumer retries 3 times only when starting the workflow fails (then DLQ)
+- Retry loop: one initial SMTP attempt + 3 retries 30 s apart inside the same workflow; permanent failures stop immediately, and an exhausted budget writes `failed` and dead-letters the email. The Queue consumer retries only workflow startup with exponential backoff before the DLQ
 - Encrypted logs + encrypted email bodies stored in D1
 - Per-config SMTP port/TLS mode, connection check and test-send endpoints; a daily cron checks every config and stores `lastCheckAt`/`lastCheckOk`/`lastCheckError`
 - OpenAPI 3.1 document + Scalar UI at `/docs`; request schemas generated from the Zod DTOs
