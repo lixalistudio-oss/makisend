@@ -26,33 +26,14 @@ function backoffDelaySeconds(attempts: number): number {
 /**
  * Cloudflare Queue consumer: starts one SendEmailWorkflow instance per message.
  *
- * ## Two independent retry systems
+ * The queue payload only carries `{ emailId }`, so both the queue message and
+ * the workflow state are free of PII. Retries inside a run are owned by the
+ * workflow (3 retries, 30s apart); this consumer only retries failures to
+ * *start* a run (Workflows API unavailable, etc.).
  *
- * **System 1 (this file): Queue → Workflow.** Covers failures to even *start*
- * a run (Workflows API down, invalid id, binding missing). Each message is
- * individually acked or retried so one bad message never re-delivers the whole
- * batch (which would duplicate instances already accepted by Workflows).
- * When the budget (`max_retries: 3`) is exhausted the message goes to the
- * dead-letter queue AND a `failed` history row is written — the email never
- * disappears silently.
- *
- * **System 2 (SendEmailWorkflow): Workflow → SMTP.** Covers failures *inside*
- * a run (SMTP errors). Owned by `resolveSendEmailRunEnd` and the queue-cycle
- * ladder; this consumer never sees those — it only sees fresh messages
- * (initial or re-enqueued with an incremented `queueCycles`).
- *
- * ## Instance id = idempotency key
- *
- * Format: `${emailId}-${queueCycles}` (e.g. `clxyz123-0`).
- *
- * - Workflows rejects a `create()` with a duplicate id, so a redelivery that
- *   slips through (e.g. ack lost after a successful create) cannot start a
- *   second run for the same email + cycle.
- * - The separator MUST be `-`, not `:` — Workflows instance ids only allow
- *   `[a-zA-Z0-9-_]` and must start with an alphanumeric. cuid2 emailIds are
- *   `[0-9a-z]` only, so `-` is unambiguous.
- * - A message re-enqueued by the workflow carries `queueCycles + 1`, so its
- *   id differs and a fresh instance starts as intended.
+ * Instance id = emailId. Workflows rejects a duplicate `create()`, so a
+ * redelivery after a lost ack cannot start a second run for the same email.
+ * On a duplicate we check `get(emailId)` and ack: the original run is alive.
  */
 export async function sendEmailQueueConsumer(
   batch: MessageBatch<SendEmailQueueMessage>,
@@ -61,18 +42,42 @@ export async function sendEmailQueueConsumer(
   const repository = new SendEmailRepository(createDatabase(env.makisend_db));
 
   for (const msg of batch.messages) {
+    const emailId = msg.body?.emailId;
+
+    if (!emailId) {
+      pinoLogger.error({ body: msg.body }, "Discarding queue message without an emailId");
+      msg.ack();
+      continue;
+    }
+
     try {
       await env.SEND_EMAIL_WORKFLOW.create({
-        id: `${msg.body.data.emailId}-${msg.body.data.queueCycles ?? 0}`,
-        params: msg.body.data,
+        id: emailId,
+        params: { emailId },
       });
       // Only ack after create() succeeded: an early ack would drop the email
       // if the Worker crashed between ack and create.
       msg.ack();
     } catch (err) {
+      // Duplicate instance id means a previous delivery already started the
+      // run; ack it instead of retrying forever.
+      try {
+        const existing = await env.SEND_EMAIL_WORKFLOW.get(emailId);
+        if (existing) {
+          pinoLogger.info({ emailId }, "SendEmailWorkflow already started; acking duplicate");
+          msg.ack();
+          continue;
+        }
+      } catch (getErr) {
+        pinoLogger.error(
+          { err: getErr, emailId },
+          "Failed to check for an existing SendEmailWorkflow instance",
+        );
+      }
+
       const reason = err instanceof Error ? err.message : String(err);
       pinoLogger.error(
-        { err, attempts: msg.attempts, emailId: msg.body.data.emailId },
+        { err, attempts: msg.attempts, emailId },
         "Failed to start SendEmailWorkflow instance; scheduling retry",
       );
 
@@ -82,14 +87,14 @@ export async function sendEmailQueueConsumer(
       if (msg.attempts >= FINAL_ATTEMPT) {
         try {
           await repository.saveEmailHistory(
-            msg.body.data.emailId,
+            emailId,
             "failed",
             `Failed to start workflow after ${msg.attempts} attempts: ${reason}`,
             msg.attempts,
           );
         } catch (historyErr) {
           pinoLogger.error(
-            { err: historyErr, emailId: msg.body.data.emailId },
+            { err: historyErr, emailId },
             "Failed to persist DLQ failure history",
           );
         }

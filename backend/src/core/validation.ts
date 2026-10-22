@@ -2,7 +2,7 @@
  * Shared limits for request payloads.
  *
  * Values are deliberately generous for normal use but bounded so a single
- * request cannot turn into an oversized queue message, a broken email header,
+ * request cannot turn into an oversized stored email, a broken email header,
  * or an unbounded database row.
  */
 export const MAX_EMAIL_LENGTH = 320;

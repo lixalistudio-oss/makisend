@@ -39,13 +39,18 @@
 		}
 	],
 	// HTTP -> Queue -> Workflow. The queue buffers bursts at the edge; the consumer
-	// creates a SendEmailWorkflow instance per message (instance id = emailId-queueCycles
-	// for idempotency; only [a-zA-Z0-9-_] allowed). The workflow's steps own the SMTP delivery attempt.
+	// creates a SendEmailWorkflow instance per message (instance id = emailId for
+	// idempotency; only [a-zA-Z0-9-_] allowed). The workflow's steps own the SMTP
+	// delivery attempts, retries and dead-letter publication.
 	"queues": {
 		"producers": [
 			{
 				"binding": "SEND_EMAIL_QUEUE",
 				"queue": "makisend-send-email"
+			},
+			{
+				"binding": "SEND_EMAIL_DLQ",
+				"queue": "makisend-send-email-dlq"
 			}
 		],
 		"consumers": [
@@ -88,6 +93,10 @@
 					{
 						"binding": "SEND_EMAIL_QUEUE",
 						"queue": "makisend-send-email-preview"
+					},
+					{
+						"binding": "SEND_EMAIL_DLQ",
+						"queue": "makisend-send-email-dlq-preview"
 					}
 				],
 				"consumers": [

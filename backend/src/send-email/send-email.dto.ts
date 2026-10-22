@@ -31,8 +31,8 @@ export const SendEmailDto = z
         message: "Subject must not contain line breaks.",
       }),
 
-    // Caps keep the queue message well under the Cloudflare Queues 128 KB limit
-    // (to + subject + text + html are serialized into a single message body).
+    // Caps keep the encrypted body safely under D1's 2 MB row limit while
+    // allowing normal transactional emails.
     text: z
       .string()
       .trim()

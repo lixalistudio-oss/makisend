@@ -8,14 +8,28 @@ import { configMiddleware } from "@/middleware/config.middleware";
 import { apiKeyMiddleware } from "@/middleware/api-key.middleware";
 import { createSendEmailController } from "@/send-email/send-email.controller";
 import { SendEmailRepository } from "@/send-email/send-email.repository";
+import { loadEmailForSending } from "@/send-email/send-email.loader";
 import { SendEmailWorkflow } from "@/workflows/send-email.workflow";
+import {
+  IdempotencyRepository,
+  IdempotencyService,
+  idempotencyMiddleware,
+} from "@/idempotency";
 import { createDatabase } from "@/db/connection";
 import { sendEmailQueueConsumer } from "@/queue/send-email.consumer";
 import { encrypt, decrypt } from "@/core/crypto";
-import { user, emailLogs, emailHistories, smtpConfig, apikey } from "@/db/schema";
+import {
+  user,
+  emailLogs,
+  emailHistories,
+  emailContents,
+  smtpConfig,
+  apikey,
+} from "@/db/schema";
 import { createTestD1, cleanupTestD1 } from "../helpers/d1-setup";
 import type { Bindings, UserInfoVariables } from "@/index";
 import type { SendEmailQueueMessage } from "@/send-email/send-email.types";
+import type { ITemplateRepository } from "@/templates/templates.types";
 import type { Miniflare } from "miniflare";
 import type { WorkflowStep } from "cloudflare:workers";
 import { eq } from "drizzle-orm";
@@ -32,6 +46,8 @@ describe("POST /send-email — HTTP layer integration", () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let db: any;
   let emailRepository: SendEmailRepository;
+  let templateRepository: ITemplateRepository;
+  let idempotencyService: IdempotencyService;
   let app: Hono<AppEnv>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let auth: any;
@@ -104,6 +120,12 @@ describe("POST /send-email — HTTP layer integration", () => {
 
     mockQueueSend = vi.fn().mockResolvedValue(undefined);
     mockWorkflowCreate = vi.fn().mockResolvedValue({ id: "instance-123" });
+    templateRepository = {
+      findById: vi.fn().mockResolvedValue(null),
+    } as unknown as ITemplateRepository;
+    idempotencyService = new IdempotencyService(
+      new IdempotencyRepository(createDatabase(testD1.d1)),
+    );
 
     app = new Hono<AppEnv>();
     app.onError(errorHandler);
@@ -112,7 +134,11 @@ describe("POST /send-email — HTTP layer integration", () => {
       const config = c.get("appConfig");
       await apiKeyMiddleware(config, auth)(c, next);
     });
-    app.route("/send-email", createSendEmailController(() => emailRepository));
+    app.use("/send-email/*", idempotencyMiddleware(() => idempotencyService));
+    app.route(
+      "/send-email",
+      createSendEmailController(() => emailRepository, () => templateRepository),
+    );
   });
 
   afterEach(async () => {
@@ -135,7 +161,12 @@ describe("POST /send-email — HTTP layer integration", () => {
       BETTER_AUTH_URL: "http://localhost:8787",
       FRONTEND_URL: "http://localhost:4321",
       SEND_EMAIL_QUEUE: { send: mockQueueSend } as unknown as Bindings["SEND_EMAIL_QUEUE"],
-      SEND_EMAIL_WORKFLOW: { create: mockWorkflowCreate } as unknown as Bindings["SEND_EMAIL_WORKFLOW"],
+      SEND_EMAIL_DLQ: { send: vi.fn() } as unknown as Bindings["SEND_EMAIL_DLQ"],
+      SEND_EMAIL_WORKFLOW: {
+        create: mockWorkflowCreate,
+        get: vi.fn(),
+      } as unknown as Bindings["SEND_EMAIL_WORKFLOW"],
+      ASSETS: {} as Fetcher,
     };
   }
 
@@ -149,23 +180,34 @@ describe("POST /send-email — HTTP layer integration", () => {
       }, mockEnvWithD1(d1));
 
       expect(res.status).toBe(202);
-      const json = (await res.json()) as { success: boolean; message: string };
+      const json = (await res.json()) as {
+        success: boolean;
+        message: string;
+        emailId: string;
+      };
       expect(json.success).toBe(true);
       expect(json.message).toBe("Email queued");
+      expect(json.emailId).toBeTruthy();
 
       expect(mockQueueSend).toHaveBeenCalledTimes(1);
       const message = mockQueueSend.mock.calls[0][0] as SendEmailQueueMessage;
-      expect(message.name).toBe("app/send-email");
-      expect(message.data.smtpConfigId).toBe("test-smtp-config-001");
-      expect(message.data.apiKeyId).toBeTruthy();
-      expect(message.data.emailId).toBeTruthy();
+      expect(message).toEqual({ emailId: json.emailId });
 
       // Enqueue-time pending row exists so failures are listable from the start.
       const logs = await db.select().from(emailLogs).all();
       expect(logs.length).toBe(1);
-      expect(logs[0].internalId).toBe(message.data.emailId);
+      expect(logs[0].internalId).toBe(message.emailId);
       expect(logs[0].sentAt).toBeNull();
       expect(logs[0].createdAt).toBeTruthy();
+
+      // Bodies are encrypted in D1 and tied to the SMTP config chosen at enqueue.
+      const [content] = await db.select().from(emailContents).all();
+      expect(content.emailId).toBe(message.emailId);
+      expect(content.smtpConfigId).toBe("test-smtp-config-001");
+      expect(content.textBody).not.toContain(validPayload.text);
+      expect(content.htmlBody).not.toContain("<p>");
+      expect(await decrypt(content.textBody, AES_KEY)).toBe(validPayload.text);
+      expect(await decrypt(content.htmlBody, AES_KEY)).toBe(validPayload.html);
 
       // The consumer starts a workflow instance for the buffered message exactly once.
       await sendEmailQueueConsumer(
@@ -178,8 +220,8 @@ describe("POST /send-email — HTTP layer integration", () => {
 
       expect(mockWorkflowCreate).toHaveBeenCalledTimes(1);
       expect(mockWorkflowCreate).toHaveBeenCalledWith({
-        id: `${message.data.emailId}-${message.data.queueCycles}`,
-        params: message.data,
+        id: message.emailId,
+        params: { emailId: message.emailId },
       });
     });
 
@@ -195,6 +237,101 @@ describe("POST /send-email — HTTP layer integration", () => {
       const json = (await res.json()) as { success: boolean; message: string };
       expect(json.success).toBe(true);
       expect(json.message).toBe("Email queued");
+    });
+  });
+
+  describe("idempotency", () => {
+    it("replays the original 202 and emailId for the same key and body", async () => {
+      const d1 = await mf.getD1Database("makisend_db");
+      const request = () =>
+        app.request(
+          "/send-email",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-api-key": testApiKey,
+              "Idempotency-Key": "integration-key-1",
+            },
+            body: JSON.stringify(validPayload),
+          },
+          mockEnvWithD1(d1),
+        );
+
+      const first = await request();
+      const second = await request();
+
+      expect(first.status).toBe(202);
+      expect(second.status).toBe(202);
+      expect(first.headers.get("Idempotency-Replayed")).toBe("false");
+      expect(second.headers.get("Idempotency-Replayed")).toBe("true");
+      expect(await second.json()).toEqual(await first.json());
+      expect(mockQueueSend).toHaveBeenCalledTimes(1);
+
+      const logs = await db.select().from(emailLogs).all();
+      expect(logs).toHaveLength(1);
+    });
+
+    it("rejects the same key with a different body", async () => {
+      const d1 = await mf.getD1Database("makisend_db");
+      const headers = {
+        "Content-Type": "application/json",
+        "x-api-key": testApiKey,
+        "Idempotency-Key": "integration-key-2",
+      };
+
+      const first = await app.request(
+        "/send-email",
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify(validPayload),
+        },
+        mockEnvWithD1(d1),
+      );
+      const conflict = await app.request(
+        "/send-email",
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ ...validPayload, subject: "Different subject" }),
+        },
+        mockEnvWithD1(d1),
+      );
+
+      expect(first.status).toBe(202);
+      expect(conflict.status).toBe(409);
+      expect(await conflict.json()).toMatchObject({
+        error: expect.stringContaining("different request body"),
+      });
+      expect(mockQueueSend).toHaveBeenCalledTimes(1);
+    });
+
+    it("allows a retry after a 5xx instead of caching the failure", async () => {
+      const d1 = await mf.getD1Database("makisend_db");
+      mockQueueSend.mockRejectedValueOnce(new Error("queue unavailable"));
+
+      const request = () =>
+        app.request(
+          "/send-email",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-api-key": testApiKey,
+              "Idempotency-Key": "integration-key-3",
+            },
+            body: JSON.stringify(validPayload),
+          },
+          mockEnvWithD1(d1),
+        );
+
+      const first = await request();
+      const retry = await request();
+
+      expect(first.status).toBe(500);
+      expect(retry.status).toBe(202);
+      expect(mockQueueSend).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -280,7 +417,10 @@ describe("POST /send-email — HTTP layer integration", () => {
         BETTER_AUTH_URL: "http://localhost:8787",
         FRONTEND_URL: "http://localhost:4321",
         SEND_EMAIL_QUEUE: { send: vi.fn().mockRejectedValue(new Error("queue down")) },
-      });
+        SEND_EMAIL_DLQ: { send: vi.fn() },
+        SEND_EMAIL_WORKFLOW: { create: vi.fn(), get: vi.fn() },
+        ASSETS: {},
+      } as unknown as Bindings);
 
       expect(res.status).toBeGreaterThanOrEqual(400);
     });
@@ -308,6 +448,7 @@ describe("SendEmailWorkflow — full step execution", () => {
   let realRepository: SendEmailRepository;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let mockTransport: any;
+  let mockDeadLetterSend: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -316,6 +457,7 @@ describe("SendEmailWorkflow — full step execution", () => {
       send: vi.fn().mockResolvedValue({ messageId: "<test@mock-smtp.com>" }),
     };
     mockResolveTransportFor.mockResolvedValue(mockTransport);
+    mockDeadLetterSend = vi.fn().mockResolvedValue(undefined);
 
     const testD1 = await createTestD1();
     mf = testD1.mf;
@@ -331,17 +473,9 @@ describe("SendEmailWorkflow — full step execution", () => {
 
   it("should execute all steps and persist to real D1", async () => {
     const emailId = "integration-test-email-id";
-    const payload = {
-      emailId,
-      userId: "test-user-id",
-      to: "gedeon@example.com",
-      subject: "Integration Test",
-      text: "This is a test email body long enough.",
-      html: "<p>Integration test content</p>",
-      queueCycles: 0,
-    };
+    const payload = { emailId };
 
-    // The controller writes this row at enqueue time; simulate it here since
+    // The controller writes these rows at enqueue time; simulate them here since
     // this test invokes the workflow directly (no HTTP layer).
     await realRepository.createPendingEmailLog(
       emailId,
@@ -349,25 +483,47 @@ describe("SendEmailWorkflow — full step execution", () => {
       await encrypt("gedeon@example.com", AES_KEY),
       "Integration Test",
     );
+    await realRepository.saveEmailContent(emailId, {
+      text: await encrypt("This is a test email body long enough.", AES_KEY),
+      html: await encrypt("<p>Integration test content</p>", AES_KEY),
+      smtpConfigId: "smtp-config-integration",
+    });
 
     const env = {
       makisend_db: d1,
       SEND_EMAIL_QUEUE: { send: vi.fn() },
+      SEND_EMAIL_DLQ: { send: mockDeadLetterSend },
+      AES_256_KEY: AES_KEY,
     } as unknown as Bindings;
 
     const workflow = new SendEmailWorkflow({} as never, env);
     const step = {
       do: async (_name: string, cfgOrFn: unknown, maybeFn?: unknown) => {
         const fn = typeof cfgOrFn === "function" ? cfgOrFn : maybeFn;
-        return (fn as () => Promise<unknown>)();
+        return (fn as (ctx: { attempt: number }) => Promise<unknown>)({
+          attempt: 1,
+        });
       },
     } as unknown as WorkflowStep;
 
     const result = await workflow.run({ payload } as never, step);
     expect(result).toMatchObject({ outcome: "sent", messageId: "<test@mock-smtp.com>" });
+    expect(mockDeadLetterSend).not.toHaveBeenCalled();
 
-    // Events carry smtpConfigId in production; this legacy-shaped payload does not.
-    expect(mockResolveTransportFor).toHaveBeenCalledWith(expect.anything(), undefined);
+    expect(mockResolveTransportFor).toHaveBeenCalledWith(
+      expect.anything(),
+      "smtp-config-integration",
+    );
+
+    // The workflow rebuilt the exact body from encrypted D1 content.
+    const rebuilt = await loadEmailForSending(realRepository, AES_KEY, emailId);
+    expect(rebuilt).toEqual({
+      to: "gedeon@example.com",
+      subject: "Integration Test",
+      text: "This is a test email body long enough.",
+      html: "<p>Integration test content</p>",
+      smtpConfigId: "smtp-config-integration",
+    });
 
     expect(mockTransport.send).toHaveBeenCalledWith({
       to: "gedeon@example.com",

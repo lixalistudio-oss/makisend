@@ -3,6 +3,7 @@ import { Hono } from "hono";
 
 import { errorHandler } from "@/middleware/error.handler";
 import { createSendEmailController } from "@/send-email/send-email.controller";
+import { decrypt } from "@/core/crypto";
 import type { SendEmailQueueMessage } from "@/send-email/send-email.types";
 import type { ITemplateRepository, TemplateRecord } from "@/templates/templates.types";
 
@@ -33,6 +34,8 @@ function buildApp() {
     createPendingEmailLog: vi.fn().mockResolvedValue(undefined),
     completeEmailLog: vi.fn().mockResolvedValue(undefined),
     saveEmailHistory: vi.fn().mockResolvedValue(undefined),
+    saveEmailContent: vi.fn().mockResolvedValue(undefined),
+    getEmailForSending: vi.fn().mockResolvedValue(null),
   };
 
   const mockTemplateRepository = {
@@ -57,8 +60,24 @@ function buildApp() {
   return { app, mockQueueSend, mockRepository, mockTemplateRepository };
 }
 
+async function storedContent(
+  mockRepository: ReturnType<typeof buildApp>["mockRepository"],
+  index = 0,
+) {
+  const [emailId, content] = mockRepository.saveEmailContent.mock.calls[index] as [
+    string,
+    { text: string; html: string; smtpConfigId?: string | null },
+  ];
+  return {
+    emailId,
+    smtpConfigId: content.smtpConfigId ?? null,
+    text: await decrypt(content.text, AES_KEY),
+    html: await decrypt(content.html, AES_KEY),
+  };
+}
+
 describe("SendEmailController", () => {
-  let app: Hono;
+  let app: ReturnType<typeof buildApp>["app"];
   let mockQueueSend: ReturnType<typeof vi.fn>;
   let mockRepository: ReturnType<typeof buildApp>["mockRepository"];
   let mockTemplateRepository: ReturnType<typeof buildApp>["mockTemplateRepository"];
@@ -103,13 +122,23 @@ describe("SendEmailController", () => {
       );
 
       const message = mockQueueSend.mock.calls[0][0] as SendEmailQueueMessage;
-      expect(message.name).toBe("app/send-email");
-      expect(message.data.to).toBe("gedeon@example.com");
-      expect(message.data.emailId).toBeTruthy();
-      expect(message.data.userId).toBe(USER_ID);
+      expect(Object.keys(message)).toEqual(["emailId"]);
+      expect(message.emailId).toBeTruthy();
 
-      const json = (await res.json()) as { success: boolean; message: string };
+      // Encrypted bodies are persisted for the workflow to rebuild from D1.
+      const content = await storedContent(mockRepository);
+      expect(content.emailId).toBe(message.emailId);
+      expect(content.smtpConfigId).toBe("smtp-123");
+      expect(content.text).toBe("This text body is long enough to pass validation.");
+      expect(content.html).toBe("<p>This HTML content is valid and sanitized.</p>");
+
+      const json = (await res.json()) as {
+        success: boolean;
+        message: string;
+        emailId: string;
+      };
       expect(json.success).toBe(true);
+      expect(json.emailId).toBe(message.emailId);
     });
 
     it("should return 500 when the queue refuses the message", async () => {
@@ -181,7 +210,7 @@ describe("SendEmailController", () => {
       expect(res.status).toBe(400);
     });
 
-    it("should return 400 when html exceeds the queue message cap", async () => {
+    it("should return 400 when html exceeds the content cap", async () => {
       const res = await app.request("/send-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -202,7 +231,7 @@ describe("SendEmailController", () => {
       expect(json.details.fieldErrors.html?.[0]).toContain("at most 100000");
     });
 
-    it("should return 400 when text exceeds the queue message cap", async () => {
+    it("should return 400 when text exceeds the content cap", async () => {
       const res = await app.request("/send-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -284,14 +313,13 @@ describe("SendEmailController", () => {
         "key-123",
       );
 
-      // The queue message carries fully rendered inline content — the workflow
-      // and SMTP layer never see templateId.
+      // Rendered content is stored encrypted — the workflow and SMTP layer never
+      // see templateId, and the queue only carries the id.
+      const content = await storedContent(mockRepository);
+      expect(content.html).toBe("<h1>Bonjour Joel</h1><p>Compte : joel@example.com</p>");
+      expect(content.text).toBe("Bonjour Joel, compte joel@example.com");
       const message = mockQueueSend.mock.calls[0][0] as SendEmailQueueMessage;
-      expect(message.data.subject).toBe("Bienvenue Joel !");
-      expect(message.data.html).toBe("<h1>Bonjour Joel</h1><p>Compte : joel@example.com</p>");
-      expect(message.data.text).toBe("Bonjour Joel, compte joel@example.com");
-      expect(message.data).not.toHaveProperty("templateId");
-      expect(message.data).not.toHaveProperty("variables");
+      expect(message).toEqual({ emailId: expect.any(String) });
     });
 
     it("HTML-escapes variable values before queueing", async () => {
@@ -313,8 +341,8 @@ describe("SendEmailController", () => {
       }, queueEnv(mockQueueSend));
 
       expect(res.status).toBe(202);
-      const message = mockQueueSend.mock.calls[0][0] as SendEmailQueueMessage;
-      expect(message.data.html).toBe("<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>");
+      const content = await storedContent(mockRepository);
+      expect(content.html).toBe("<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>");
     });
 
     it("coerces numeric variable values to strings", async () => {
@@ -336,8 +364,13 @@ describe("SendEmailController", () => {
       }, queueEnv(mockQueueSend));
 
       expect(res.status).toBe(202);
-      const message = mockQueueSend.mock.calls[0][0] as SendEmailQueueMessage;
-      expect(message.data.subject).toBe("Order 123");
+      expect(mockRepository.createPendingEmailLog).toHaveBeenCalledWith(
+        expect.any(String),
+        USER_ID,
+        expect.any(String),
+        "Order 123",
+        "key-123",
+      );
     });
 
     it("rejects with 400 listing the missing variables", async () => {

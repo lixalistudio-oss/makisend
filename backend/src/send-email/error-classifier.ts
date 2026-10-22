@@ -1,7 +1,6 @@
 /**
  * Classifies a failed send attempt. The verdict decides whether the workflow
- * gives up permanently (dead per the user) or bounces the message back onto
- * the Cloudflare Queue for another cycle.
+ * gives up permanently (dead per the user) or retries the SMTP step.
  *
  * `responseCode` is read when the error carries it, but nodemailer does not
  * always attach it — so the SMTP status a server actually replied with
@@ -19,8 +18,8 @@ export interface ClassifiableError {
 /**
  * Errors that cannot succeed without a human changing configuration or the
  * message itself. Everything not listed (and without an SMTP status in the
- * message) falls through to "transient": a bounded retry via the cycle cap is
- * cheaper than wrongly killing a deliverable email.
+ * message) falls through to "transient": a bounded retry is cheaper than
+ * wrongly killing a deliverable email.
  */
 const PERMANENT_CODES = new Set([
   // Auth / config — the credentials or options are wrong and stay wrong.
@@ -86,8 +85,8 @@ function codeFromMessage(message: string): string | undefined {
   const tokens = message.match(/\bE[A-Z][A-Z_]*\b/g);
   if (!tokens) return undefined;
   // Permanent wins when a message carries several known codes: misclassifying
-  // a config error as transient re-queues it until the cycle cap, while the
-  // opposite mistake merely stops early with a readable reason.
+  // a config error as transient retries it until the retry budget is spent,
+  // while the opposite mistake merely stops early with a readable reason.
   return (
     tokens.find((token) => PERMANENT_CODES.has(token)) ??
     tokens.find((token) => TRANSIENT_CODES.has(token))
@@ -103,12 +102,12 @@ function resolveCode(err: ClassifiableError): string | undefined {
 /**
  * Decides the fate of a dead run:
  * - "permanent": abandon now, surface a human-readable reason in D1.
- * - "transient": re-enqueue onto the Cloudflare Queue for a later cycle.
+ * - "transient": retry the SMTP step after the configured backoff.
  *
  * Order of evidence: explicit responseCode (in-process only) → SMTP status
  * parsed from the message (survives serialization) → nodemailer error code →
  * known code token embedded in the message (StepError drops `code`) →
- * transient by default, bounded by the queue cycle cap.
+ * transient by default, bounded by the workflow retry budget.
  */
 export function classifyEmailError(err: ClassifiableError): FailureVerdict {
   if (typeof err.responseCode === "number") {

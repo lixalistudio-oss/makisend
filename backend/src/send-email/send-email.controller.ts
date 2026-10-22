@@ -120,13 +120,32 @@ export function createSendEmailController(
 
       // Pending log row first, so the email is visible on the dashboard from the
       // moment it is accepted — even if every later stage fails.
-      const encryptedTo = await encrypt(data.to, c.env.AES_256_KEY);
+      const [encryptedTo, encryptedText, encryptedHtml] = await Promise.all([
+        encrypt(data.to, c.env.AES_256_KEY),
+        encrypt(data.text, c.env.AES_256_KEY),
+        encrypt(data.html, c.env.AES_256_KEY),
+      ]);
       await repository.createPendingEmailLog(emailId, userId, encryptedTo, data.subject, apiKeyId);
 
-      const message: SendEmailQueueMessage = {
-        name: "app/send-email",
-        data: { ...data, emailId, userId, apiKeyId, smtpConfigId, queueCycles: 0 },
-      };
+      // Bodies stay in D1, encrypted. The queue message only carries the id, so
+      // no PII travels through Cloudflare Queues or Workflows state.
+      try {
+        await repository.saveEmailContent(emailId, {
+          text: encryptedText,
+          html: encryptedHtml,
+          smtpConfigId,
+        });
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        await repository.saveEmailHistory(
+          emailId,
+          "failed",
+          `Failed to persist email content: ${reason}`,
+        );
+        throw err;
+      }
+
+      const message: SendEmailQueueMessage = { emailId };
 
       // Buffered in Cloudflare Queues first; the consumer starts the
       // SendEmailWorkflow from it.
@@ -140,7 +159,7 @@ export function createSendEmailController(
         throw err;
       }
 
-      return c.json({ success: true, message: "Email queued" }, 202);
+      return c.json({ success: true, message: "Email queued", emailId }, 202);
     },
   );
 

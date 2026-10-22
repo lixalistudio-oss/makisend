@@ -62,9 +62,11 @@ src/
 │   ├── send-email.controller.ts
 │   ├── send-email.dto.ts       # Zod schemas + types
 │   ├── send-email.repository.ts # Drizzle/D1 persistence
+│   ├── send-email.loader.ts    # Rebuilds + decrypts an email from D1
 │   ├── transport-resolver.ts   # Per-event SMTP transport factory
 │   ├── error-classifier.ts     # Permanent/transient verdicts + human-readable messages
 │   └── send-email.types.ts     # Interfaces / contracts
+├── idempotency/                # HTTP Idempotency-Key for POST /send-email
 ├── smtp-config/                # Per-user SMTP credentials (encrypted in D1)
 ├── templates/                  # Email templates with {{variable}} placeholders
 │   ├── index.ts                # Barrel export
@@ -76,7 +78,8 @@ src/
 │   └── template-renderer.ts    # extractVariables / renderTemplate / renderHtmlTemplate
 └── workflows/                  # Cloudflare Workflows (durable async orchestration)
     ├── index.ts                # Barrel export
-    └── send-email.workflow.ts  # SendEmailWorkflow (5 durable steps + queue-cycle retry)
+    ├── send-email.flow.ts      # Durable steps + 3 retries + dead-letter publication
+    └── send-email.workflow.ts  # SendEmailWorkflow entrypoint (id-only payload)
 
 test/
 ├── setup.ts
@@ -85,7 +88,8 @@ test/
 └── unit/
     ├── api-keys/ auth/ config/ dashboard/ email-logs/
     ├── send-email/             # error classifier, transport resolver, controller
-    ├── workflows/              # send-email workflow + run-end resolver
+    ├── idempotency/            # replay / conflict / 5xx retry behaviour
+    ├── workflows/              # send flow retries, DLQ, classifier integration
     ├── middleware/ queue/ send-emails/ settings/ smtp-config/
 ```
 
@@ -200,7 +204,8 @@ Even though the runtime remains **Hono** (not NestJS), the code organization is 
   - `POST /send-email` route (validation + 202 response, inline and `templateId` branches: rendering, missing variables → 400, foreign template → 404, mixed payload → 400)
   - Email service (mock transport, repository, encryption)
   - Template renderer (`extractVariables` / `renderTemplate` / `renderHtmlTemplate` with HTML escaping)
-  - Retry pipeline: error classifier, workflow re-queue / abandonment, queue consumer dedup
+  - Retry pipeline: error classifier, workflow retries, DLQ publication, queue consumer dedup
+  - HTTP idempotency: replay, body-mismatch conflict, in-progress conflict, 5xx retry
   - API key middleware (401/403 + context wiring)
 - Mocks are reset in `beforeEach`
 - Run `pnpm test:run` before committing
@@ -213,6 +218,9 @@ Even though the runtime remains **Hono** (not NestJS), the code organization is 
 - Config: `drizzle.config.ts`
 - Migrations: managed in the `drizzle/` folder
 - Wrangler binding: `makisend_db`
+- Email bodies live in `email_contents` (encrypted, keyed by `email_logs.internalId`);
+  queue/workflow payloads carry only `emailId`
+- HTTP idempotency reservations/responses live in `idempotency_keys` (24h TTL)
 
 ## Deployment
 
@@ -254,8 +262,9 @@ Steps run:
 - Email templates: `/templates` CRUD (session auth) + `templateId`/`variables` branch on `POST /send-email` (API key auth), rendered at request time before enqueueing; frontend page at `/dashboard/templates` with live preview
 - Async delivery pipeline: Cloudflare Queues → SendEmailWorkflow → SMTP
 - Delivery via nodemailer + raw SMTP
-- Retry loop: one attempt per workflow run, transient failures bounce back onto the queue (5 cycles, 1min→1h backoff), permanent failures (auth, TLS, DNS, config, 5xx) fail immediately with a human-readable reason in D1
-- Encrypted logs stored in D1
+- Retry loop: 1 initial SMTP attempt + 3 retries 30s apart; permanent failures (auth, TLS, DNS, config, 5xx) stop immediately, transient failures go to the DLQ after the budget with a human-readable reason in D1
+- Encrypted logs + encrypted email bodies stored in D1
+- `Idempotency-Key` support on `POST /send-email` (24h replay window)
 - Unit tests for route / service / middleware
 - GitHub Actions CI (lint + tests) on PRs to `main` and `dev`
 - Deployment test on Cloudflare Workers
@@ -286,7 +295,7 @@ Steps run:
 - **Asynchronous sending only**: the caller gets `202 Accepted` when the email is queued; the actual delivery happens later (Queues → SendEmailWorkflow → SMTP) and is only visible through the D1 logs.
 - **Single SMTP provider**: credentials are stored per user in D1 (encrypted), but there is no multi-provider routing or failover.
 - **No rate limiting**: see Security section.
-- **Bounded retry, not unlimited**: each run makes **one attempt** — a failed attempt fails the run quickly so the workflow can classify the nodemailer error in-process. Transient failures bounce back onto the queue (5 cycles, backoff 1min→1h), permanent failures (auth, TLS, DNS, config, 5xx) fail immediately with a human-readable reason in D1. A hung run is caught by the Workflows execution timeout.
+- **Bounded retry, not unlimited**: each email gets **1 initial SMTP attempt + 3 retries** 30 seconds apart. Transient failures are retried inside the same workflow instance and dead-lettered when the budget is exhausted; permanent failures (auth, TLS, DNS, config, 5xx) stop immediately with a human-readable reason in D1. A hung attempt is bounded by the SMTP socket timeouts and the 2-minute step timeout.
 - **No bounce / open / click tracking**: only send logs are stored.
 - **D1 is a serverless SQLite database**: possible latency, not ideal for very high volumes without caching.
 - **Deliverability**: SPF, DKIM, DMARC and IP reputation are not handled by the code; they depend on the SMTP provider and sender domain.

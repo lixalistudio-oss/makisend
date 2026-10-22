@@ -17,6 +17,11 @@ import { createApiKeysController, ApiKeyRepository, ApiKeyService } from "@/api-
 import { createEmailLogsController, EmailLogRepository, EmailLogService } from "@/email-logs";
 import { createDashboardController, DashboardRepository, DashboardService } from "@/dashboard";
 import { createTemplatesController, TemplateRepository, TemplateService } from "@/templates";
+import {
+  IdempotencyRepository,
+  IdempotencyService,
+  idempotencyMiddleware,
+} from "@/idempotency";
 import { sendEmailQueueConsumer } from "@/queue/send-email.consumer";
 
 // --- Better Auth ---
@@ -35,6 +40,7 @@ import type { IApiKeyRepository } from "@/api-keys/api-keys.types";
 import type { IEmailLogRepository } from "@/email-logs/email-logs.types";
 import type { IDashboardRepository } from "@/dashboard/dashboard.types";
 import type { ITemplateRepository } from "@/templates/templates.types";
+import type { IIdempotencyRepository } from "@/idempotency";
 
 // --- Cloudflare Worker environment bindings ---
 export type Bindings = {
@@ -48,6 +54,7 @@ export type Bindings = {
   // unset, keeps it on: production and preview never set it.
   RATE_LIMIT?: string;
   SEND_EMAIL_QUEUE: Queue<SendEmailQueueMessage>;
+  SEND_EMAIL_DLQ: Queue<SendEmailQueueMessage>;
   SEND_EMAIL_WORKFLOW: Workflow;
   // Static assets binding (frontend/dist) — handled by the platform before the
   // Worker script; declared so the Bindings type matches wrangler.jsonc.
@@ -89,11 +96,13 @@ const deps = {
   emailLogRepository: null as IEmailLogRepository | null,
   dashboardRepository: null as IDashboardRepository | null,
   templateRepository: null as ITemplateRepository | null,
+  idempotencyRepository: null as IIdempotencyRepository | null,
   smtpConfigService: null as SmtpConfigService | null,
   apiKeyService: null as ApiKeyService | null,
   emailLogService: null as EmailLogService | null,
   dashboardService: null as DashboardService | null,
   templateService: null as TemplateService | null,
+  idempotencyService: null as IdempotencyService | null,
   aesKey: null as string | null,
   dbInitialized: false,
 
@@ -108,6 +117,7 @@ const deps = {
     this.emailLogRepository = new EmailLogRepository(db);
     this.dashboardRepository = new DashboardRepository(db);
     this.templateRepository = new TemplateRepository(db);
+    this.idempotencyRepository = new IdempotencyRepository(db);
     this.aesKey = env.AES_256_KEY;
     this.dbInitialized = true;
   },
@@ -122,6 +132,7 @@ const deps = {
     this.emailLogService = new EmailLogService(this.emailLogRepository!, this.aesKey!);
     this.dashboardService = new DashboardService(this.dashboardRepository!, this.aesKey!);
     this.templateService = new TemplateService(this.templateRepository!);
+    this.idempotencyService = new IdempotencyService(this.idempotencyRepository!);
   },
 };
 
@@ -154,8 +165,9 @@ app.use("*", async (c, next) => {
   return cors({
     origin: (origin) => allowedOrigin(origin, c.env),
     credentials: true,
-    allowHeaders: ["Content-Type", "Authorization"],
+    allowHeaders: ["Content-Type", "Authorization", "Idempotency-Key"],
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    exposeHeaders: ["Idempotency-Replayed"],
   })(c, next);
 });
 app.use("*", requestLoggerMiddleware());
@@ -230,6 +242,10 @@ app.use("*", async (c, next) => {
   }
   await next();
 });
+
+// HTTP-level idempotency for POST /send-email. Runs after API-key auth, so the
+// key is scoped to the caller, and after DB deps are initialized.
+app.use("/send-email/*", idempotencyMiddleware(() => deps.idempotencyService!));
 
 // Mount send-email controller — produces to the Cloudflare Queue
 const sendEmailController = createSendEmailController(

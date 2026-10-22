@@ -78,7 +78,7 @@ describe("classifyEmailError", () => {
     );
   });
 
-  it("defaults unknown errors to transient so the cycle cap stays the safety net", () => {
+  it("defaults unknown errors to transient so the retry budget stays the safety net", () => {
     expect(classifyEmailError({ message: "TypeError: Cannot read properties of undefined" })).toBe(
       "transient",
     );

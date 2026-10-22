@@ -1,117 +1,146 @@
 import { describe, it, vi, expect, beforeEach } from "vitest";
 import {
-  SendEmailWorkflow,
-  resolveSendEmailRunEnd,
-  MAX_QUEUE_CYCLES,
-} from "@/workflows/send-email.workflow";
-import type { SendEmailParams, SendEmailRunOutcome } from "@/workflows/send-email.workflow";
-import type { Bindings } from "@/index";
+  runSendEmailFlow,
+  SEND_MAX_ATTEMPTS,
+  SEND_MAX_RETRIES,
+  SEND_RETRY_DELAY_SECONDS,
+} from "@/workflows/send-email.flow";
+import { AppError } from "@/core/errors";
+import type {
+  SendEmailFlowDeps,
+  SendEmailFlowOutcome,
+} from "@/workflows/send-email.flow";
+import type {
+  EmailToSend,
+  IEmailRepository,
+  IEmailTransport,
+  SendEmailQueueMessage,
+} from "@/send-email/send-email.types";
 import type { WorkflowStep } from "cloudflare:workers";
 
-const { mockRepository, mockQueueSend, mockTransportSend, mockResolveTransport } = vi.hoisted(
-  () => ({
-    mockRepository: {
-      createPendingEmailLog: vi.fn(),
-      completeEmailLog: vi.fn(),
-      saveEmailHistory: vi.fn(),
-    },
-    mockQueueSend: vi.fn(),
-    mockTransportSend: vi.fn(),
-    mockResolveTransport: vi.fn(),
-  }),
-);
+const emailId = "test-email-id-123";
 
-vi.mock("@/db/connection", () => ({
-  createDatabase: vi.fn(() => ({})),
-}));
-
-vi.mock("@/send-email/send-email.repository", () => ({
-  // A class (not vi.fn) so `new SendEmailRepository(...)` yields an object
-  // sharing the hoisted mock methods.
-  SendEmailRepository: class {
-    saveEmailHistory = mockRepository.saveEmailHistory;
-    completeEmailLog = mockRepository.completeEmailLog;
-    createPendingEmailLog = mockRepository.createPendingEmailLog;
-  },
-}));
-
-vi.mock("@/send-email/transport-resolver", () => ({
-  resolveTransportFor: mockResolveTransport,
-}));
-
-vi.mock("@/core/html-sanitizer", () => ({
-  cleanHtml: vi.fn((html: string) => `<p>${html}</p>`),
-}));
-
-const payload: SendEmailParams = {
-  emailId: "test-email-id-123",
+const storedEmail: EmailToSend = {
   to: "recipient@example.com",
   subject: "Test Subject",
   text: "Plain text content for testing",
   html: "<p>HTML content for testing</p>",
   smtpConfigId: "smtp-config-123",
-  userId: "user-id-123",
-  apiKeyId: "apikey-id-123",
-  queueCycles: 0,
 };
 
-/** Stub WorkflowStep: runs the callback, recording any step config passed. */
-function stubStep(stepConfigs?: Record<string, unknown>): WorkflowStep {
-  const doFn = async (
-    name: string,
-    cfgOrFn: unknown,
-    maybeFn?: unknown,
-  ): Promise<unknown> => {
-    const fn = typeof cfgOrFn === "function" ? cfgOrFn : maybeFn;
-    if (stepConfigs && typeof cfgOrFn === "object" && cfgOrFn !== null) {
-      stepConfigs[name] = cfgOrFn;
-    }
-    return (fn as () => Promise<unknown>)();
-  };
-  return { do: doFn } as unknown as WorkflowStep;
+const payload: SendEmailQueueMessage = { emailId };
+
+type StepCallback = (ctx: { attempt: number }) => Promise<unknown>;
+
+interface StepStubOptions {
+  sendAttempts?: number;
+  configs?: Record<string, unknown>;
 }
 
-function buildEnv(overrides?: Partial<Bindings>): Bindings {
+/**
+ * Stub WorkflowStep. `sendAttempts` simulates the Workflows retry engine for
+ * the SMTP step: retry until the callback succeeds or the budget is exhausted.
+ */
+function stepStub(options: StepStubOptions = {}): WorkflowStep {
   return {
-    makisend_db: {},
-    SEND_EMAIL_QUEUE: { send: mockQueueSend },
-    ...overrides,
-  } as unknown as Bindings;
+    async do(name: string, cfgOrFn: unknown, maybeFn?: unknown) {
+      const callback = (
+        typeof cfgOrFn === "function" ? cfgOrFn : maybeFn
+      ) as StepCallback;
+
+      if (options.configs && typeof cfgOrFn === "object" && cfgOrFn !== null) {
+        options.configs[name] = cfgOrFn;
+      }
+
+      if (name === "send-mail-via-nodemailer" && options.sendAttempts) {
+        let lastError: unknown;
+        for (let attempt = 1; attempt <= options.sendAttempts; attempt++) {
+          try {
+            return await callback({ attempt });
+          } catch (err) {
+            lastError = err;
+          }
+        }
+        throw lastError;
+      }
+
+      return callback({ attempt: 1 });
+    },
+  } as unknown as WorkflowStep;
 }
 
-function runWorkflow(env: Bindings, data: SendEmailParams = payload): Promise<SendEmailRunOutcome> {
-  const wf = new SendEmailWorkflow({} as never, env);
-  return wf.run({ payload: data } as never, stubStep());
-}
+describe("runSendEmailFlow", () => {
+  const mockSend = vi.fn();
+  const mockResolveTransport = vi.fn();
+  const mockLoadEmail = vi.fn();
+  const mockDeadLetterSend = vi.fn();
+  const mockRepository = {
+    createPendingEmailLog: vi.fn(),
+    completeEmailLog: vi.fn(),
+    saveEmailHistory: vi.fn(),
+    saveEmailContent: vi.fn(),
+    getEmailForSending: vi.fn(),
+  };
 
-function runWorkflowCapturingConfigs(
-  env: Bindings,
-  configs: Record<string, unknown>,
-  data: SendEmailParams = payload,
-): Promise<SendEmailRunOutcome> {
-  const wf = new SendEmailWorkflow({} as never, env);
-  return wf.run({ payload: data } as never, stubStep(configs));
-}
+  const transport: IEmailTransport = { send: mockSend };
+  const deadLetterQueue = {
+    send: mockDeadLetterSend,
+  } as unknown as Queue<SendEmailQueueMessage>;
 
-describe("SendEmailWorkflow", () => {
+  function buildDeps(
+    overrides: Partial<SendEmailFlowDeps> = {},
+  ): SendEmailFlowDeps {
+    return {
+      repository: mockRepository as unknown as IEmailRepository,
+      loadEmail: mockLoadEmail,
+      resolveTransport: mockResolveTransport,
+      deadLetterQueue,
+      ...overrides,
+    };
+  }
+
+  async function run(
+    options: StepStubOptions = {},
+    overrides: Partial<SendEmailFlowDeps> = {},
+  ): Promise<SendEmailFlowOutcome> {
+    return runSendEmailFlow(buildDeps(overrides), payload, stepStub(options));
+  }
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockRepository.saveEmailHistory.mockResolvedValue(undefined);
     mockRepository.completeEmailLog.mockResolvedValue(undefined);
-    mockQueueSend.mockResolvedValue(undefined);
-    mockTransportSend.mockResolvedValue({ messageId: "<mock-id@gmail.com>" });
-    mockResolveTransport.mockResolvedValue({ send: mockTransportSend });
+    mockLoadEmail.mockResolvedValue(storedEmail);
+    mockResolveTransport.mockResolvedValue(transport);
+    mockSend.mockResolvedValue({ messageId: "<mock-id@gmail.com>" });
+    mockDeadLetterSend.mockResolvedValue(undefined);
   });
 
-  it("calls all lifecycle statuses in order and returns a sent outcome", async () => {
-    const result = await runWorkflow(buildEnv());
+  it("sends the email, writes the lifecycle trail and completes the log", async () => {
+    const result = await run();
 
-    expect(mockRepository.saveEmailHistory.mock.calls.map((c) => c[1])).toEqual([
-      "received",
-      "processing",
-      "cleaned",
+    expect(
+      mockRepository.saveEmailHistory.mock.calls.map((call) => call[1]),
+    ).toEqual(["received", "processing", "cleaned", "sent"]);
+    expect(mockRepository.saveEmailHistory).toHaveBeenCalledWith(
+      emailId,
       "sent",
-    ]);
+      undefined,
+      1,
+    );
+    expect(mockSend).toHaveBeenCalledWith({
+      to: storedEmail.to,
+      subject: storedEmail.subject,
+      text: storedEmail.text,
+      html: expect.any(String),
+    });
+    expect(mockRepository.completeEmailLog).toHaveBeenCalledWith(
+      emailId,
+      "<mock-id@gmail.com>",
+      expect.any(String),
+      expect.any(Number),
+    );
+    expect(mockDeadLetterSend).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       outcome: "sent",
       messageId: "<mock-id@gmail.com>",
@@ -119,191 +148,131 @@ describe("SendEmailWorkflow", () => {
     });
   });
 
-  it("disables Workflows auto-retry on the SMTP step (one attempt per run)", async () => {
-    // Workflows defaults step.do to 5 auto-retries; without limit: 0 a single
-    // run would send up to 6 emails and never reach in-run classification.
+  it("resolves the transport with the smtpConfigId captured at enqueue time", async () => {
+    await run();
+
+    expect(mockResolveTransport).toHaveBeenCalledWith("smtp-config-123");
+  });
+
+  it("configures the SMTP step with three 30-second retries", async () => {
     const configs: Record<string, unknown> = {};
-    await runWorkflowCapturingConfigs(buildEnv(), configs);
+    await run({ configs });
 
     expect(configs["send-mail-via-nodemailer"]).toMatchObject({
-      retries: { limit: 0 },
-    });
-  });
-
-  it("calls transport.send with the cleaned html", async () => {
-    await runWorkflow(buildEnv());
-
-    expect(mockTransportSend).toHaveBeenCalledWith({
-      to: "recipient@example.com",
-      subject: "Test Subject",
-      text: "Plain text content for testing",
-      html: "<p><p>HTML content for testing</p></p>",
-    });
-  });
-
-  it("completes the email log with delivery details", async () => {
-    await runWorkflow(buildEnv());
-
-    expect(mockRepository.completeEmailLog).toHaveBeenCalledWith(
-      "test-email-id-123",
-      "<mock-id@gmail.com>",
-      expect.any(String),
-      expect.any(Number),
-    );
-  });
-
-  it("resolves the transport with the event's smtpConfigId", async () => {
-    await runWorkflow(buildEnv());
-
-    expect(mockResolveTransport).toHaveBeenCalledTimes(1);
-    expect(mockResolveTransport).toHaveBeenCalledWith(expect.anything(), "smtp-config-123");
-  });
-
-  it("records attempt_failed and re-enqueues a transient failure with a cycle backoff", async () => {
-    mockTransportSend.mockRejectedValue(new Error("SMTP down"));
-
-    const result = await runWorkflow(buildEnv());
-
-    expect(mockRepository.saveEmailHistory).toHaveBeenCalledWith(
-      "test-email-id-123",
-      "attempt_failed",
-      "SMTP down",
-      1,
-    );
-    expect(mockQueueSend).toHaveBeenCalledTimes(1);
-    expect(mockQueueSend).toHaveBeenCalledWith(
-      {
-        name: "app/send-email",
-        data: { ...payload, queueCycles: 1 },
+      retries: {
+        limit: SEND_MAX_RETRIES,
+        delay: `${SEND_RETRY_DELAY_SECONDS} seconds`,
+        backoff: "constant",
       },
-      { delaySeconds: 60 },
-    );
-    expect(mockRepository.saveEmailHistory).toHaveBeenCalledWith(
-      "test-email-id-123",
-      "attempt_failed",
-      expect.stringContaining("Re-queued: next attempt in 60s (cycle 1 of 5)"),
-    );
-    expect(mockRepository.completeEmailLog).not.toHaveBeenCalled();
-    expect(result).toEqual({ outcome: "requeued", nextCycle: 1, delaySeconds: 60 });
+    });
   });
 
-  it("abandons a permanent failure with an explanatory message and does not re-enqueue", async () => {
-    mockTransportSend.mockRejectedValue(
+  it("rejects a permanent SMTP error immediately and dead-letters it", async () => {
+    mockSend.mockRejectedValue(
       Object.assign(new Error("Invalid login: 535 5.7.8 Authentication failed"), {
         code: "EAUTH",
       }),
     );
 
-    const result = await runWorkflow(buildEnv());
+    const result = await run({ sendAttempts: SEND_MAX_ATTEMPTS });
 
-    expect(mockQueueSend).not.toHaveBeenCalled();
+    expect(mockSend).toHaveBeenCalledTimes(1);
     expect(mockRepository.saveEmailHistory).toHaveBeenCalledWith(
-      "test-email-id-123",
-      "failed",
+      emailId,
+      "attempt_failed",
       "Your SMTP provider rejected the credentials — check the SMTP username and password/key in your configuration.",
       1,
     );
-    expect(result).toMatchObject({ outcome: "abandoned", reason: "permanent failure" });
-  });
-
-  it("abandons once the queue cycle cap is reached, even for a transient error", async () => {
-    mockTransportSend.mockRejectedValue(new Error("SMTP down"));
-
-    const result = await runWorkflow(buildEnv(), {
-      ...payload,
-      queueCycles: MAX_QUEUE_CYCLES,
+    expect(mockRepository.saveEmailHistory).toHaveBeenCalledWith(
+      emailId,
+      "failed",
+      expect.stringContaining(
+        "Delivery rejected permanently: Your SMTP provider rejected the credentials",
+      ),
+      1,
+    );
+    expect(mockRepository.completeEmailLog).not.toHaveBeenCalled();
+    expect(mockDeadLetterSend).toHaveBeenCalledWith({ emailId });
+    expect(result).toMatchObject({
+      outcome: "rejected",
+      attempt: 1,
+      reason: expect.stringContaining("rejected the credentials"),
     });
-
-    expect(mockQueueSend).not.toHaveBeenCalled();
-    expect(mockRepository.saveEmailHistory).toHaveBeenCalledWith(
-      "test-email-id-123",
-      "failed",
-      expect.stringContaining("Delivery abandoned after 5 queue cycles"),
-      MAX_QUEUE_CYCLES + 1,
-    );
-    expect(result).toMatchObject({ outcome: "abandoned", reason: "queue cycle cap reached" });
   });
 
-  it("records a failed row when a transient failure cannot be re-enqueued", async () => {
-    mockTransportSend.mockRejectedValue(new Error("SMTP down"));
+  it("retries a transient failure four times, then dead-letters it", async () => {
+    mockSend.mockRejectedValue(new Error("SMTP down"));
 
-    const result = await runWorkflow(buildEnv({ SEND_EMAIL_QUEUE: undefined as never }));
+    const result = await run({ sendAttempts: SEND_MAX_ATTEMPTS });
 
-    expect(mockQueueSend).not.toHaveBeenCalled();
+    expect(mockSend).toHaveBeenCalledTimes(SEND_MAX_ATTEMPTS);
+    const attemptFailures = mockRepository.saveEmailHistory.mock.calls.filter(
+      (call) => call[1] === "attempt_failed",
+    );
+    expect(attemptFailures).toHaveLength(SEND_MAX_ATTEMPTS);
+    expect(attemptFailures.map((call) => call[3])).toEqual([1, 2, 3, 4]);
     expect(mockRepository.saveEmailHistory).toHaveBeenCalledWith(
-      "test-email-id-123",
+      emailId,
       "failed",
-      expect.stringContaining("Cannot re-queue transient failure"),
+      expect.stringContaining("Delivery abandoned after 4 attempts"),
+      4,
+    );
+    expect(mockRepository.completeEmailLog).not.toHaveBeenCalled();
+    expect(mockDeadLetterSend).toHaveBeenCalledWith({ emailId });
+    expect(result).toMatchObject({ outcome: "dead_lettered", attempt: 4 });
+  });
+
+  it("treats a missing SMTP configuration as permanent and does not attempt SMTP", async () => {
+    mockResolveTransport.mockRejectedValue(
+      new AppError(404, "SMTP configuration not found"),
+    );
+
+    const result = await run({ sendAttempts: SEND_MAX_ATTEMPTS });
+
+    expect(mockSend).not.toHaveBeenCalled();
+    expect(mockResolveTransport).toHaveBeenCalledTimes(1);
+    expect(mockRepository.saveEmailHistory).toHaveBeenCalledWith(
+      emailId,
+      "failed",
+      expect.stringContaining("SMTP configuration not found"),
       1,
     );
-    expect(result).toMatchObject({ outcome: "abandoned", reason: "queue binding unavailable" });
+    expect(mockDeadLetterSend).toHaveBeenCalledWith({ emailId });
+    expect(result).toMatchObject({
+      outcome: "rejected",
+      reason: "SMTP configuration not found",
+      attempt: 1,
+    });
   });
 
-  it("numbers attempts across queue cycles", async () => {
-    mockTransportSend.mockRejectedValue(new Error("SMTP down"));
+  it("treats missing stored content as a permanent failure", async () => {
+    mockLoadEmail.mockRejectedValue(
+      new AppError(404, `Email ${emailId} not found`),
+    );
 
-    await runWorkflow(buildEnv(), { ...payload, queueCycles: 2 });
+    const result = await run();
 
+    expect(mockSend).not.toHaveBeenCalled();
     expect(mockRepository.saveEmailHistory).toHaveBeenCalledWith(
-      "test-email-id-123",
-      "attempt_failed",
-      "SMTP down",
-      3,
-    );
-  });
-});
-
-describe("resolveSendEmailRunEnd", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockRepository.saveEmailHistory.mockResolvedValue(undefined);
-    mockQueueSend.mockResolvedValue(undefined);
-  });
-
-  it("does not throw when the payload carries no emailId", async () => {
-    const result = await resolveSendEmailRunEnd(
-      { emailRepository: mockRepository, sendEmailQueue: { send: mockQueueSend } as never },
-      undefined,
-      { message: "SMTP down" },
-    );
-
-    expect(result).toMatchObject({ outcome: "abandoned", reason: "no emailId in payload" });
-    expect(mockRepository.saveEmailHistory).not.toHaveBeenCalled();
-  });
-
-  it("marks re-enqueue failures as abandoned with a failed history row", async () => {
-    mockQueueSend.mockRejectedValue(new Error("queue unavailable"));
-
-    const result = await resolveSendEmailRunEnd(
-      { emailRepository: mockRepository, sendEmailQueue: { send: mockQueueSend } as never },
-      payload,
-      { message: "SMTP down" },
-    );
-
-    expect(result).toMatchObject({ outcome: "abandoned", reason: "re-enqueue failed" });
-    expect(mockRepository.saveEmailHistory).toHaveBeenCalledWith(
-      "test-email-id-123",
+      emailId,
       "failed",
-      expect.stringContaining("Failed to re-queue after cycle 0"),
+      expect.stringContaining(`Email ${emailId} not found`),
       1,
     );
+    expect(result).toMatchObject({ outcome: "dead_lettered", attempt: 1 });
   });
 
-  it("caps the backoff at the last table entry for late cycles", async () => {
-    const result = await resolveSendEmailRunEnd(
-      { emailRepository: mockRepository, sendEmailQueue: { send: mockQueueSend } as never },
-      { ...payload, queueCycles: MAX_QUEUE_CYCLES - 1 },
-      { message: "SMTP down" },
+  it("still returns a terminal outcome when the dead-letter publish fails", async () => {
+    mockResolveTransport.mockRejectedValue(
+      new AppError(404, "SMTP configuration not found"),
     );
+    mockDeadLetterSend.mockRejectedValue(new Error("DLQ down"));
 
-    expect(mockQueueSend).toHaveBeenCalledWith(
-      expect.anything(),
-      { delaySeconds: 3600 },
-    );
-    expect(result).toEqual({
-      outcome: "requeued",
-      nextCycle: MAX_QUEUE_CYCLES,
-      delaySeconds: 3600,
+    const result = await run();
+
+    expect(result).toMatchObject({
+      outcome: "rejected",
+      reason: "SMTP configuration not found",
     });
   });
 });

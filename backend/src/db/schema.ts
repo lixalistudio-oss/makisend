@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer ,index} from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { createId } from "@paralleldrive/cuid2";
 import { relations, sql } from "drizzle-orm";
 
@@ -34,6 +34,51 @@ export const rateLimit = sqliteTable("rate_limit", {
   count: integer("count").notNull(),
   lastRequest: integer("last_request").notNull(),
 });
+
+// Message bodies live in their own table so dashboard queries on email_logs
+// never read them. text/html are AES-GCM encrypted (hex, ~2x their size) — the
+// DTO caps keep a row well under D1's 2 MB limit. Deleting an email_logs row
+// (e.g. account deletion) deletes its content with it.
+export const emailContents = sqliteTable("email_contents", {
+  emailId: text("email_id")
+    .primaryKey()
+    .references(() => emailLogs.internalId, { onDelete: "cascade" }),
+  textBody: text("text_body").notNull(),
+  htmlBody: text("html_body").notNull(),
+  // No FK: deleting an SMTP config must not erase the content of emails already
+  // queued with it; sending then fails with a permanent "config not found".
+  smtpConfigId: text("smtp_config_id"),
+  createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
+});
+
+// HTTP idempotency for POST /send-email. A row is reserved before the handler
+// runs and filled with the response afterwards, so a client retry with the same
+// Idempotency-Key replays the original emailId instead of sending twice.
+export const idempotencyKeys = sqliteTable(
+  "idempotency_keys",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    userId: text("user_id").notNull(),
+    route: text("route").notNull(),
+    key: text("key").notNull(),
+    requestHash: text("request_hash").notNull(),
+    // NULL while the first request is still running.
+    statusCode: integer("status_code"),
+    responseBody: text("response_body"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("idempotencyKeys_userId_route_key_unique").on(
+      table.userId,
+      table.route,
+      table.key,
+    ),
+    index("idempotencyKeys_expiresAt_idx").on(table.expiresAt),
+  ],
+);
 
 export const emailHistories = sqliteTable("email_histories", {
   id: text("id").primaryKey().$defaultFn(() => createId()),
