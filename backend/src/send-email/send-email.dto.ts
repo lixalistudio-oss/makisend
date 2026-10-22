@@ -5,11 +5,9 @@ import {
   MAX_HTML_LENGTH,
   MAX_ID_LENGTH,
   MAX_SUBJECT_LENGTH,
-  MAX_TEMPLATE_VARIABLE_NAME_LENGTH,
-  MAX_TEMPLATE_VARIABLE_VALUE_LENGTH,
-  MAX_TEMPLATE_VARIABLES,
   MAX_TEXT_LENGTH,
 } from "@/core/validation";
+import { TemplateVariablesDto } from "@/templates/templates.dto";
 
 export const SendEmailDto = z
   .object({
@@ -56,27 +54,6 @@ export type SendEmailDto = z.infer<typeof SendEmailDto>;
 
 // A variable value arrives as a plain scalar; numbers/booleans are common in
 // API payloads (order ids, counts) so they are coerced to strings.
-const VariableValue = z
-  .union([z.string(), z.number(), z.boolean()])
-  .transform((value) => String(value))
-  .refine((value) => value.length <= MAX_TEMPLATE_VARIABLE_VALUE_LENGTH, {
-    message: `Variable values must be at most ${MAX_TEMPLATE_VARIABLE_VALUE_LENGTH} characters.`,
-  });
-
-const TemplateVariables = z
-  .record(
-    z
-      .string()
-      .min(1, { message: "Variable names cannot be empty." })
-      .max(MAX_TEMPLATE_VARIABLE_NAME_LENGTH, {
-        message: `Variable names must be at most ${MAX_TEMPLATE_VARIABLE_NAME_LENGTH} characters.`,
-      }),
-    VariableValue,
-  )
-  .refine((variables) => Object.keys(variables).length <= MAX_TEMPLATE_VARIABLES, {
-    message: `At most ${MAX_TEMPLATE_VARIABLES} variables are allowed.`,
-  });
-
 export const SendTemplateEmailDto = z
   .object({
     to: z
@@ -95,7 +72,7 @@ export const SendTemplateEmailDto = z
       }),
 
     // Optional: templates without placeholders send with no variables at all.
-    variables: TemplateVariables.optional(),
+    variables: TemplateVariablesDto.optional(),
   })
   .strict();
 

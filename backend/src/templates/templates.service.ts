@@ -1,5 +1,6 @@
 import { AppError } from "@/core/errors";
 import { pinoLogger } from "@/core/logger";
+import { renderTemplateContent, type TemplateContent } from "./template-renderer";
 import type {
   ITemplateRepository,
   TemplateInput,
@@ -49,9 +50,31 @@ export class TemplateService {
       throw new AppError(403, "Not authorized to update this template");
     }
 
+    const nextFormat = updates.format ?? existing.format;
+    const nextEditorJson =
+      updates.editorJson !== undefined ? updates.editorJson : existing.editorJson;
+    const nextSource =
+      updates.source !== undefined ? updates.source : existing.source;
+    if (nextFormat === "react-email" && !nextEditorJson) {
+      throw new AppError(400, "editorJson is required for react-email templates.");
+    }
+    if (nextFormat === "react-email-code" && !nextSource) {
+      throw new AppError(400, "source is required for react-email-code templates.");
+    }
+
     const template = await this.templateRepo.update(id, updates);
     pinoLogger.info({ id }, "Template updated successfully");
     return template;
+  }
+
+  async preview(
+    id: string,
+    userId: string,
+    variables: Record<string, string>,
+  ): Promise<TemplateContent> {
+    const template = await this.findByIdAndUser(id, userId);
+    pinoLogger.info({ id, userId }, "Rendering template preview");
+    return renderTemplateContent(template, variables);
   }
 
   async delete(id: string, userId: string): Promise<void> {

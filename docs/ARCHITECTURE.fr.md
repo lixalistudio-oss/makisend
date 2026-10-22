@@ -149,7 +149,7 @@ makisend-poc/
 │   │   ├── queue/            # Consommateur de file → workflow
 │   │   ├── send-email/       # Orchestration HTTP → file + transport SMTP
 │   │   ├── smtp-config/      # Identifiants SMTP chiffrés par utilisateur
-│   │   ├── templates/        # CRUD des templates + renderer
+│   │   ├── templates/        # CRUD des templates + contenu de l’éditeur visuel + renderer
 │   │   └── workflows/        # SendEmailWorkflow durable
 │   ├── drizzle/              # Migrations SQL + snapshots meta
 │   ├── test/                 # Tests unitaires Vitest + intégration D1 Miniflare
@@ -316,7 +316,7 @@ Schéma : `backend/src/db/schema.ts`. Migrations : `backend/drizzle/*.sql`
 | `verification` | `id` PK, `identifier`, `value`, `expiresAt` | Better Auth |
 | `smtp_config` | `id` PK, `userId` FK cascade, `smtphostname`, `smtpusername`, `smtppassword`, `sender_email` chiffrés, `isActive` | Une ligne par compte SMTP |
 | `apikey` | colonnes Better Auth + `referenceId` (= user id), `key` (hashé par Better Auth), `prefix`, `smtpConfigId` FK unique cascade | Une clé ↔ une config SMTP |
-| `templates` | `id` PK, `userId` FK cascade, `name`, `subject`, `html`, `text` | Contenu en clair avec `{{variables}}` |
+| `templates` | `id` PK, `userId` FK cascade, `name`, `subject`, `format` (`legacy`/`react-email`/`react-email-code`), `editorJson`/`source` nullables, `html`, `text` | Contenu en clair avec `{{variables}}` ; `editorJson` = enveloppe builder (thème + contenu TipTap), `source` = TSX collé |
 | `email_logs` | `internalId` PK (cuid2), `userId`, `apiKeyId` FK set null, `to` chiffré, `subject`, `smtpId`/`sentAt` nullables, `emailProcessingTimeMs`, `createdAt` texte ISO | Ligne pending créée à l'enqueue |
 | `email_histories` | `id` PK, `emailId` (sans FK), `status`, `error`, `attempts`, `createdAt` | Timeline append-only |
 
@@ -367,7 +367,7 @@ Champs chiffrés :
 - `email_logs.to`
 - `smtp_config.smtpHostname`, `smtpUsername`, `smtpPassword`, `senderEmail`
 
-Champs en clair : `email_logs.subject`, sujet/html/texte des templates, messages
+Champs en clair : `email_logs.subject`, sujet/html/texte/source des templates, messages
 d'erreur/historique, email/nom utilisateur, métadonnées de clé API.
 
 Il n'y a **aucune version ni rotation de clé** : changer `AES_256_KEY` rend
@@ -381,7 +381,7 @@ payload.
 | Module | Routes | Auth | Responsabilité |
 |---|---|---|---|
 | `send-email` | `POST /send-email` | Clé API | Valider le payload, résoudre le template, créer le log pending, enfiler |
-| `templates` | `GET/POST /templates`, `GET/PUT/DELETE /templates/:id` | Session | CRUD + propriété ; helpers de rendu |
+| `templates` | `GET/POST /templates`, `GET/PUT/DELETE /templates/:id`, `POST /templates/:id/preview` | Session | CRUD + propriété ; stockage éditeur visuel/code ; rendu + preview |
 | `smtp-config` | `GET/POST /smtp-config`, `GET/PUT/DELETE /smtp-config/:id` | Session | CRUD ; chiffre/déchiffre les identifiants |
 | `api-keys` | `GET/POST /api-keys`, `DELETE /api-keys/:id` | Session | Créer une clé Better Auth, la lier à une config SMTP, lister/révoquer |
 | `email-logs` | `GET /email-logs`, `GET /email-logs/:id` | Session | Logs filtrés/paginés + timeline d'historique |
@@ -419,15 +419,27 @@ Fichiers : `send-email.controller.ts`, `send-email.dto.ts`,
 ### 8.2 `templates`
 
 - CRUD limité à `userId` ; un CRUD inter-utilisateur renvoie `403`.
-- Caps DTO : name 100, subject 500, html 100 000, text 20 000.
+- Caps DTO : name 100, subject 500, editor JSON 250 000, html 100 000, text 20 000.
+- `format` distingue les templates `legacy` (HTML brut) des templates
+  `react-email` créés par l’éditeur visuel du dashboard. `editorJson` stocke
+  `{ version: 2, theme, content }` pour ces templates (les anciens documents
+  TipTap bruts restent lisibles) ; `html`/`text` restent la représentation
+  exportée, prête à envoyer.
+- Le dashboard utilise le builder complet `@react-email/editor` (canvas,
+  inspecteur contextuel body/container/nœud, thèmes Basic/Minimal, Export HTML)
+  et exporte HTML/texte + l’enveloppe JSON à l’enregistrement. Le Worker
+  n’exécute jamais React Email ni du TSX collé par un utilisateur.
 - `template-renderer.ts` :
   - `VARIABLE_PATTERN = /\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g`
   - `extractVariables(...contents)` renvoie les noms uniques dans l'ordre de
     première apparition.
   - `renderTemplate` insère les valeurs littéralement (sujet, texte).
   - `renderHtmlTemplate` échappe `& < > " '` avant insertion.
-  - Les marqueurs inconnus restent intacts quand la fonction est appelée
-    directement.
+  - `renderTemplateContent(template, variables)` vérifie les variables
+    manquantes, rend les trois champs et applique les caps inline. Il est
+    partagé par `POST /send-email` et `POST /templates/:id/preview`.
+  - Les marqueurs inconnus restent intacts quand les helpers bas niveau sont
+    appelés directement.
 
 ### 8.3 `smtp-config`
 
@@ -539,24 +551,23 @@ La requête suit le même chemin jusqu'à la validation. Ensuite :
 1. `templateRepo.findById(payload.templateId)`.
 2. Absent **ou** appartenant à un autre utilisateur → `404 "Template not
    found"` (anti-sondage).
-3. `extractVariables(subject, html, text)`.
-4. Variables manquantes → `400 "Missing template variables: a, b"`.
-   - La vérification est `!(name in variables)`, donc les noms de prototype
-     comme `toString` comptent comme fournis même s'ils sont absents.
+3. `renderTemplateContent(template, variables)` extrait les variables.
+4. Variables manquantes → `400 "Missing template variables: a, b"`. La
+   vérification utilise `Object.prototype.hasOwnProperty` : les noms de
+   prototype comme `toString` ne sont pas acceptés comme valeurs fournies.
 5. Rendu :
    - sujet : substitution littérale.
    - texte : substitution littérale.
    - html : valeurs échappées HTML, puis la sanitization normale du workflow
      s'exécute.
-6. Le résultat rendu est renvoyé sous la même forme inline `SendEmailDto`.
-   La file, le consommateur, le workflow et la couche SMTP n'apprennent jamais
-   que les templates existent.
+6. Le résultat rendu est plafonné aux limites inline et renvoyé sous la même
+   forme inline `SendEmailDto`. La file, le consommateur, le workflow et la
+   couche SMTP n'apprennent jamais que les templates existent.
 
-La sortie rendue n'est **pas re-validée** contre les caps inline. Un template
-dans les caps peut produire plus de 100 000 caractères (ou une valeur de
-variable peut être arbitrairement grande), et le message de file résultant peut
-approcher la limite de 128 Ko de Cloudflare Queues. Il n'y a pas de
-vérification de taille explicite avant `queue.send()`.
+`POST /templates/:id/preview` utilise le même renderer et les mêmes caps : la
+preview du dashboard et l’email mis en file ne peuvent pas diverger. La preview
+live de l’éditeur est côté client ; la preview d’un template enregistré est
+rendue depuis le contenu stocké.
 
 ### 9.3 Consommateur de file
 
@@ -769,8 +780,6 @@ lieu de `404/403`.
 | Moyenne | L'historique `attempt_failed` stocke le texte SMTP brut | Noms d'hôtes/éléments destinataires visibles dans le dashboard. |
 | Moyenne | Pas de rotation/version de clé | Changer `AES_256_KEY` détruit toutes les données chiffrées. |
 | Moyenne | Une config SMTP absente retente 5 cycles | Travail file/workflow gaspillé pour une erreur de configuration permanente. |
-| Moyenne | La vérification des variables de template utilise `in` | Les noms de prototype (`toString`, `constructor`) passent la validation et rendent `undefined`. |
-| Moyenne | La sortie rendue du template n'est pas re-plafonnée | Peut dépasser la limite de 128 Ko de la file et échouer à l'enqueue. |
 | Moyenne | Le fallback `findSmtpRecord` ne vérifie pas l'utilisateur | Les événements legacy sans `smtpConfigId` peuvent utiliser la config active d'un autre tenant. |
 | Faible | `secure: true` codé en dur | Le port 587/STARTTLS ne peut pas fonctionner sans changement de code. |
 | Faible | `Bindings.PORT` typé `number` mais les vars Wrangler sont des chaînes ; la config ne le valide pas | Incohérence de type à l'exécution ; nodemailer peut coercer. |
@@ -814,13 +823,14 @@ lieu de `404/403`.
   serveur sur l'API.
 - `fetchApi(path, init)` appelle `fetch(path, { credentials: "include",
   ...init })` — same-origin en production, proxy Vite en dev.
-- Le proxy de dev transmet `/api`, `/smtp-config`, `/api-keys`, `/email-logs`,
-  `/templates` et les quatre chemins `/dashboard/*` vers `BACKEND_URL`
-  (`http://localhost:8787` par défaut, `http://backend:8787` dans Docker).
-- La page templates duplique la regex `{{variable}}` et l'échappement HTML du
-  backend pour la prévisualisation live. Son `escapeHtml` n'échappe pas `'`,
-  et elle échappe le sujet pour la prévisualisation alors que le backend envoie
-  le sujet littéralement — les aperçus peuvent différer de l'email délivré.
+- Le proxy de dev transmet `/api`, `/docs`, `/openapi.json`, `/smtp-config`,
+  `/api-keys`, `/email-logs`, `/templates` et les quatre chemins
+  `/dashboard/*` vers `BACKEND_URL` (`http://localhost:8787` par défaut,
+  `http://backend:8787` dans Docker).
+- La page templates monte l’éditeur officiel `@react-email/editor` et
+  enregistre son HTML/texte exporté + le JSON TipTap. Elle duplique encore la
+  regex `{{variable}}` du backend pour la preview live ; la preview d’un
+  template enregistré utilise les mêmes règles d’échappement que l’envoi.
 - Le graphique du dashboard fabrique des données quotidiennes à partir des
   totaux (voir §8.6).
 - `Layout.astro` ignore sa prop `title` et code en dur `<title>Astro
@@ -885,7 +895,7 @@ lieu de `404/403`.
 | `retries: { limit: 0 }` sur l'étape SMTP | Empêche les envois en double des retries par défaut de Workflows | Repose sur l'échelle des cycles de file pour tous les retries |
 | Les callbacks d'étape renvoient des primitives (string/JSON) | Évite la fausse annulation "hung" de workerd | `JSON.parse` peu élégant à l'étape 5 |
 | Configs SMTP par utilisateur chiffrées dans D1 | Pas de secrets SMTP au niveau Worker ; prêt pour le multi-tenant | Pas de rotation de clé ; le CRUD de config renvoie les secrets déchiffrés |
-| Rendu des templates à la requête | File/workflow/SMTP restent agnostiques des templates ; les variables manquantes échouent vite en 400 | La sortie rendue contourne les caps DTO ; la logique de preview est dupliquée |
+| Rendu des templates à la requête | File/workflow/SMTP restent agnostiques des templates ; les variables manquantes échouent vite en 400 ; la sortie est plafonnée | La regex de preview est dupliquée côté dashboard ; l’éditeur est browser-only |
 | Un seul Worker sert UI + API | Pas de CORS en production, un déploiement, une URL | Le build frontend doit précéder le déploiement ; limites de taille/assets du Worker |
 | D1 + Drizzle | SQLite serverless, simulation locale simple, schéma typé | Limites de paramètres D1, pas de longues transactions, latence à l'échelle |
 | DI manuelle via getters | Hono n'a pas d'IoC ; controllers testables | État singleton au niveau module ; invalidation partielle du cache auth |
@@ -958,6 +968,7 @@ lieu de `404/403`.
 | Consommateur de file | `backend/src/queue/send-email.consumer.ts` |
 | Workflow durable + décision de retry | `backend/src/workflows/send-email.workflow.ts` |
 | Rendu de templates | `backend/src/templates/template-renderer.ts` |
+| Éditeur de templates | `frontend/src/components/template-editor.tsx` |
 | Schéma | `backend/src/db/schema.ts` |
 | Crypto | `backend/src/core/crypto.ts` |
 | Sanitizer HTML | `backend/src/core/html-sanitizer.ts` |

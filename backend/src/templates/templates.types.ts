@@ -1,6 +1,11 @@
+export type TemplateFormat = "legacy" | "react-email" | "react-email-code";
+
 export interface TemplateInput {
   name: string;
   subject: string;
+  format?: TemplateFormat;
+  editorJson?: string | null;
+  source?: string | null;
   html: string;
   text: string;
 }
@@ -8,6 +13,9 @@ export interface TemplateInput {
 export interface TemplateUpdateInput {
   name?: string;
   subject?: string;
+  format?: TemplateFormat;
+  editorJson?: string | null;
+  source?: string | null;
   html?: string;
   text?: string;
 }
@@ -17,6 +25,9 @@ export interface TemplateRecord {
   userId: string;
   name: string;
   subject: string;
+  format: TemplateFormat;
+  editorJson: string | null;
+  source: string | null;
   html: string;
   text: string;
   createdAt: Date;

@@ -6,19 +6,9 @@ import { SendEmailPayloadDto } from "./send-email.dto";
 import type { SendEmailDto, SendTemplateEmailDto } from "./send-email.dto";
 import type { SendEmailQueueMessage, IEmailRepository } from "./send-email.types";
 import type { ITemplateRepository } from "@/templates/templates.types";
-import {
-  extractVariables,
-  renderTemplate,
-  renderHtmlTemplate,
-} from "@/templates/template-renderer";
+import { renderTemplateContent } from "@/templates/template-renderer";
 import { AppError } from "@/core/errors";
 import { encrypt } from "@/core/crypto";
-import {
-  hasLineBreak,
-  MAX_HTML_LENGTH,
-  MAX_SUBJECT_LENGTH,
-  MAX_TEXT_LENGTH,
-} from "@/core/validation";
 import { createId } from "@paralleldrive/cuid2";
 
 /**
@@ -39,44 +29,13 @@ async function resolveTemplatePayload(
     throw new AppError(404, "Template not found");
   }
 
-  const variables = payload.variables ?? {};
-  const declared = extractVariables(template.subject, template.html, template.text);
-  const missing = declared.filter((name) => !(name in variables));
-  if (missing.length > 0) {
-    throw new AppError(400, `Missing template variables: ${missing.join(", ")}`);
-  }
-
-  const subject = renderTemplate(template.subject, variables);
-  const html = renderHtmlTemplate(template.html, variables);
-  const text = renderTemplate(template.text, variables);
-
-  if (hasLineBreak(subject)) {
-    throw new AppError(400, "Rendered subject must not contain line breaks.");
-  }
-  if (subject.length > MAX_SUBJECT_LENGTH) {
-    throw new AppError(
-      400,
-      `Rendered subject must be at most ${MAX_SUBJECT_LENGTH} characters.`,
-    );
-  }
-  if (html.length > MAX_HTML_LENGTH) {
-    throw new AppError(
-      400,
-      `Rendered HTML must be at most ${MAX_HTML_LENGTH} characters.`,
-    );
-  }
-  if (text.length > MAX_TEXT_LENGTH) {
-    throw new AppError(
-      400,
-      `Rendered text must be at most ${MAX_TEXT_LENGTH} characters.`,
-    );
-  }
+  const rendered = renderTemplateContent(template, payload.variables ?? {});
 
   return {
     to: payload.to,
-    subject,
-    html,
-    text,
+    subject: rendered.subject,
+    html: rendered.html,
+    text: rendered.text,
   };
 }
 

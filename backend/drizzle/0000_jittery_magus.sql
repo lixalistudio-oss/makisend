@@ -48,6 +48,15 @@ CREATE UNIQUE INDEX `apikey_smtp_config_id_unique` ON `apikey` (`smtp_config_id`
 CREATE INDEX `apikey_configId_idx` ON `apikey` (`config_id`);--> statement-breakpoint
 CREATE INDEX `apikey_referenceId_idx` ON `apikey` (`reference_id`);--> statement-breakpoint
 CREATE INDEX `apikey_key_idx` ON `apikey` (`key`);--> statement-breakpoint
+CREATE TABLE `email_contents` (
+	`email_id` text PRIMARY KEY NOT NULL,
+	`text_body` text NOT NULL,
+	`html_body` text NOT NULL,
+	`smtp_config_id` text,
+	`created_at` text NOT NULL,
+	FOREIGN KEY (`email_id`) REFERENCES `email_logs`(`internalId`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
 CREATE TABLE `email_histories` (
 	`id` text PRIMARY KEY NOT NULL,
 	`email_id` text NOT NULL,
@@ -73,6 +82,28 @@ CREATE TABLE `email_logs` (
 --> statement-breakpoint
 CREATE INDEX `emailLogs_userId_createdAt_idx` ON `email_logs` (`user_id`,`created_at`);--> statement-breakpoint
 CREATE INDEX `emailLogs_apiKeyId_idx` ON `email_logs` (`apikey_id`);--> statement-breakpoint
+CREATE TABLE `idempotency_keys` (
+	`id` text PRIMARY KEY NOT NULL,
+	`user_id` text NOT NULL,
+	`route` text NOT NULL,
+	`key` text NOT NULL,
+	`request_hash` text NOT NULL,
+	`status_code` integer,
+	`response_body` text,
+	`created_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
+	`expires_at` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `idempotencyKeys_userId_route_key_unique` ON `idempotency_keys` (`user_id`,`route`,`key`);--> statement-breakpoint
+CREATE INDEX `idempotencyKeys_expiresAt_idx` ON `idempotency_keys` (`expires_at`);--> statement-breakpoint
+CREATE TABLE `rate_limit` (
+	`id` text PRIMARY KEY NOT NULL,
+	`key` text NOT NULL,
+	`count` integer NOT NULL,
+	`last_request` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `rate_limit_key_unique` ON `rate_limit` (`key`);--> statement-breakpoint
 CREATE TABLE `session` (
 	`id` text PRIMARY KEY NOT NULL,
 	`expires_at` integer NOT NULL,
@@ -91,16 +122,36 @@ CREATE TABLE `smtp_config` (
 	`id` text PRIMARY KEY NOT NULL,
 	`user_id` text NOT NULL,
 	`smtphostname` text NOT NULL,
+	`smtp_port` integer DEFAULT 465 NOT NULL,
+	`smtp_security` text DEFAULT 'tls' NOT NULL,
 	`smtpusername` text NOT NULL,
 	`smtppassword` text NOT NULL,
 	`sender_email` text NOT NULL,
 	`is_active` integer DEFAULT true,
+	`last_check_at` integer,
+	`last_check_ok` integer,
+	`last_check_error` text,
 	`created_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
 	`updated_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
 	FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
 CREATE INDEX `smtpConfig_userId_idx` ON `smtp_config` (`user_id`);--> statement-breakpoint
+CREATE TABLE `templates` (
+	`id` text PRIMARY KEY NOT NULL,
+	`user_id` text NOT NULL,
+	`name` text NOT NULL,
+	`subject` text NOT NULL,
+	`format` text DEFAULT 'legacy' NOT NULL,
+	`editor_json` text,
+	`html` text NOT NULL,
+	`text` text NOT NULL,
+	`created_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
+	`updated_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
+	FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE INDEX `templates_userId_idx` ON `templates` (`user_id`);--> statement-breakpoint
 CREATE TABLE `user` (
 	`id` text PRIMARY KEY NOT NULL,
 	`name` text,

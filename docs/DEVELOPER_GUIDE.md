@@ -50,7 +50,7 @@ closed afterwards), then in the dashboard:
 1. **SMTP Config** → create a config (host, username, password, sender email).
 2. **API Keys** → create a key linked to that SMTP config. Copy the `mk_...`
    value immediately; it is shown only once.
-3. **Templates** (optional) → create a template with `{{variables}}`.
+3. **Templates** (optional) → create one in the visual editor or paste a React Email TSX component with `{{variables}}`.
 4. Send a test email with `curl` (§4).
 
 ---
@@ -149,6 +149,7 @@ Rules:
 | DELETE | `/api-keys/:id` | revoke |
 | GET/POST | `/templates` | list / create |
 | GET/PUT/DELETE | `/templates/:id` | read / update / delete |
+| POST | `/templates/:id/preview` | render the saved template with sample variables |
 | GET | `/email-logs?limit=&cursor=&status=&smtpConfigId=&to=` | paginated logs |
 | GET | `/email-logs/:id` | one log + history |
 | GET | `/dashboard/stats?days=7` | totals + success rate |
@@ -222,13 +223,10 @@ backend/test/
     ├── smtp-config/ templates/ workflows/
 ```
 
-Current baseline: **18 files / 155 tests pass** in ~25 s with
-`pnpm test:run`. Lint passes.
+Current baseline: **30 files / 308 tests pass** in ~40 s with
+`pnpm test:run`. Lint and `pnpm exec tsc --noEmit` pass.
 
-`pnpm exec tsc --noEmit` currently reports **3 pre-existing test-only errors**
-(`full-flow.test.ts:115`, `full-flow.test.ts:130` missing `ASSETS`,
-`send_email_route.test.ts:69` Hono `Variables` mismatch). CI does not run
-`tsc`; do not claim typechecking is clean without fixing these.
+CI does not run `tsc`; run it manually before claiming typechecking is clean.
 
 ### 6.2 How tests are wired
 
@@ -251,7 +249,8 @@ Current baseline: **18 files / 155 tests pass** in ~25 s with
 |---|---|
 | DTO / validation | invalid, missing, extra field, boundary lengths |
 | Controller | status code, queue payload, pending log, error path |
-| Template renderer | extraction order, whitespace, malformed markers, HTML escaping |
+| Template renderer | extraction order, whitespace, malformed markers, HTML escaping, missing/prototype variables, rendered caps |
+| Template editor save | DTO accepts `format` + `editorJson`/`source`, requires JSON for `react-email` and source for `react-email-code`, preview route renders saved content |
 | Workflow step | history sequence, returned primitive shape, step config |
 | Error classifier | `responseCode`, SMTP status in message, `err.code`, message token, default |
 | Retry decision | requeue + backoff, cycle cap, permanent, missing queue, re-enqueue failure |
@@ -391,17 +390,23 @@ const value = await step.do("my-step", async () => {
 
 ### 8.6 Adding a template variable feature
 
-The renderer is shared by the controller and the frontend preview. If you
-change the syntax:
+The renderer is shared by the controller, the preview endpoint, and the
+frontend live preview. If you change the syntax:
 
 1. Update `VARIABLE_PATTERN` in `backend/src/templates/template-renderer.ts`.
 2. Update the duplicated regex/escaping in `frontend/src/components/templates-layout.tsx`.
 3. Update `template-renderer.test.ts`.
 4. Decide escaping per field: subject/text literal, HTML escaped.
-5. Remember the missing-variable check uses `name in variables` (prototype
-   names pass); consider `Object.hasOwn(variables, name)` if you touch it.
-6. Rendered output is not re-capped — if you add large variables, add an
-   explicit size check before enqueueing.
+5. Keep the missing-variable check on `Object.prototype.hasOwnProperty`
+   (prototype names must not pass).
+6. `renderTemplateContent` re-caps the rendered output; keep the preview
+   endpoint using it.
+7. The visual builder stores `format: "react-email"`, an `editorJson` envelope
+   (`{ version: 2, theme, content }`), and the exported `html`/`text`. It mounts
+   the full `@react-email/editor` UI: canvas, inspector (body/container/node
+   colors, spacing, borders), Basic/Minimal themes, and Export HTML. Code mode
+   stores `format: "react-email-code"`, `source`, and the HTML/text compiled by
+   the browser worker. The Worker must not execute pasted TSX.
 
 ### 8.7 Frontend page
 
@@ -412,6 +417,12 @@ change the syntax:
 - Use `fetchApi` from `@/lib/api` so cookies are sent.
 - Add the API path to the dev proxy in `frontend/astro.config.mjs`.
 - Follow existing shadcn/Base UI components; do not introduce a new UI library.
+- The template page is the exception: it imports `@react-email/editor` in a
+  React island and persists the exported HTML/text plus the builder envelope.
+  Visual mode includes the inspector sidebar, theme switcher, and Export HTML.
+  Code mode transpiles pasted TSX with Sucrase in a sandboxed Web Worker,
+  renders it with `react-email`, and persists `source` plus the compiled
+  HTML/text. Never run the editor or user-pasted TSX in the Worker.
 - There is no frontend test/lint setup; at minimum run `pnpm --filter
   ./frontend build` and exercise the page manually.
 
@@ -463,7 +474,7 @@ column explains why a send stopped.
 | `400 Validation failed` | Zod `.strict()` rejected an extra field or a length cap. |
 | `400 Missing template variables` | Provide every `{{name}}` used in subject/html/text. |
 | `404 Template not found` | Wrong id or belongs to another user (intentional anti-probing). |
-| Queue send fails with size error | Rendered template exceeded the 128 KB queue limit. |
+| Queue send fails with size error | Rendered template exceeded the 128 KB queue limit; `renderTemplateContent` should reject it earlier. |
 | Logs page pagination skips rows | Known cursor bug (`:` in the ISO timestamp). Fix `encode/decodeCursor` before relying on pagination. |
 | Dashboard success rate looks wrong | Known: success+failure double count, pending in denominator. |
 | `GET /smtp-config` exposes passwords | Known security issue; do not build UI that relies on it, and fix before production. |
@@ -638,7 +649,7 @@ When working in this repo, an automated agent should:
 4. **Validate with Zod** and keep `.strict()`.
 5. **Add or update tests** for every behavior change.
 6. **Run** `cd backend && pnpm lint && pnpm test:run` before finishing. Do not
-   claim `tsc` passes: it currently has 3 known test-only errors.
+   claim `tsc` passes unless `pnpm exec tsc --noEmit` is clean.
 7. **Build the frontend** (`pnpm --filter ./frontend build`) if you touched it.
 8. **Do not commit** unless explicitly asked; never commit `.dev.vars`,
    `.env`, `.wrangler`, secrets or generated artifacts.

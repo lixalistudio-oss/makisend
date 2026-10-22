@@ -7,7 +7,21 @@
  * sanitize-html pass in the send pipeline is the second line of defense).
  */
 
+import { AppError } from "@/core/errors";
+import {
+  hasLineBreak,
+  MAX_HTML_LENGTH,
+  MAX_SUBJECT_LENGTH,
+  MAX_TEXT_LENGTH,
+} from "@/core/validation";
+
 const VARIABLE_PATTERN = /\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g;
+
+export interface TemplateContent {
+  subject: string;
+  html: string;
+  text: string;
+}
 
 /**
  * Unique variable names across all contents, in first-appearance order.
@@ -53,4 +67,50 @@ export function renderTemplate(content: string, variables: Record<string, string
 /** HTML body: values are HTML-escaped before insertion. */
 export function renderHtmlTemplate(content: string, variables: Record<string, string>): string {
   return replace(content, variables, true);
+}
+
+/**
+ * Renders a stored template and enforces the same limits as an inline send.
+ * Used by both POST /send-email and the dashboard preview endpoint so the
+ * preview and the queued message cannot drift apart.
+ */
+export function renderTemplateContent(
+  template: TemplateContent,
+  variables: Record<string, string>,
+): TemplateContent {
+  const declared = extractVariables(template.subject, template.html, template.text);
+  const missing = declared.filter(
+    (name) => !Object.prototype.hasOwnProperty.call(variables, name),
+  );
+  if (missing.length > 0) {
+    throw new AppError(400, `Missing template variables: ${missing.join(", ")}`);
+  }
+
+  const subject = renderTemplate(template.subject, variables);
+  const html = renderHtmlTemplate(template.html, variables);
+  const text = renderTemplate(template.text, variables);
+
+  if (hasLineBreak(subject)) {
+    throw new AppError(400, "Rendered subject must not contain line breaks.");
+  }
+  if (subject.length > MAX_SUBJECT_LENGTH) {
+    throw new AppError(
+      400,
+      `Rendered subject must be at most ${MAX_SUBJECT_LENGTH} characters.`,
+    );
+  }
+  if (html.length > MAX_HTML_LENGTH) {
+    throw new AppError(
+      400,
+      `Rendered HTML must be at most ${MAX_HTML_LENGTH} characters.`,
+    );
+  }
+  if (text.length > MAX_TEXT_LENGTH) {
+    throw new AppError(
+      400,
+      `Rendered text must be at most ${MAX_TEXT_LENGTH} characters.`,
+    );
+  }
+
+  return { subject, html, text };
 }

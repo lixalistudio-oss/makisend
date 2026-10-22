@@ -3,6 +3,7 @@ import {
   extractVariables,
   renderTemplate,
   renderHtmlTemplate,
+  renderTemplateContent,
 } from "@/templates/template-renderer";
 
 describe("extractVariables", () => {
@@ -66,5 +67,51 @@ describe("renderHtmlTemplate", () => {
 
   it("keeps the surrounding template markup untouched", () => {
     expect(renderHtmlTemplate("<h1>{{title}}</h1>", { title: "Bob" })).toBe("<h1>Bob</h1>");
+  });
+});
+
+describe("renderTemplateContent", () => {
+  it("renders subject, html, and text with the same values", () => {
+    expect(
+      renderTemplateContent(
+        {
+          subject: "Welcome {{name}}",
+          html: "<p>Hi {{name}}</p>",
+          text: "Hi {{name}}",
+        },
+        { name: "Joel" },
+      ),
+    ).toEqual({
+      subject: "Welcome Joel",
+      html: "<p>Hi Joel</p>",
+      text: "Hi Joel",
+    });
+  });
+
+  it("rejects missing variables before rendering", () => {
+    expect(() =>
+      renderTemplateContent(
+        { subject: "Hi {{name}}", html: "<p>{{name}}</p>", text: "Hi {{name}}" },
+        {},
+      ),
+    ).toThrow("Missing template variables: name");
+  });
+
+  it("does not accept inherited prototype names as supplied variables", () => {
+    expect(() =>
+      renderTemplateContent(
+        { subject: "Hi {{toString}}", html: "<p>{{toString}}</p>", text: "Hi" },
+        {},
+      ),
+    ).toThrow("Missing template variables: toString");
+  });
+
+  it("rejects a rendered subject that gains a line break", () => {
+    expect(() =>
+      renderTemplateContent(
+        { subject: "Hi {{name}}", html: "<p>Hi</p>", text: "Hi" },
+        { name: "Joel\r\nBcc: victim@example.com" },
+      ),
+    ).toThrow("line breaks");
   });
 });

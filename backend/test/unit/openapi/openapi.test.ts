@@ -26,6 +26,7 @@ const EXPECTED_PATHS = [
   "/dashboard/errors",
   "/templates",
   "/templates/{id}",
+  "/templates/{id}/preview",
   "/openapi.json",
 ];
 
