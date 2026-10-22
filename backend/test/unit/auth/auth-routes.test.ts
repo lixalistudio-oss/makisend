@@ -44,7 +44,6 @@ describe("auth routes (email + password only)", () => {
       AES_256_KEY:
         "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
       makisend_db: testD1.d1,
-      PORT: 587,
       BETTER_AUTH_SECRET: "test-secret",
       BETTER_AUTH_URL: BASE_URL,
       FRONTEND_URL: ORIGIN,

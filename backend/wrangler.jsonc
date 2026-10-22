@@ -14,12 +14,6 @@
 		"directory": "../frontend/dist",
 		"binding": "ASSETS"
 	},
-	// `vars` are NOT inherited by environments, so preview declares its own below.
-	// PORT is used by nodemailer (SmtpEmailTransport); without it the port silently
-	// falls back to 465.
-	"vars": {
-		"PORT": "465"
-	},
 	"observability": {
 		"logs": {
 			"enabled": true,
@@ -71,12 +65,14 @@
 			"class_name": "SendEmailWorkflow"
 		}
 	],
+	// Daily credential/connection check for every SMTP configuration. Results
+	// are stored on the row; checks never deactivate a configuration by themselves.
+	"triggers": {
+		"crons": ["17 3 * * *"]
+	},
 	"env": {
 		"preview": {
 			"name": "makisend-poc-preview",
-			"vars": {
-				"PORT": "465"
-			},
 			"d1_databases": [
 				{
 					"binding": "makisend_db",

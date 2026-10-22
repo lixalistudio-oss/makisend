@@ -67,7 +67,10 @@ src/
 │   ├── error-classifier.ts     # Permanent/transient verdicts + human-readable messages
 │   └── send-email.types.ts     # Interfaces / contracts
 ├── idempotency/                # HTTP Idempotency-Key for POST /send-email
-├── smtp-config/                # Per-user SMTP credentials (encrypted in D1)
+├── smtp-config/                # SMTP configs, TLS/port validation, connection checks
+│   ├── smtp-host.ts            # Hostname/port/security parsing and defaults
+│   ├── smtp-connection.ts      # Shared nodemailer options, check/test-send helpers
+│   └── smtp-health.ts          # Scheduled check over every stored config
 ├── templates/                  # Email templates with {{variable}} placeholders
 │   ├── index.ts                # Barrel export
 │   ├── templates.types.ts      # Contracts / repository interface
@@ -131,11 +134,10 @@ Copy `.env.example` to `.env` and fill in:
 | `BETTER_AUTH_SECRET` | Better Auth signing secret |
 | `BETTER_AUTH_URL` | Backend URL of the Worker (e.g. `http://localhost:8787`) |
 | `FRONTEND_URL` | Frontend origin allowed for CORS / redirects |
-| `PORT` | SMTP port for nodemailer (`465`, `587`, ...; also a `wrangler.jsonc` var) |
 
 Not environment variables anymore:
 
-- **SMTP credentials** (`SMTP_USER`, `SMTP_PASSWORD`, `SENDER_EMAIL`, `HOST`): stored per user, encrypted in D1, managed through the `smtp-config` module.
+- **SMTP credentials, port and TLS mode** (`SMTP_USER`, `SMTP_PASSWORD`, `SENDER_EMAIL`, `HOST`, port, `tls`/`starttls`): stored per SMTP config, credentials encrypted in D1, managed through the `smtp-config` module. Ports are limited to the submission ports a Worker can reach; port 25 is refused.
 - **`API_KEY`**: API keys are per user, created via the `api-keys` module (Better Auth), and sent as `x-api-key` or `Authorization: Bearer`.
 
 These variables are mapped in `src/index.ts` via the `Bindings` type, transformed into a typed `Config` via `createConfig()`, and injected into services at runtime.
@@ -181,12 +183,14 @@ Even though the runtime remains **Hono** (not NestJS), the code organization is 
 
 ### Current security limitations
 
-- **No rate limiting**: a client with a valid API key could spam requests without a ceiling. Implement with Cloudflare KV, D1, or Workers Analytics Engine for distributed rate limiting.
+- **Rate limiting is coarse**: Better Auth limits sign-in attempts and API keys (10,000 requests/day by default), but there is no per-tenant configurable send quota.
 - **No webhook / signature**: no request origin verification beyond the API key.
 - **No dedicated audit logs**: only Pino application logs are present.
 
 ## Technical notes
 
+- **Per-config SMTP port/security**: `smtpPort` and `smtpSecurity` (`tls` or `starttls`) live on the SMTP config; port 465/2465 means implicit TLS, the other allowed ports require STARTTLS
+- **SMTP connection by hostname**: nodemailer receives a `getSocket` callback that opens the socket by hostname, working around workerd's implicit-TLS/IP limitation; the same options power sends and health checks
 - **Forced IPv4** in nodemailer (`family: 4`) to avoid `workerd` network warnings
 - **Workflow steps return primitives**: a `step.do` callback must never return an object — the Workflows runtime then emits a false "code had hung" cancellation right after the run (workerd#6925 / workers-sdk#14959); multi-value steps return a `JSON.stringify` string that the run parses back
 - **Verified TLS** (`rejectUnauthorized: true`) to prevent MITM attacks
@@ -206,7 +210,9 @@ Even though the runtime remains **Hono** (not NestJS), the code organization is 
   - Template renderer (`extractVariables` / `renderTemplate` / `renderHtmlTemplate` with HTML escaping)
   - Retry pipeline: error classifier, workflow retries, DLQ publication, queue consumer dedup
   - HTTP idempotency: replay, body-mismatch conflict, in-progress conflict, 5xx retry
-  - API key middleware (401/403 + context wiring)
+  - API key middleware (401/403 + context wiring, inactive SMTP config refusal)
+  - SMTP host/port validation, transport options, error classification
+  - SMTP check/test-send endpoints and per-config transport resolution
 - Mocks are reset in `beforeEach`
 - Run `pnpm test:run` before committing
 
@@ -238,6 +244,7 @@ Config: `wrangler.jsonc`
 - Compatibility: `2026-07-10` with `nodejs_compat` flag
 - Observability: logs enabled
 - D1 binding: `makisend_db`
+- Cron: `17 3 * * *` runs the SMTP health check (`src/smtp-config/smtp-health.ts`)
 - Static assets: `../frontend/dist` (Astro build output) — the Worker serves the
   frontend and the API on the **same origin**, so there is no Cloudflare Pages
   project and no CORS between UI and API
@@ -264,6 +271,7 @@ Steps run:
 - Delivery via nodemailer + raw SMTP
 - Retry loop: 1 initial SMTP attempt + 3 retries 30s apart; permanent failures (auth, TLS, DNS, config, 5xx) stop immediately, transient failures go to the DLQ after the budget with a human-readable reason in D1
 - Encrypted logs + encrypted email bodies stored in D1
+- Per-config SMTP port/TLS mode, connection check and test-send endpoints; a daily cron checks every config and stores `lastCheckAt`/`lastCheckOk`/`lastCheckError`
 - `Idempotency-Key` support on `POST /send-email` (24h replay window)
 - Unit tests for route / service / middleware
 - GitHub Actions CI (lint + tests) on PRs to `main` and `dev`
@@ -294,7 +302,7 @@ Steps run:
 
 - **Asynchronous sending only**: the caller gets `202 Accepted` when the email is queued; the actual delivery happens later (Queues → SendEmailWorkflow → SMTP) and is only visible through the D1 logs.
 - **Single SMTP provider**: credentials are stored per user in D1 (encrypted), but there is no multi-provider routing or failover.
-- **No rate limiting**: see Security section.
+- **Coarse rate limiting**: Better Auth's per-key limit is not a configurable tenant quota.
 - **Bounded retry, not unlimited**: each email gets **1 initial SMTP attempt + 3 retries** 30 seconds apart. Transient failures are retried inside the same workflow instance and dead-lettered when the budget is exhausted; permanent failures (auth, TLS, DNS, config, 5xx) stop immediately with a human-readable reason in D1. A hung attempt is bounded by the SMTP socket timeouts and the 2-minute step timeout.
 - **No bounce / open / click tracking**: only send logs are stored.
 - **D1 is a serverless SQLite database**: possible latency, not ideal for very high volumes without caching.

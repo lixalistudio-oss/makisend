@@ -189,10 +189,21 @@ export const smtpConfig = sqliteTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     smtpHostname: text("smtphostname").notNull(),
+    // Submission port and TLS mode belong to the configuration: providers differ,
+    // and a Worker cannot use port 25. Defaults preserve the old implicit-TLS/465
+    // behaviour for rows created before these columns existed.
+    smtpPort: integer("smtp_port").default(465).notNull(),
+    smtpSecurity: text("smtp_security", { enum: ["tls", "starttls"] })
+      .default("tls")
+      .notNull(),
     smtpUsername: text("smtpusername").notNull(),
     smtpPassword: text("smtppassword").notNull(),
     senderEmail: text("sender_email").notNull(),
     isActive: integer("is_active", { mode: "boolean" }).default(true),
+    // Written by the scheduled SMTP health check; null until the first run.
+    lastCheckAt: integer("last_check_at", { mode: "timestamp_ms" }),
+    lastCheckOk: integer("last_check_ok", { mode: "boolean" }),
+    lastCheckError: text("last_check_error"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
       .notNull(),

@@ -156,7 +156,6 @@ describe("POST /send-email — HTTP layer integration", () => {
     return {
       AES_256_KEY: AES_KEY,
       makisend_db: d1,
-      PORT: 587,
       BETTER_AUTH_SECRET: "test-secret-for-integration",
       BETTER_AUTH_URL: "http://localhost:8787",
       FRONTEND_URL: "http://localhost:4321",
@@ -408,7 +407,6 @@ describe("POST /send-email — HTTP layer integration", () => {
       }, {
         AES_256_KEY: AES_KEY,
         makisend_db: {} as D1Database,
-        PORT: 587,
         HOST: "smtp.test.com",
         SMTP_USER: "user@test.com",
         SMTP_PASSWORD: "pass",

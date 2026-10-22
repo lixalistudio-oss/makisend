@@ -15,6 +15,8 @@ export class SmtpConfigRepository implements ISmtpConfigRepository {
         id,
         userId,
         smtpHostname: input.smtpHostname,
+        smtpPort: input.smtpPort,
+        smtpSecurity: input.smtpSecurity,
         smtpUsername: input.smtpUsername,
         smtpPassword: input.smtpPassword,
         senderEmail: input.senderEmail,
@@ -30,6 +32,11 @@ export class SmtpConfigRepository implements ISmtpConfigRepository {
       .from(smtpConfig)
       .where(eq(smtpConfig.userId, userId));
 
+    return results.map(this.toRecord);
+  }
+
+  async findAll(): Promise<SmtpConfigRecord[]> {
+    const results = await this.db.select().from(smtpConfig);
     return results.map(this.toRecord);
   }
 
@@ -63,10 +70,15 @@ export class SmtpConfigRepository implements ISmtpConfigRepository {
       id: row.id,
       userId: row.userId,
       smtpHostname: row.smtpHostname,
+      smtpPort: row.smtpPort,
+      smtpSecurity: row.smtpSecurity,
       smtpUsername: row.smtpUsername,
       smtpPassword: row.smtpPassword,
       senderEmail: row.senderEmail,
       isActive: row.isActive,
+      lastCheckAt: row.lastCheckAt,
+      lastCheckOk: row.lastCheckOk,
+      lastCheckError: row.lastCheckError,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };

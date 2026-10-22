@@ -78,6 +78,10 @@ export function apiKeyMiddleware(config: Config, auth: any) {
     }
 
     const record = smtpConfigResult[0];
+    if (record.isActive === false) {
+      pinoLogger.error("SMTP configuration is inactive");
+      throw new AppError(403, "SMTP configuration is inactive");
+    }
 
     // Decrypt SMTP credentials
     const [
@@ -96,6 +100,8 @@ export function apiKeyMiddleware(config: Config, auth: any) {
       smtpUsername: decryptedSmtpUsername,
       smtpPassword: decryptedSmtpPassword,
       smtpHostName: decryptedSmtpHostName,
+      smtpPort: record.smtpPort,
+      smtpSecurity: record.smtpSecurity,
       senderEmail: decryptedSenderEmail,
     });
     c.set("userId", userResult[0].id);

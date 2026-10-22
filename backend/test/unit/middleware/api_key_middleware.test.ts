@@ -147,6 +147,33 @@ describe("API Key Middleware", () => {
       expect(body.userId).toBe("user_123");
     });
 
+    it("should refuse an inactive SMTP configuration", async () => {
+      mockVerifyApiKey.mockResolvedValue({
+        valid: true,
+        key: { id: "key_inactive", referenceId: "user_inactive" },
+      });
+      mockDbQuery.limit
+        .mockResolvedValueOnce([{ id: "user_inactive" }])
+        .mockResolvedValueOnce([{ smtpConfigId: "smtp_inactive" }])
+        .mockResolvedValueOnce([{
+          id: "smtp_inactive",
+          smtpUsername: "enc_user",
+          smtpPassword: "enc_pass",
+          smtpHostname: "enc_host",
+          senderEmail: "enc_email",
+          isActive: false,
+        }]);
+
+      const res = await app.request("/test", {
+        headers: { "x-api-key": "mk.inactive-key" },
+      });
+
+      expect(res.status).toBe(403);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toContain("inactive");
+      expect(cryptoModule.decrypt).not.toHaveBeenCalled();
+    });
+
     it("should decrypt all SMTP credentials", async () => {
       mockVerifyApiKey.mockResolvedValue({
         valid: true,

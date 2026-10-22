@@ -23,6 +23,7 @@ import {
   idempotencyMiddleware,
 } from "@/idempotency";
 import { sendEmailQueueConsumer } from "@/queue/send-email.consumer";
+import { runSmtpHealthChecks } from "@/smtp-config/smtp-health";
 
 // --- Better Auth ---
 import { createAuth } from "@/lib/auth";
@@ -46,7 +47,6 @@ import type { IIdempotencyRepository } from "@/idempotency";
 export type Bindings = {
   AES_256_KEY: string;
   makisend_db: D1Database;
-  PORT: number;
   BETTER_AUTH_SECRET: string;
   BETTER_AUTH_URL: string;
   FRONTEND_URL: string;
@@ -313,4 +313,11 @@ export { SendEmailWorkflow } from "@/workflows";
 export default {
   fetch: app.fetch,
   queue: sendEmailQueueConsumer,
+  scheduled: async (
+    _controller: ScheduledController,
+    env: Bindings,
+    ctx: ExecutionContext,
+  ) => {
+    ctx.waitUntil(runSmtpHealthChecks(env));
+  },
 };
