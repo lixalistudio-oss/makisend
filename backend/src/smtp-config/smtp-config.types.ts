@@ -39,6 +39,14 @@ export interface SmtpConfigRecord {
   updatedAt: Date;
 }
 
+/** API-facing representation: never exposes the SMTP password. */
+export type PublicSmtpConfig = Omit<SmtpConfigRecord, "smtpPassword">;
+
+export function toPublicSmtpConfig(record: SmtpConfigRecord): PublicSmtpConfig {
+  const { smtpPassword: _smtpPassword, ...config } = record;
+  return config;
+}
+
 export interface ISmtpConfigRepository {
   create(userId: string, input: SmtpConfigInput): Promise<SmtpConfigRecord>;
   findByUserId(userId: string): Promise<SmtpConfigRecord[]>;

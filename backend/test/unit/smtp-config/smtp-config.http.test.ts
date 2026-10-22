@@ -92,6 +92,7 @@ describe("SMTP config HTTP", () => {
     expect(body.config.senderEmail).toBe(smtpPayload.senderEmail);
     expect(body.config.smtpPort).toBe(465);
     expect(body.config.smtpSecurity).toBe("tls");
+    expect(body.config).not.toHaveProperty("smtpPassword");
   });
 
   it("rejects a hostname with a scheme or a port", async () => {
@@ -165,6 +166,7 @@ describe("SMTP config HTTP", () => {
     expect(res.status).toBe(200);
     expect(body.configs).toHaveLength(2);
     expect(body.configs.map((config) => config.senderEmail)).toContain(smtpPayload.senderEmail);
+    expect(body.configs[0]).not.toHaveProperty("smtpPassword");
   });
 
   it("requires a session for the unsaved check", async () => {

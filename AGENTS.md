@@ -67,6 +67,7 @@ src/
 │   ├── error-classifier.ts     # Permanent/transient verdicts + human-readable messages
 │   └── send-email.types.ts     # Interfaces / contracts
 ├── idempotency/                # HTTP Idempotency-Key for POST /send-email
+├── openapi/                    # OpenAPI 3.1 document (request schemas generated from Zod DTOs)
 ├── smtp-config/                # SMTP configs, TLS/port validation, connection checks
 │   ├── smtp-host.ts            # Hostname/port/security parsing and defaults
 │   ├── smtp-connection.ts      # Shared nodemailer options, check/test-send helpers
@@ -89,7 +90,7 @@ test/
 ├── helpers/d1-setup.ts
 ├── integration/full-flow.test.ts
 └── unit/
-    ├── api-keys/ auth/ config/ dashboard/ email-logs/
+    ├── api-keys/ auth/ config/ dashboard/ email-logs/ openapi/
     ├── send-email/             # error classifier, transport resolver, controller
     ├── idempotency/            # replay / conflict / 5xx retry behaviour
     ├── workflows/              # send flow retries, DLQ, classifier integration
@@ -249,17 +250,32 @@ Config: `wrangler.jsonc`
   frontend and the API on the **same origin**, so there is no Cloudflare Pages
   project and no CORS between UI and API
 
+## API documentation
+
+The Worker serves its own reference:
+
+- `GET /docs` — Scalar UI (CDN script, nonce-based CSP)
+- `GET /openapi.json` — OpenAPI 3.1 document
+
+`src/openapi/openapi.ts` is hand-written for responses and paths, but request
+schemas come from the runtime Zod DTOs via `z.toJSONSchema(...)` (input mode).
+When a DTO changes, the spec follows automatically; the test suite also verifies
+that every `$ref` resolves and every operation has responses. SMTP config
+responses intentionally omit `smtpPassword`.
+
 ## CI / GitHub Actions
 
-The workflow `.github/workflows/ci.yml` triggers on every pull request to `main` or `dev`.
+The workflow `.github/workflows/ci.yml` triggers on pushes and pull requests targeting `main` or `dev`.
 
 Steps run:
 
 1. Checkout code
 2. Setup pnpm and Node.js 22
 3. `pnpm install --frozen-lockfile`
-4. `pnpm lint`
-5. `pnpm test:run`
+4. `pnpm lint` (backend)
+5. `pnpm exec tsc --noEmit` (backend)
+6. `pnpm test:run` (backend)
+7. `pnpm --filter frontend build`
 
 ## Roadmap (from Excalidraw design)
 
@@ -269,12 +285,13 @@ Steps run:
 - Email templates: `/templates` CRUD (session auth) + `templateId`/`variables` branch on `POST /send-email` (API key auth), rendered at request time before enqueueing; frontend page at `/dashboard/templates` with live preview
 - Async delivery pipeline: Cloudflare Queues → SendEmailWorkflow → SMTP
 - Delivery via nodemailer + raw SMTP
-- Retry loop: 1 initial SMTP attempt + 3 retries 30s apart; permanent failures (auth, TLS, DNS, config, 5xx) stop immediately, transient failures go to the DLQ after the budget with a human-readable reason in D1
+- Retry loop: one SMTP attempt per workflow run; transient failures re-enqueue for up to 5 cycles with a 1 min → 1 h backoff, then fail with a human-readable reason in D1. The Queue consumer retries 3 times only when starting the workflow fails (then DLQ)
 - Encrypted logs + encrypted email bodies stored in D1
 - Per-config SMTP port/TLS mode, connection check and test-send endpoints; a daily cron checks every config and stores `lastCheckAt`/`lastCheckOk`/`lastCheckError`
+- OpenAPI 3.1 document + Scalar UI at `/docs`; request schemas generated from the Zod DTOs
 - `Idempotency-Key` support on `POST /send-email` (24h replay window)
 - Unit tests for route / service / middleware
-- GitHub Actions CI (lint + tests) on PRs to `main` and `dev`
+- GitHub Actions CI (lint, typecheck, tests, frontend build) on pushes/PRs to `main` and `dev`
 - Deployment test on Cloudflare Workers
 
 ### Internal MVP

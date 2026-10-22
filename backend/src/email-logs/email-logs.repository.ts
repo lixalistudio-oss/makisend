@@ -26,10 +26,10 @@ function encodeCursor(cursor: LogCursor): string {
   return `${cursor.createdAt}:${cursor.internalId}`;
 }
 
-// createdAt is always a full ISO string (same length, ":" only inside the
-// time part), internalId never contains ":", so splitting on the first ":" is safe.
-function decodeCursor(raw: string): LogCursor | null {
-  const separatorIndex = raw.indexOf(":");
+// createdAt is always a full ISO string and internalId never contains ":",
+// so split on the last ":"; the time component contains earlier colons.
+export function decodeCursor(raw: string): LogCursor | null {
+  const separatorIndex = raw.lastIndexOf(":");
   if (separatorIndex <= 0 || separatorIndex === raw.length - 1) return null;
   return {
     createdAt: raw.slice(0, separatorIndex),

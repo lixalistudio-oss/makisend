@@ -114,13 +114,19 @@ describe("EmailLogService", () => {
       });
     });
 
-    it("should throw when log not found", async () => {
+    it("should throw 404 when log not found", async () => {
       (mockRepo.findById as ReturnType<typeof vi.fn>).mockResolvedValue(null);
-      await expect(service.findById("nonexistent", USER_ID)).rejects.toThrow("Email log not found");
+      await expect(service.findById("nonexistent", USER_ID)).rejects.toMatchObject({
+        statusCode: 404,
+        message: "Email log not found",
+      });
     });
 
-    it("should throw when not owned by user", async () => {
-      await expect(service.findById(LOG_ID, "other-user")).rejects.toThrow("Not authorized to access this email log");
+    it("should throw 403 when not owned by user", async () => {
+      await expect(service.findById(LOG_ID, "other-user")).rejects.toMatchObject({
+        statusCode: 403,
+        message: "Not authorized to access this email log",
+      });
     });
   });
 });

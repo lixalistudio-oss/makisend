@@ -5,6 +5,7 @@ import { pinoLogger } from "@/core/logger";
 import { MAX_ID_LENGTH } from "@/core/validation";
 import type { Bindings, UserInfoVariables } from "@/index";
 import { CreateSmtpConfigDto, TestSendDto, UpdateSmtpConfigDto } from "./smtp-config.dto";
+import { toPublicSmtpConfig } from "./smtp-config.types";
 import type { SmtpConfigService } from "./smtp-config.service";
 
 export function createSmtpConfigController(
@@ -18,7 +19,7 @@ export function createSmtpConfigController(
     const service = getService();
     const configs = await service.findAllByUser(userId);
     pinoLogger.info({ userId, count: configs.length }, "GET /smtp-config - returning configs");
-    return c.json({ configs }, 200);
+    return c.json({ configs: configs.map(toPublicSmtpConfig) }, 200);
   });
 
   controller.post(
@@ -47,7 +48,7 @@ export function createSmtpConfigController(
 
       const config = await service.create(userId, data);
       pinoLogger.info({ userId, configId: config.id }, "POST /smtp-config - config created");
-      return c.json({ config }, 201);
+      return c.json({ config: toPublicSmtpConfig(config) }, 201);
     },
   );
 
@@ -129,7 +130,7 @@ export function createSmtpConfigController(
 
       const config = await service.findByIdAndUser(id, userId);
       pinoLogger.info({ userId, id }, "GET /smtp-config/:id - config found");
-      return c.json({ config }, 200);
+      return c.json({ config: toPublicSmtpConfig(config) }, 200);
     },
   );
 
@@ -161,7 +162,7 @@ export function createSmtpConfigController(
 
       const config = await service.update(id, userId, updates);
       pinoLogger.info({ userId, id }, "PUT /smtp-config/:id - config updated");
-      return c.json({ config }, 200);
+      return c.json({ config: toPublicSmtpConfig(config) }, 200);
     },
   );
 

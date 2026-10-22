@@ -1,6 +1,7 @@
 // --- Framework & core imports ---
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { Scalar } from "@scalar/hono-api-reference";
 
 // --- Middleware imports ---
 import { errorHandler } from "@/middleware/error.handler";
@@ -24,6 +25,7 @@ import {
 } from "@/idempotency";
 import { sendEmailQueueConsumer } from "@/queue/send-email.consumer";
 import { runSmtpHealthChecks } from "@/smtp-config/smtp-health";
+import { openApiDocument } from "@/openapi";
 
 // --- Better Auth ---
 import { createAuth } from "@/lib/auth";
@@ -165,7 +167,7 @@ app.use("*", async (c, next) => {
   return cors({
     origin: (origin) => allowedOrigin(origin, c.env),
     credentials: true,
-    allowHeaders: ["Content-Type", "Authorization", "Idempotency-Key"],
+    allowHeaders: ["Content-Type", "Authorization", "x-api-key", "Idempotency-Key"],
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     exposeHeaders: ["Idempotency-Replayed"],
   })(c, next);
@@ -173,6 +175,20 @@ app.use("*", async (c, next) => {
 app.use("*", requestLoggerMiddleware());
 app.onError(errorHandler);
 app.use(configMiddleware());
+
+// Public API documentation. Registered before the lazily initialized DB
+// middleware so the schema and reference work even if D1 is unavailable.
+app.get("/openapi.json", (c) => c.json(openApiDocument));
+app.get(
+  "/docs",
+  Scalar((c) => ({
+    url: "/openapi.json",
+    pageTitle: "MakiSend API Reference",
+    nonce: c.get("cspNonce"),
+    theme: "default",
+    cdn: "https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.75.1",
+  })),
+);
 
 // Better Auth: forward raw Request to auth.handler() for all /api/auth/* routes.
 // We wrap the result to add CORS headers that Hono's middleware can't inject into

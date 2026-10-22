@@ -1,15 +1,27 @@
 name: CI
 
 on:
+  push:
+    branches:
+      - main
+      - dev
   pull_request:
     branches:
       - main
       - dev
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
-    name: Lint & Test
+    name: Lint, typecheck, test & build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: Checkout repository
@@ -33,6 +45,13 @@ jobs:
         run: pnpm lint
         working-directory: backend
 
+      - name: Typecheck backend
+        run: pnpm exec tsc --noEmit
+        working-directory: backend
+
       - name: Run tests
         run: pnpm test:run
         working-directory: backend
+
+      - name: Build frontend
+        run: pnpm --filter frontend build

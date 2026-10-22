@@ -26,11 +26,10 @@ Related existing docs:
 - [`../rapport.md`](../rapport.md) — historical report (Inngest / Cloudflare
   Pages era)
 
-> **Documentation drift:** `README.md` still describes root-level `pnpm dev`,
-> says API-key auth is a TODO, and mentions `.env` for Worker secrets. In
-> practice: run commands from `backend/`, API-key auth is implemented, and
-> Wrangler reads `backend/.dev.vars`. These new docs are the accurate
-> reference.
+> **Documentation drift:** `README.md` has been refreshed for API keys, SMTP
+> port/TLS, rate limiting, and the API reference, but some narrative sections
+> may still lag behind `AGENTS.md`. Run commands from `backend/`, and remember
+> that Wrangler reads `backend/.dev.vars`.
 
 ## Français
 
@@ -50,11 +49,10 @@ Docs existantes associées :
 - [`../rapport.md`](../rapport.md) — rapport historique (ère Inngest /
   Cloudflare Pages)
 
-> **Dérive documentaire :** `README.md` décrit encore `pnpm dev` à la racine,
-> présente l'auth par clé API comme un TODO et mentionne `.env` pour les
-> secrets du Worker. En pratique : lancez les commandes depuis `backend/`,
-> l'auth par clé API est implémentée, et Wrangler lit `backend/.dev.vars`. Ces
-> nouveaux documents sont la référence exacte.
+> **Dérive documentaire :** `README.md` a été actualisé pour les clés API, le
+> port/TLS SMTP, le rate limiting et la référence API, mais certaines sections
+> narratives peuvent encore retarder sur `AGENTS.md`. Lancez les commandes
+> depuis `backend/` et rappelez-vous que Wrangler lit `backend/.dev.vars`.
 
 ---
 
@@ -72,8 +70,9 @@ Docs existantes associées :
 
 ## Snapshot / Instantané
 
-- Branch: `feat/email-templates`
-- HEAD at writing: `47ef9e8`
-- Tests: 18 files / 155 tests pass (`cd backend && pnpm test:run`)
+- Branch: `feat/new-features-patch-from-notifier`
+- API reference: `GET /docs` (Scalar) and `GET /openapi.json` (OpenAPI 3.1)
+- Tests: 26 files / 288 tests pass (`cd backend && pnpm test:run`)
 - Lint: passes (`cd backend && pnpm lint`)
-- `tsc --noEmit`: 3 known test-only errors (not run in CI)
+- Typecheck: passes (`cd backend && pnpm exec tsc --noEmit`)
+- CI: lint, typecheck, tests, and frontend build on pushes/PRs to `main` and `dev`

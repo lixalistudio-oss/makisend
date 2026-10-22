@@ -1,4 +1,5 @@
 import { decrypt } from "@/core/crypto";
+import { AppError } from "@/core/errors";
 import { pinoLogger } from "@/core/logger";
 import type {
   IEmailLogRepository,
@@ -32,10 +33,10 @@ export class EmailLogService {
     pinoLogger.info({ id, userId }, "Fetching email log by ID");
     const log = await this.emailLogRepo.findById(id);
     if (!log) {
-      throw new Error("Email log not found");
+      throw new AppError(404, "Email log not found");
     }
     if (log.userId !== userId) {
-      throw new Error("Not authorized to access this email log");
+      throw new AppError(403, "Not authorized to access this email log");
     }
     return this.decryptLog(log);
   }
