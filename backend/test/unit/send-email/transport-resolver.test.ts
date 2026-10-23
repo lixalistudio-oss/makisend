@@ -9,6 +9,8 @@ import {
   resolveTransportFor,
 } from "@/send-email/transport-resolver";
 import type { Bindings } from "@/index";
+import { CloudflareEmailTransport } from "@/send-email/cloudflare-email.transport";
+import { SmtpEmailTransport } from "@/transports";
 import type { Miniflare } from "miniflare";
 
 const AES_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -17,12 +19,12 @@ describe("SMTP transport resolution", () => {
   let mf: Miniflare;
   let env: Bindings;
 
-  async function insertConfig(id: string, isActive: boolean, port = 465) {
+  async function insertConfig(id: string, isActive: boolean, port = 465, host = "smtp.example.com") {
     const db = createDatabase(env.makisend_db);
     await db.insert(smtpConfig).values({
       id,
       userId: "resolver-user",
-      smtpHostname: await encrypt("smtp.example.com", AES_KEY),
+      smtpHostname: await encrypt(host, AES_KEY),
       smtpPort: port,
       smtpSecurity: port === 465 ? "tls" : "starttls",
       smtpUsername: await encrypt("user@example.com", AES_KEY),
@@ -80,6 +82,14 @@ describe("SMTP transport resolution", () => {
 
     const record = await findSmtpRecord(env);
     expect(record?.id).toBe("active-second");
+  });
+
+  it("routes a Cloudflare Email Service configuration to the send_email binding, any other host to SMTP", async () => {
+    await insertConfig("cf-config", true, 587, "smtp.mx.cloudflare.net");
+    await insertConfig("smtp-config", true, 465);
+
+    expect(await resolveTransportFor(env, "cf-config")).toBeInstanceOf(CloudflareEmailTransport);
+    expect(await resolveTransportFor(env, "smtp-config")).toBeInstanceOf(SmtpEmailTransport);
   });
 
   it("decrypts the hostname and credentials with the stored port and security", async () => {

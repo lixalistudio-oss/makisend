@@ -6,20 +6,10 @@ import { SessionGuard } from "@/components/session-guard"
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Field, FieldGroup, FieldLabel, FieldDescription } from "@/components/ui/field"
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -40,17 +30,28 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { MailIcon, PlusIcon, EllipsisVerticalIcon, PencilIcon, TrashIcon, CheckCircleIcon, XCircleIcon, LoaderIcon, ActivityIcon } from "lucide-react"
+import { MailIcon, PlusIcon, EllipsisVerticalIcon, PencilIcon, TrashIcon, CheckCircleIcon, XCircleIcon, LoaderIcon, SendIcon, ActivityIcon } from "lucide-react"
 import { fetchApi } from "@/lib/api"
+import { SmtpConfigForm, type SmtpConfigValues } from "@/components/smtp-config-form"
+import { SmtpTestSendDialog } from "@/components/smtp-test-send-dialog"
+import { DEFAULT_PORT, type SmtpSecurity } from "@/lib/smtp-form"
 
 interface SmtpConfig {
   id: string
   smtpHostname: string
   smtpPort: number
-  smtpSecurity: "tls" | "starttls"
+  smtpSecurity: SmtpSecurity
   smtpUsername: string
   senderEmail: string
   isActive: boolean
+}
+
+const EMPTY: SmtpConfigValues = {
+  smtpHostname: "",
+  smtpPort: DEFAULT_PORT,
+  smtpSecurity: "tls",
+  smtpUsername: "",
+  senderEmail: "",
 }
 
 export function SmtpConfigLayout() {
@@ -58,13 +59,8 @@ export function SmtpConfigLayout() {
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [hostname, setHostname] = useState("")
-  const [port, setPort] = useState("465")
-  const [security, setSecurity] = useState<"tls" | "starttls">("tls")
-  const [username, setUsername] = useState("")
-  const [password, setPassword] = useState("")
-  const [senderEmail, setSenderEmail] = useState("")
-  const [submitting, setSubmitting] = useState(false)
+  const [initial, setInitial] = useState<SmtpConfigValues>(EMPTY)
+  const [testing, setTesting] = useState<SmtpConfig | null>(null)
 
   const fetchConfigs = async () => {
     try {
@@ -82,87 +78,28 @@ export function SmtpConfigLayout() {
     fetchConfigs()
   }, [])
 
-  const resetForm = () => {
-    setHostname("")
-    setPort("465")
-    setSecurity("tls")
-    setUsername("")
-    setPassword("")
-    setSenderEmail("")
+  const closeForm = () => {
+    setOpen(false)
     setEditingId(null)
+    setInitial(EMPTY)
   }
 
   const openCreate = () => {
-    resetForm()
+    setEditingId(null)
+    setInitial(EMPTY)
     setOpen(true)
   }
 
   const openEdit = (config: SmtpConfig) => {
     setEditingId(config.id)
-    setHostname(config.smtpHostname)
-    setPort(String(config.smtpPort))
-    setSecurity(config.smtpSecurity)
-    setUsername(config.smtpUsername)
-    setPassword("")
-    setSenderEmail(config.senderEmail)
+    setInitial({
+      smtpHostname: config.smtpHostname,
+      smtpPort: config.smtpPort,
+      smtpSecurity: config.smtpSecurity,
+      smtpUsername: config.smtpUsername,
+      senderEmail: config.senderEmail,
+    })
     setOpen(true)
-  }
-
-  const handlePortChange = (value: string) => {
-    setPort(value)
-    const numeric = Number(value)
-    if (numeric === 465 || numeric === 2465) setSecurity("tls")
-    else if (numeric) setSecurity("starttls")
-  }
-
-  const handleSubmit = async () => {
-    if (!hostname || !port || !username || !senderEmail) return
-    if (!Number.isInteger(Number(port))) return
-    if (!editingId && !password) return
-
-    setSubmitting(true)
-    try {
-      if (editingId) {
-        const body: Record<string, string | number> = {
-          smtpHostname: hostname,
-          smtpPort: Number(port),
-          smtpSecurity: security,
-          smtpUsername: username,
-          senderEmail,
-        }
-        if (password) body.smtpPassword = password
-
-        const res = await fetchApi(`/smtp-config/${editingId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        })
-        if (!res.ok) throw new Error("Failed to update")
-        toast.success("SMTP config updated")
-      } else {
-        const res = await fetchApi("/smtp-config", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            smtpHostname: hostname,
-            smtpPort: Number(port),
-            smtpSecurity: security,
-            smtpUsername: username,
-            smtpPassword: password,
-            senderEmail,
-          }),
-        })
-        if (!res.ok) throw new Error("Failed to create")
-        toast.success("SMTP config created")
-      }
-      resetForm()
-      setOpen(false)
-      fetchConfigs()
-    } catch {
-      toast.error(editingId ? "Failed to update config" : "Failed to create config")
-    } finally {
-      setSubmitting(false)
-    }
   }
 
   const handleCheck = async (id: string) => {
@@ -202,107 +139,29 @@ export function SmtpConfigLayout() {
                 Manage your SMTP server connections for sending emails.
               </p>
             </div>
-            <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm() }}>
+            <Dialog open={open} onOpenChange={(v) => { if (v) setOpen(true); else closeForm() }}>
               <DialogTrigger render={<Button onClick={openCreate} />}>
                 <PlusIcon />
                 Add SMTP Config
               </DialogTrigger>
-              <DialogContent className="max-h-[85dvh] overflow-y-auto gap-3 sm:max-w-[425px] sm:gap-4">
+              <DialogContent className="max-h-[85dvh] gap-3 sm:max-w-[460px] sm:gap-4">
                 <DialogHeader>
                   <DialogTitle>{editingId ? "Edit SMTP Configuration" : "Create SMTP Configuration"}</DialogTitle>
                   <DialogDescription>
                     {editingId ? "Update your SMTP server details." : "Add a new SMTP server to send emails through."}
                   </DialogDescription>
                 </DialogHeader>
-                <FieldGroup className="py-1 gap-1.5 sm:gap-2">
-                  <Field>
-                    <FieldLabel htmlFor="hostname">SMTP Hostname</FieldLabel>
-                    <Input
-                      id="hostname"
-                      placeholder="smtp.example.com"
-                      value={hostname}
-                      onChange={(e) => setHostname(e.target.value)}
-                    />
-                    <FieldDescription className="text-xs leading-snug sm:text-sm">
-                      The SMTP server address (e.g., smtp.gmail.com)
-                    </FieldDescription>
-                  </Field>
-                  <div className="grid grid-cols-[1fr_1.4fr] gap-3">
-                    <Field>
-                      <FieldLabel htmlFor="port">Port</FieldLabel>
-                      <Input
-                        id="port"
-                        type="number"
-                        min={1}
-                        value={port}
-                        onChange={(e) => handlePortChange(e.target.value)}
-                      />
-                      <FieldDescription className="text-xs leading-snug sm:text-sm">
-                        465, 587, 2465, 2525 or 2587.
-                      </FieldDescription>
-                    </Field>
-                    <Field>
-                      <FieldLabel htmlFor="security">Security</FieldLabel>
-                      <Select value={security} onValueChange={(v) => v && setSecurity(v as "tls" | "starttls")}>
-                        <SelectTrigger id="security" className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="tls">TLS (implicit)</SelectItem>
-                          <SelectItem value="starttls">STARTTLS</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FieldDescription className="text-xs leading-snug sm:text-sm">
-                        Implicit TLS on 465/2465, STARTTLS elsewhere.
-                      </FieldDescription>
-                    </Field>
-                  </div>
-                  <Field>
-                    <FieldLabel htmlFor="username">SMTP Username</FieldLabel>
-                    <Input
-                      id="username"
-                      placeholder="user@example.com"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                    />
-                    <FieldDescription className="text-xs leading-snug sm:text-sm">
-                      Authentication username for the SMTP server.
-                    </FieldDescription>
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor="password">SMTP Password</FieldLabel>
-                    <Input
-                      id="password"
-                      type="password"
-                      placeholder="••••••••"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                    />
-                    <FieldDescription className="text-xs leading-snug sm:text-sm">
-                      {editingId ? "Leave blank to keep current password." : "Authentication password for the SMTP server."}
-                    </FieldDescription>
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor="senderEmail">Sender Email</FieldLabel>
-                    <Input
-                      id="senderEmail"
-                      placeholder="noreply@example.com"
-                      value={senderEmail}
-                      onChange={(e) => setSenderEmail(e.target.value)}
-                    />
-                    <FieldDescription className="text-xs leading-snug sm:text-sm">
-                      The email address emails will be sent from.
-                    </FieldDescription>
-                  </Field>
-                </FieldGroup>
-                <DialogFooter className="flex-row justify-end">
-                  <Button variant="outline" onClick={() => { setOpen(false); resetForm() }}>
-                    Cancel
-                  </Button>
-                  <Button onClick={handleSubmit} disabled={submitting}>
-                    {submitting ? "Saving..." : editingId ? "Save Changes" : "Create"}
-                  </Button>
-                </DialogFooter>
+                <SmtpConfigForm
+                  // a new key per opening: the form starts from its initial values every time
+                  key={editingId ?? "new"}
+                  editingId={editingId}
+                  initial={initial}
+                  onCancel={closeForm}
+                  onSaved={() => {
+                    closeForm()
+                    fetchConfigs()
+                  }}
+                />
               </DialogContent>
             </Dialog>
           </div>
@@ -328,7 +187,7 @@ export function SmtpConfigLayout() {
                   <ItemContent className="gap-1.5">
                     <ItemTitle className="text-base">{config.smtpHostname}</ItemTitle>
                     <ItemDescription>
-                      {config.senderEmail} · {config.smtpHostname}:{config.smtpPort} ({config.smtpSecurity})
+                      {config.senderEmail} · {config.smtpPort} · {config.smtpSecurity === "tls" ? "TLS" : "STARTTLS"}
                     </ItemDescription>
                   </ItemContent>
                   <ItemActions>
@@ -354,6 +213,10 @@ export function SmtpConfigLayout() {
                           <PencilIcon />
                           Edit
                         </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setTesting(config)}>
+                          <SendIcon />
+                          Send test email
+                        </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem variant="destructive" onClick={() => handleDelete(config.id)}>
                           <TrashIcon />
@@ -368,6 +231,7 @@ export function SmtpConfigLayout() {
           )}
         </div>
         </SessionGuard>
+        <SmtpTestSendDialog config={testing} onClose={() => setTesting(null)} />
       </SidebarInset>
     </SidebarProvider>
   )

@@ -9,6 +9,13 @@ export interface EmailSendResult {
   messageId: string;
 }
 
+/** Where a log row comes from: an API send, or the dashboard's manual test send. */
+export interface PendingEmailLogOptions {
+  source?: "api" | "test";
+  /** Set for a test (the configuration it went through); API sends reach theirs through the key. */
+  smtpConfigId?: string | null;
+}
+
 export interface IEmailRepository {
   /**
    * Inserts the log row at enqueue time (smtp_id/sent_at stay NULL until the
@@ -20,6 +27,7 @@ export interface IEmailRepository {
     to: string,
     subject: string,
     apiKeyId?: string | null,
+    options?: PendingEmailLogOptions,
   ): Promise<void>;
   /** Fills in delivery details once the SMTP send succeeds. */
   completeEmailLog(

@@ -21,6 +21,7 @@ export function createEmailLogsController(
     const smtpConfigId = c.req.query("smtpConfigId");
     const to = c.req.query("to");
     const status = c.req.query("status");
+    const apiKeyId = c.req.query("apiKeyId");
     const limit = c.req.query("limit");
     const cursor = c.req.query("cursor");
 
@@ -36,6 +37,10 @@ export function createEmailLogsController(
     if (status) {
       const parsed = z.enum(["received", "processing", "cleaned", "sent", "failed"]).safeParse(status);
       if (parsed.success) filters.status = parsed.data;
+    }
+    if (apiKeyId) {
+      const parsed = z.string().min(1).max(MAX_ID_LENGTH).safeParse(apiKeyId);
+      if (parsed.success) filters.apiKeyId = parsed.data;
     }
     if (limit) {
       const parsed = z.coerce.number().int().min(1).max(MAX_PAGE_SIZE).safeParse(limit);

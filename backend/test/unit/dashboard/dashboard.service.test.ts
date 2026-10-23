@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { DashboardService } from "@/dashboard/dashboard.service";
-import type { IDashboardRepository, DashboardStats, SmtpConfigBreakdown, RecentEmail, ErrorSummary } from "@/dashboard/dashboard.types";
+import type { IDashboardRepository, DashboardStats, SmtpConfigBreakdown, ApiKeyMetrics, RecentEmail, ErrorSummary } from "@/dashboard/dashboard.types";
 
 const { mockDecryptFn } = vi.hoisted(() => ({
   mockDecryptFn: vi.fn(),
@@ -29,6 +29,22 @@ const mockBreakdown: SmtpConfigBreakdown[] = [
   { smtpConfigId: "c2", senderEmail: "encrypted_b", totalSent: 40, successCount: 35, failureCount: 5 },
 ];
 
+const mockByKey: ApiKeyMetrics[] = [
+  {
+    apiKeyId: "k1",
+    name: "Production",
+    prefix: "mk_",
+    start: "mk_abcd",
+    enabled: true,
+    totalSent: 10,
+    successCount: 9,
+    failureCount: 1,
+    successRate: 90,
+    avgProcessingTimeMs: 120,
+    lastUsedAt: "2026-10-11T10:00:00.000Z",
+  },
+];
+
 const mockRecent: RecentEmail[] = [
   { internalId: "l1", to: "encrypted_x", subject: "Hi", status: "sent", sentAt: new Date().toISOString(), emailProcessingTimeMs: 100 },
 ];
@@ -48,6 +64,7 @@ describe("DashboardService", () => {
 
     mockRepo = {
       getStats: vi.fn().mockResolvedValue(mockStats),
+      getByApiKey: vi.fn().mockResolvedValue(mockByKey),
       getByConfig: vi.fn().mockResolvedValue(mockBreakdown),
       getRecent: vi.fn().mockResolvedValue(mockRecent),
       getErrors: vi.fn().mockResolvedValue(mockErrors),
@@ -60,12 +77,17 @@ describe("DashboardService", () => {
     it("should return stats from repo", async () => {
       const result = await service.getStats(USER_ID, 7);
       expect(result).toEqual(mockStats);
-      expect(mockRepo.getStats).toHaveBeenCalledWith(USER_ID, 7);
+      expect(mockRepo.getStats).toHaveBeenCalledWith(USER_ID, 7, undefined);
     });
 
     it("should pass undefined days", async () => {
       await service.getStats(USER_ID);
-      expect(mockRepo.getStats).toHaveBeenCalledWith(USER_ID, undefined);
+      expect(mockRepo.getStats).toHaveBeenCalledWith(USER_ID, undefined, undefined);
+    });
+
+    it("scopes to one API key when given one", async () => {
+      await service.getStats(USER_ID, 7, "key-9");
+      expect(mockRepo.getStats).toHaveBeenCalledWith(USER_ID, 7, "key-9");
     });
   });
 
@@ -85,11 +107,24 @@ describe("DashboardService", () => {
     });
   });
 
+  describe("getByApiKey", () => {
+    it("returns the per-key metrics from the repository", async () => {
+      const result = await service.getByApiKey(USER_ID, 30);
+      expect(mockRepo.getByApiKey).toHaveBeenCalledWith(USER_ID, 30);
+      expect(result).toEqual(mockByKey);
+    });
+  });
+
   describe("getErrors", () => {
     it("should return error summary from repo", async () => {
       const result = await service.getErrors(USER_ID, 7, 5);
       expect(result).toEqual(mockErrors);
-      expect(mockRepo.getErrors).toHaveBeenCalledWith(USER_ID, 7, 5);
+      expect(mockRepo.getErrors).toHaveBeenCalledWith(USER_ID, 7, 5, undefined);
+    });
+
+    it("scopes to one API key when given one", async () => {
+      await service.getErrors(USER_ID, 7, 5, "key-9");
+      expect(mockRepo.getErrors).toHaveBeenCalledWith(USER_ID, 7, 5, "key-9");
     });
   });
 });

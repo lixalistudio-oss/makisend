@@ -254,6 +254,52 @@ describe("SmtpConfigService", () => {
     });
   });
 
+  describe("Cloudflare Email Service (smtp.mx.cloudflare.net)", () => {
+    class RecordingBinding implements SendEmail {
+      readonly sent: EmailMessageBuilder[] = [];
+      async send(message: EmailMessage | EmailMessageBuilder): Promise<EmailSendResult> {
+        this.sent.push(message as EmailMessageBuilder);
+        return { messageId: "<cf@example.com>" };
+      }
+    }
+
+    beforeEach(() => {
+      // The decrypt mock prefixes "decrypted_": this stored host decrypts to Cloudflare's.
+      mockDecryptFn.mockImplementation((val: string) =>
+        Promise.resolve(val === "encrypted_host" ? "smtp.mx.cloudflare.net" : `decrypted_${val}`),
+      );
+    });
+
+    it("the scheduled check goes through the binding instead of opening a socket that workerd refuses", async () => {
+      const cf = new SmtpConfigService(mockRepo, TEST_AES_KEY, { emailBinding: new RecordingBinding() });
+
+      await expect(cf.checkAll()).resolves.toEqual({ checked: 1, healthy: 1 });
+
+      expect(mockCheckSmtpConnection).not.toHaveBeenCalled();
+      expect(mockRepo.update).toHaveBeenCalledWith(CONFIG_ID, expect.objectContaining({ lastCheckOk: true, lastCheckError: null }));
+    });
+
+    it("without the binding the check fails and names it", async () => {
+      await expect(service.checkConnectionById(CONFIG_ID, USER_ID)).resolves.toMatchObject({
+        ok: false,
+        message: expect.stringMatching(/send_email/),
+      });
+      expect(mockCheckSmtpConnection).not.toHaveBeenCalled();
+    });
+
+    it("a test send goes through the binding, from the configuration's sender", async () => {
+      const binding = new RecordingBinding();
+      const cf = new SmtpConfigService(mockRepo, TEST_AES_KEY, { emailBinding: binding });
+
+      await expect(cf.sendTest(CONFIG_ID, USER_ID, { to: "dest@example.com", subject: "Probe", text: "x" })).resolves.toEqual({
+        ok: true,
+        messageId: "<cf@example.com>",
+      });
+      expect(mockSendTestEmail).not.toHaveBeenCalled();
+      expect(binding.sent[0]?.from).toBe("decrypted_encrypted_sender");
+    });
+  });
+
   describe("scheduled health check", () => {
     it("checks every configuration and stores the outcome", async () => {
       const second = { ...mockConfig, id: "config-456" };

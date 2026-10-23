@@ -19,16 +19,12 @@ export function errorHandler(error: Error, c: Context) {
     );
   }
 
+  // Unexpected errors can carry SQL, binding names or stack details: log them, but
+  // never send them to the caller.
   pinoLogger.error(
     { path: c.req.path, method: c.req.method, error: error.message },
     "Internal Server Error (Unhandled)",
   );
 
-  return c.json(
-    {
-      success: false,
-      error: error.message || "Internal Server Error",
-    },
-    500,
-  );
+  return c.json({ success: false, error: "Internal Server Error" }, 500);
 }

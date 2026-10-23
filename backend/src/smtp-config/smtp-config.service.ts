@@ -1,9 +1,11 @@
 import type { KeyMaterial } from "@/core/crypto";
+import type { IEmailRepository } from "@/send-email/send-email.types";
+import { checkCloudflareEmail, sendTestViaCloudflare } from "@/send-email/cloudflare-email.transport";
 import { encrypt, decrypt } from "@/core/crypto";
 import { AppError } from "@/core/errors";
 import { pinoLogger } from "@/core/logger";
 import type { ISmtpConfigRepository, SmtpConfigRecord } from "./smtp-config.types";
-import { defaultSecurityFor, type SmtpSecurity } from "./smtp-host";
+import { defaultSecurityFor, isCloudflareEmailHost, type SmtpSecurity } from "./smtp-host";
 import {
   checkSmtpConnection,
   sendTestEmail,
@@ -12,11 +14,34 @@ import {
   type TestEmail,
 } from "./smtp-connection";
 
+export interface SmtpConfigServiceOptions {
+  /** Cloudflare Email Service binding: the only way a Worker reaches smtp.mx.cloudflare.net. */
+  emailBinding?: SendEmail;
+  /** Where test sends are recorded (source "test"). Without it, tests are not logged. */
+  emailLogs?: IEmailRepository;
+}
+
+/** A failure to write the log must not hide the result of the send the person asked for. */
+async function bestEffort(step: string, emailId: string, run: () => Promise<void>): Promise<void> {
+  try {
+    await run();
+  } catch (err) {
+    pinoLogger.error({ err, emailId, step }, "Could not record the test email in the logs");
+  }
+}
+
 export class SmtpConfigService {
   constructor(
     private readonly smtpConfigRepo: ISmtpConfigRepository,
     private readonly aesKey: KeyMaterial,
+    private readonly options: SmtpConfigServiceOptions = {},
   ) {}
+
+  /** Connection check that goes through the send_email binding for Cloudflare Email Service. */
+  private async check(config: Parameters<typeof checkSmtpConnection>[0]): Promise<SmtpCheckResult> {
+    if (isCloudflareEmailHost(config.smtpHostName)) return checkCloudflareEmail(this.options.emailBinding);
+    return checkSmtpConnection(config);
+  }
 
   private async decryptRecord(record: SmtpConfigRecord): Promise<SmtpConfigRecord> {
     const [smtpHostname, smtpUsername, smtpPassword, senderEmail] = await Promise.all([
@@ -146,7 +171,7 @@ export class SmtpConfigService {
     smtpUsername: string;
     smtpPassword: string;
   }): Promise<SmtpCheckResult> {
-    return checkSmtpConnection({
+    return this.check({
       smtpHostName: input.smtpHostname,
       smtpPort: input.smtpPort,
       smtpSecurity: input.smtpSecurity,
@@ -157,12 +182,52 @@ export class SmtpConfigService {
 
   async checkConnectionById(id: string, userId: string): Promise<SmtpCheckResult> {
     const config = await this.findByIdAndUser(id, userId);
-    return checkSmtpConnection(this.toTransportConfig(config));
+    return this.check(this.toTransportConfig(config));
   }
 
+  /**
+   * Sends a test email and records it in the logs with source "test" and this configuration's
+   * id, so it shows up in Logs (filtered by configuration) but never in the dashboard totals.
+   */
   async sendTest(id: string, userId: string, email: TestEmail): Promise<SmtpSendResult> {
     const config = await this.findByIdAndUser(id, userId);
-    return sendTestEmail(this.toTransportConfig(config), email);
+    const logs = this.options.emailLogs;
+    const emailId = crypto.randomUUID();
+    const startedAt = performance.now();
+
+    if (logs) {
+      await bestEffort("create", emailId, async () => {
+        const encryptedTo = await encrypt(email.to, this.aesKey);
+        await logs.createPendingEmailLog(emailId, userId, encryptedTo, email.subject, null, {
+          source: "test",
+          smtpConfigId: id,
+        });
+        await logs.saveEmailHistory(emailId, "processing");
+      });
+    }
+
+    const transport = this.toTransportConfig(config);
+    const result = isCloudflareEmailHost(transport.smtpHostName)
+      ? await sendTestViaCloudflare(this.options.emailBinding, transport.senderEmail, email)
+      : await sendTestEmail(transport, email);
+
+    if (logs) {
+      await bestEffort("result", emailId, async () => {
+        if (result.ok) {
+          await logs.saveEmailHistory(emailId, "sent", undefined, 1);
+          await logs.completeEmailLog(
+            emailId,
+            result.messageId,
+            new Date().toISOString(),
+            Math.round(performance.now() - startedAt),
+          );
+        } else {
+          // The message names no secret (see classifySmtpError), so it is safe to store and show.
+          await logs.saveEmailHistory(emailId, "failed", result.message, 1);
+        }
+      });
+    }
+    return result;
   }
 
   async checkAll(): Promise<{ checked: number; healthy: number }> {
@@ -173,7 +238,7 @@ export class SmtpConfigService {
       let result: SmtpCheckResult;
       try {
         const decrypted = await this.decryptRecord(record);
-        result = await checkSmtpConnection(this.toTransportConfig(decrypted));
+        result = await this.check(this.toTransportConfig(decrypted));
       } catch (err) {
         pinoLogger.error({ err, configId: record.id }, "SMTP health check could not read the configuration");
         result = {
