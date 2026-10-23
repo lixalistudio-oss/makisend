@@ -1,3 +1,4 @@
+import type { KeyMaterial } from "@/core/crypto";
 import { decrypt } from "@/core/crypto";
 import { pinoLogger } from "@/core/logger";
 import type { IDashboardRepository, DashboardStats, SmtpConfigBreakdown, RecentEmail, ErrorSummary } from "./dashboard.types";
@@ -5,7 +6,7 @@ import type { IDashboardRepository, DashboardStats, SmtpConfigBreakdown, RecentE
 export class DashboardService {
   constructor(
     private readonly dashboardRepo: IDashboardRepository,
-    private readonly aesKey: string,
+    private readonly aesKey: KeyMaterial,
   ) {}
 
   async getStats(userId: string, days?: number): Promise<DashboardStats> {

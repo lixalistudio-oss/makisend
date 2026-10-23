@@ -102,6 +102,11 @@ export const user = sqliteTable("user", {
     .default(false)
     .notNull(),
   image: text("image"),
+  // Better Auth two-factor plugin.
+  twoFactorEnabled: integer("two_factor_enabled", { mode: "boolean" }).default(false),
+  // Opt-in, set from Settings with the password: lets the account sign in with email + an
+  // authenticator code, without the password (src/lib/totp-sign-in.ts).
+  totpPasswordless: integer("totp_passwordless", { mode: "boolean" }).default(false).notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" })
     .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
     .notNull(),
@@ -110,6 +115,37 @@ export const user = sqliteTable("user", {
     .$onUpdate(() => /* @__PURE__ */ new Date())
     .notNull(),
 });
+
+/**
+ * Single-row lock (id = 1) that makes the first sign-up the only one: MakiSend has one
+ * account, its super admin, created at the first connection. Every user-creation path goes
+ * through `databaseHooks.user.create.before` (src/lib/auth.ts), which claims this row
+ * atomically (src/lib/owner-lock.ts). Deleting the account releases it.
+ */
+export const instanceOwner = sqliteTable("instance_owner", {
+  id: integer("id").primaryKey(),
+  claimedAt: integer("claimed_at").notNull(),
+});
+
+/** Better Auth two-factor plugin (model "twoFactor"): one row per user, TOTP secret and backup codes encrypted. */
+export const twoFactor = sqliteTable(
+  "two_factor",
+  {
+    id: text("id").primaryKey(),
+    secret: text("secret").notNull(),
+    backupCodes: text("backup_codes").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    verified: integer("verified", { mode: "boolean" }).default(true),
+    failedVerificationCount: integer("failed_verification_count").default(0),
+    lockedUntil: integer("locked_until", { mode: "timestamp_ms" }),
+  },
+  (table) => [
+    index("twoFactor_secret_idx").on(table.secret),
+    index("twoFactor_userId_idx").on(table.userId),
+  ],
+);
 
 export const session = sqliteTable(
   "session",

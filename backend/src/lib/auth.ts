@@ -1,10 +1,28 @@
 import { betterAuth } from "better-auth";
+import { APIError } from "better-auth/api";
+import { twoFactor } from "better-auth/plugins/two-factor";
 import { apiKey } from "@better-auth/api-key";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { drizzle } from "drizzle-orm/d1";
 import { eq } from "drizzle-orm";
 import * as schema from "@/db/schema";
 import type { Bindings } from "@/index";
+import { claimOwnership, releaseOwnership, SETUP_COMPLETE_MESSAGE } from "@/lib/owner-lock";
+import { totpSignIn } from "@/lib/totp-sign-in";
+
+/** Name shown in authenticator apps next to the account ("MakiSend (admin@example.com)"). */
+export const TOTP_ISSUER = "MakiSend";
+
+/**
+ * API key plugin options. There is no per-key sending quota: Better Auth would
+ * otherwise stamp every key with 10 requests per day and refuse the rest with a 403.
+ * `enabled: false` is checked before the quota stamped on the key itself, so it also
+ * covers keys created while a limit was in place, with no data migration.
+ */
+export const apiKeyOptions = {
+  defaultPrefix: "mk_",
+  rateLimit: { enabled: false },
+};
 
 export function createAuth(env: Bindings) {
   const db = drizzle(env.makisend_db);
@@ -38,6 +56,23 @@ export function createAuth(env: Bindings) {
         beforeDelete: async (deletedUser) => {
           await db.delete(schema.emailLogs).where(eq(schema.emailLogs.userId, deletedUser.id));
         },
+        // The instance is set up again at the next connection (src/lib/owner-lock.ts).
+        afterDelete: async () => {
+          await releaseOwnership(env.makisend_db);
+        },
+      },
+    },
+    // One account per instance: its super admin, created at the first connection. The check is
+    // on account creation itself, so every creation path is covered, not only /sign-up/email.
+    databaseHooks: {
+      user: {
+        create: {
+          before: async () => {
+            if (!(await claimOwnership(env.makisend_db))) {
+              throw APIError.from("FORBIDDEN", { message: SETUP_COMPLETE_MESSAGE, code: "SETUP_COMPLETE" });
+            }
+          },
+        },
       },
     },
     // Better Auth only turns its rate limiter on when NODE_ENV=production, which Workers
@@ -64,17 +99,15 @@ export function createAuth(env: Bindings) {
       },
     },
     plugins: [
-      apiKey({
-        defaultPrefix: "mk_",
-        // Better-auth defaults to 10 requests per key per day — far too low for
-        // an email API (and it fails with 403, not 429). Keys are stamped with
-        // this value at creation time.
-        rateLimit: {
-          enabled: true,
-          maxRequests: 10000,
-          timeWindow: 1000 * 60 * 60 * 24,
-        },
+      apiKey(apiKeyOptions),
+      // TOTP (Google Authenticator, 1Password, ...): turned on from Settings. Secret and backup
+      // codes are encrypted with BETTER_AUTH_SECRET by Better Auth, not with ENCRYPTION_KEY: the
+      // key-rotation job does not touch them (see AGENTS.md, "Two-factor authentication").
+      twoFactor({
+        issuer: TOTP_ISSUER,
+        backupCodeOptions: { storeBackupCodes: "encrypted" },
       }),
+      totpSignIn(),
     ],
   });
 }

@@ -1,3 +1,4 @@
+import { resolveEncryptionKeys } from "@/config/config";
 import { WorkflowEntrypoint } from "cloudflare:workers";
 import type { WorkflowEvent, WorkflowStep } from "cloudflare:workers";
 import { createDatabase } from "@/db/connection";
@@ -45,7 +46,7 @@ export class SendEmailWorkflow extends WorkflowEntrypoint<Bindings, SendEmailPar
       {
         repository,
         loadEmail: (emailId) =>
-          loadEmailForSending(repository, env.AES_256_KEY, emailId),
+          loadEmailForSending(repository, resolveEncryptionKeys(env), emailId),
         resolveTransport: (smtpConfigId) =>
           resolveTransportFor(env, smtpConfigId ?? undefined),
         deadLetterQueue: env.SEND_EMAIL_DLQ,

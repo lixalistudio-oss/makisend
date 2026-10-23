@@ -8,6 +8,7 @@ import { createAuth } from '@/lib/auth';
 import * as readline from 'node:readline/promises';
 import { encrypt } from './crypto';
 import { eq, desc } from 'drizzle-orm';
+import { claimOwnership, SETUP_COMPLETE_MESSAGE } from '@/lib/owner-lock';
 
 async function prompt(rl: readline.Interface, question: string): Promise<string> {
   const answer = await rl.question(question);
@@ -39,6 +40,12 @@ async function main() {
     const config = createConfig(env);
     const db = createDatabase(config.db);
     const aesKey = config.aesKey;
+
+    // Same single-account rule as the dashboard (src/lib/owner-lock.ts): this script inserts the
+    // user row directly, so it must claim the instance itself.
+    if (!(await claimOwnership(config.db))) {
+      throw new Error(SETUP_COMPLETE_MESSAGE);
+    }
 
     // Create user
     const userId = createId();

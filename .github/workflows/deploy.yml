@@ -173,9 +173,13 @@ jobs:
       - name: Check production secrets
         run: |
           set -eo pipefail
-          REQUIRED="AES_256_KEY BETTER_AUTH_SECRET BETTER_AUTH_URL FRONTEND_URL"
+          REQUIRED="BETTER_AUTH_SECRET BETTER_AUTH_URL FRONTEND_URL"
           SECRETS=$(npx wrangler@4.131.1 secret list 2>/dev/null | jq -r '.[].name' || true)
           MISSING=""
+          # The encryption key: ENCRYPTION_KEY, or its legacy name AES_256_KEY (still read).
+          if ! echo "$SECRETS" | grep -qx "ENCRYPTION_KEY" && ! echo "$SECRETS" | grep -qx "AES_256_KEY"; then
+            MISSING="$MISSING ENCRYPTION_KEY"
+          fi
           for name in $REQUIRED; do
             if ! echo "$SECRETS" | grep -qx "$name"; then
               MISSING="$MISSING $name"

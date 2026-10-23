@@ -33,10 +33,12 @@ import { createAuth } from "@/lib/auth";
 // --- Database & repository imports ---
 import { createDatabase } from "@/db/connection";
 import { SendEmailRepository } from "@/send-email/send-email.repository";
-import { user } from "@/db/schema";
 
 // --- Type imports ---
-import type { SmtpConfig, UserConfig } from "./config/config";
+import { resolveEncryptionKeys, type SmtpConfig, type UserConfig } from "./config/config";
+import type { EncryptionKeys } from "@/core/crypto";
+import { runKeyRotation, KEY_ROTATION_CRON } from "@/key-rotation";
+import { needsSetup } from "@/lib/owner-lock";
 import type { IEmailRepository, SendEmailQueueMessage } from "@/send-email/send-email.types";
 import type { ISmtpConfigRepository } from "@/smtp-config/smtp-config.types";
 import type { IApiKeyRepository } from "@/api-keys/api-keys.types";
@@ -47,7 +49,13 @@ import type { IIdempotencyRepository } from "@/idempotency";
 
 // --- Cloudflare Worker environment bindings ---
 export type Bindings = {
-  AES_256_KEY: string;
+  // Current AES-256 key (64 hex). Encrypts every new value.
+  ENCRYPTION_KEY?: string;
+  // Decrypt-only keys kept during a rotation, comma-separated. Remove once the
+  // key-rotation job reports nothing left to re-encrypt.
+  ENCRYPTION_KEY_PREVIOUS?: string;
+  // Legacy name of the key: still read (see resolveEncryptionKeys) until it is deleted.
+  AES_256_KEY?: string;
   makisend_db: D1Database;
   BETTER_AUTH_SECRET: string;
   BETTER_AUTH_URL: string;
@@ -105,7 +113,7 @@ const deps = {
   dashboardService: null as DashboardService | null,
   templateService: null as TemplateService | null,
   idempotencyService: null as IdempotencyService | null,
-  aesKey: null as string | null,
+  aesKey: null as EncryptionKeys | null,
   dbInitialized: false,
 
   initDb(env: Bindings) {
@@ -120,7 +128,7 @@ const deps = {
     this.dashboardRepository = new DashboardRepository(db);
     this.templateRepository = new TemplateRepository(db);
     this.idempotencyRepository = new IdempotencyRepository(db);
-    this.aesKey = env.AES_256_KEY;
+    this.aesKey = resolveEncryptionKeys(env);
     this.dbInitialized = true;
   },
 
@@ -213,15 +221,18 @@ function addCorsHeaders(
   });
 }
 
+// Public: whether the instance still has to be set up. While no account exists the dashboard
+// sends every visitor to the set-up page, where the first connection creates the super admin.
+app.get("/api/setup-status", async (c) => {
+  return c.json({ needsSetup: await needsSetup(c.env.makisend_db) });
+});
+
 // Better Auth hardcodes `name: z.string()` in its sign-up body schema and offers no
 // option to relax it, while our product only asks for email + password. We fill it in
 // with the local part of the email before handing the request over to Better Auth.
+// Whether an account may be created at all is decided by the owner lock (src/lib/auth.ts,
+// src/lib/owner-lock.ts), on every creation path, atomically.
 app.post("/api/auth/sign-up/email", async (c) => {
-  const db = createDatabase(c.env.makisend_db);
-  const existingUsers = await db.select().from(user).limit(1);
-  if (existingUsers.length > 0) {
-    return c.json({ error: "Registration is closed" }, 403);
-  }
   const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
   const fallbackName = String(body.email ?? "").split("@")[0];
   const auth = getAuthInstance(c.env);
@@ -334,6 +345,12 @@ export default {
     env: Bindings,
     ctx: ExecutionContext,
   ) => {
+    // Daily (17 3 * * *): SMTP health checks. Hourly (17 * * * *): key rotation, which
+    // re-encrypts values still on a previous encryption key (a no-op when nothing is stale).
+    if (_controller.cron === KEY_ROTATION_CRON) {
+      ctx.waitUntil(runKeyRotation(env));
+      return;
+    }
     ctx.waitUntil(runSmtpHealthChecks(env));
   },
 };

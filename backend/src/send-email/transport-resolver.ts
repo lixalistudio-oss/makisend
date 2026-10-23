@@ -6,6 +6,7 @@ import { pinoLogger } from "@/core/logger";
 import { createDatabase } from "@/db/connection";
 import { SmtpEmailTransport } from "@/transports";
 import type { SmtpConfig } from "@/config/config";
+import { resolveEncryptionKeys } from "@/config/config";
 import type { IEmailTransport } from "./send-email.types";
 import type { Bindings } from "@/index";
 
@@ -46,10 +47,10 @@ export async function decryptSmtpRecord(
   record: SmtpConfigRow,
 ): Promise<SmtpConfig> {
   const [smtpHostName, smtpUsername, smtpPassword, senderEmail] = await Promise.all([
-    decrypt(record.smtpHostname, env.AES_256_KEY),
-    decrypt(record.smtpUsername, env.AES_256_KEY),
-    decrypt(record.smtpPassword, env.AES_256_KEY),
-    decrypt(record.senderEmail, env.AES_256_KEY),
+    decrypt(record.smtpHostname, resolveEncryptionKeys(env)),
+    decrypt(record.smtpUsername, resolveEncryptionKeys(env)),
+    decrypt(record.smtpPassword, resolveEncryptionKeys(env)),
+    decrypt(record.senderEmail, resolveEncryptionKeys(env)),
   ]);
   return {
     smtpHostName,

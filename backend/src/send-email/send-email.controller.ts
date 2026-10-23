@@ -1,3 +1,4 @@
+import { resolveEncryptionKeys } from "@/config/config";
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
@@ -80,9 +81,9 @@ export function createSendEmailController(
       // Pending log row first, so the email is visible on the dashboard from the
       // moment it is accepted — even if every later stage fails.
       const [encryptedTo, encryptedText, encryptedHtml] = await Promise.all([
-        encrypt(data.to, c.env.AES_256_KEY),
-        encrypt(data.text, c.env.AES_256_KEY),
-        encrypt(data.html, c.env.AES_256_KEY),
+        encrypt(data.to, resolveEncryptionKeys(c.env)),
+        encrypt(data.text, resolveEncryptionKeys(c.env)),
+        encrypt(data.html, resolveEncryptionKeys(c.env)),
       ]);
       await repository.createPendingEmailLog(emailId, userId, encryptedTo, data.subject, apiKeyId);
 

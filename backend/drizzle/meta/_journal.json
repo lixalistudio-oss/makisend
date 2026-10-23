@@ -15,6 +15,13 @@
       "when": 1792687128148,
       "tag": "0001_fearless_mongu",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1792744783168,
+      "tag": "0002_owner_lock_two_factor",
+      "breakpoints": true
     }
   ]
 }

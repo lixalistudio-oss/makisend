@@ -1,3 +1,4 @@
+import type { KeyMaterial } from "@/core/crypto";
 import { AppError } from "@/core/errors";
 import { decrypt } from "@/core/crypto";
 import type { IEmailRepository, EmailToSend } from "./send-email.types";
@@ -8,7 +9,7 @@ import type { IEmailRepository, EmailToSend } from "./send-email.types";
  */
 export async function loadEmailForSending(
   repository: IEmailRepository,
-  aesKey: string,
+  aesKey: KeyMaterial,
   emailId: string,
 ): Promise<EmailToSend> {
   const stored = await repository.getEmailForSending(emailId);

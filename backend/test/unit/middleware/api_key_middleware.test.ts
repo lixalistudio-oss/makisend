@@ -6,6 +6,7 @@ import * as dbModule from "@/db/connection";
 import * as cryptoModule from "@/core/crypto";
 import type { Database } from "@/db/connection";
 import type { Bindings } from "@/index";
+import type { Config } from "@/config/config";
 import type { UserInfoVariables } from "@/index";
 
 vi.mock("@/db/connection");
@@ -16,12 +17,11 @@ type AppEnv = {
   Variables: UserInfoVariables;
 };
 
-const mockConfig: {
-  db: D1Database;
-  aesKey: string;
-} = {
+const mockConfig: Config = {
   db: {} as D1Database,
-  aesKey: "a".repeat(64),
+  aesKey: { current: "a".repeat(64), previous: [] },
+  better_auth_url: "http://localhost:8787",
+  better_auth_secret: "test-secret",
 };
 
 // Mock chain that returns different values for each .limit() call
@@ -43,7 +43,7 @@ function buildApp() {
   app.use(
     "*",
     apiKeyMiddleware(
-      mockConfig as Parameters<typeof apiKeyMiddleware>[0],
+      mockConfig,
       mockAuth as never,
     ),
   );

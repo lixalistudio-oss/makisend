@@ -143,8 +143,9 @@ The following variables are set in `backend/.env` and mapped in `backend/src/ind
 
 | Variable | Description |
 |----------|-------------|
-| `AES_256_KEY` | AES-256 key as a 64-character hex string. Generate it with `openssl rand -hex 32` |
-| `BETTER_AUTH_SECRET` | Better Auth signing secret |
+| `ENCRYPTION_KEY` | AES-256 key as a 64-character hex string. Generate it with `openssl rand -hex 32`. The legacy name `AES_256_KEY` is still read |
+| `ENCRYPTION_KEY_PREVIOUS` | Optional, during a key rotation: previous keys, comma-separated (decrypt only) |
+| `BETTER_AUTH_SECRET` | Better Auth signing secret; also encrypts the TOTP secrets (changing it breaks existing 2FA set-ups) |
 | `BETTER_AUTH_URL` | Base URL of the Worker (e.g. `http://localhost:8787`) |
 | `FRONTEND_URL` | Allowed frontend origin (CORS / redirects) |
 
@@ -278,9 +279,9 @@ Deployment goes **only through GitHub Actions** (`.github/workflows/deploy.yml`)
 | Pull request to `main` or `dev` | `Deploy preview to Cloudflare` | Worker `makisend-poc-preview`, with a D1 database recreated on every deploy and its own `-preview` queues |
 | Push | `Deploy to Cloudflare (production)` | Remote D1 migrations, queue creation if needed, then `wrangler deploy` of the `makisend-poc` Worker |
 
-Both jobs depend on `Verify and build` (lint, tests, frontend build). The Cloudflare configuration lives in `backend/wrangler.jsonc`: Worker `makisend-poc`, entry point `src/index.ts`, compatibility date `2026-07-10` with `nodejs_compat`, D1 `makisend_db`, queue `makisend-send-email` and its DLQ, Workflow `makisend-send-email`, daily cron.
+Both jobs depend on `Verify and build` (lint, tests, frontend build). The Cloudflare configuration lives in `backend/wrangler.jsonc`: Worker `makisend-poc`, entry point `src/index.ts`, compatibility date `2026-07-10` with `nodejs_compat`, D1 `makisend_db`, queue `makisend-send-email` and its DLQ, Workflow `makisend-send-email`, daily cron (SMTP health checks) and hourly cron (key rotation).
 
-Secrets to define in the GitHub repository: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `AES_256_KEY`, `BETTER_AUTH_SECRET`. The production Worker reads its own Cloudflare secrets (`AES_256_KEY`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `FRONTEND_URL`); the job checks that they exist after deploying.
+Secrets to define in the GitHub repository: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `AES_256_KEY` (preview), `BETTER_AUTH_SECRET`. The production Worker reads its own Cloudflare secrets (`ENCRYPTION_KEY` or the legacy `AES_256_KEY`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `FRONTEND_URL`); the job checks that they exist after deploying.
 
 > SMTP credentials are not Worker secrets: they are encrypted in D1 and managed per user (`smtp-config` module).
 
@@ -290,15 +291,19 @@ Secrets to define in the GitHub repository: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_
 
 - **Authentication**: the `api-key.middleware.ts` middleware verifies per-user API keys through Better Auth (`401` missing header, `403` invalid key), sent as `x-api-key: <API_KEY>` or `Authorization: Bearer <API_KEY>`. Keys are created and revoked through the `api-keys` module. Dashboard routes use the Better Auth session.
 - **SMTP passwords**: encrypted at rest and never returned by the API (responses only expose the id, host, port, TLS mode, username and sender).
-- **Encryption**: the recipient address is encrypted with AES-256-GCM before it is stored.
+- **Encryption**: SMTP credentials, recipients and email bodies are encrypted with AES-256-GCM before they are stored.
+- **Key rotation**: copy the current key into `ENCRYPTION_KEY_PREVIOUS`, set a new `ENCRYPTION_KEY`; the hourly cron re-encrypts everything and logs `remaining`. Once it logs `remaining: 0` and `failed: 0`, delete `ENCRYPTION_KEY_PREVIOUS`. Never replace the key outright while the database holds data.
+- **One account, the super admin**: the first connection to the dashboard (`/setup`, email + password) creates the only account; every later account creation is refused (403), atomically, on every creation path. Deleting the account makes the instance configurable again.
+- **Two-factor authentication**: TOTP (Google Authenticator, 1Password, Authy...) from Settings, with backup codes and an optional 30-day trusted device. Once it is on, the account can opt in to sign in with its email and a code only (no password); off by default, one use per code, 10 wrong codes lock the account for 15 minutes.
 - **HTML sanitization**: HTML content is cleaned with `sanitize-html` before sending.
 - **Verified TLS**: SMTP connections use `rejectUnauthorized: true`.
 - **Strict validation**: payloads are validated with Zod `.strict()`, which rejects unexpected fields.
 
 ### Current security limitations
 
-- **Global rate limiting, not configurable per tenant**: Better Auth limits sign-in attempts and each API key (10,000 requests/day by default).
+- **No send quota on API keys**: sign-in attempts are rate limited per IP, but a leaked API key can send until it is deleted (SMTP quotas are the real limit).
 - Per-user API keys, but no scopes and no automatic rotation.
+- No password reset by email.
 - No webhook or origin-verification signature.
 - No dedicated audit logs beyond the Pino application logs.
 

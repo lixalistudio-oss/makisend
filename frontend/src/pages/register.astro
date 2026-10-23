@@ -1,11 +1,11 @@
 ---
-import Layout from "../layouts/Layout.astro";
-import "../styles/global.css";
-import { SignupForm } from "@/components/signup-form";
+// Former sign-up page: the only account is created on /setup at the first connection.
 ---
 
-<Layout title="Sign Up - MakiSend">
-  <main class="flex min-h-screen items-center justify-center p-4">
-    <SignupForm client:load />
-  </main>
-</Layout>
+<html lang="en">
+  <head>
+    <meta http-equiv="refresh" content="0; url=/setup" />
+    <title>MakiSend</title>
+  </head>
+  <body><a href="/setup">Continue to set-up</a></body>
+</html>

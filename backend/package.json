@@ -19,6 +19,7 @@
   "dependencies": {
     "@better-auth/api-key": "^1.6.25",
     "@better-auth/drizzle-adapter": "^1.6.25",
+    "@better-auth/utils": "0.4.2",
     "@emnapi/core": "2.0.0-alpha.4",
     "@emnapi/runtime": "2.0.0-alpha.4",
     "@hono/standard-validator": "^0.3.0",

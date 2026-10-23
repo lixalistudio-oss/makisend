@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { fetchApi } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -8,10 +8,13 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  FieldError,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 
+/**
+ * First connection: creates the instance's only account, its super admin. Once it exists the
+ * server refuses any other account, and this page sends visitors to the sign-in page.
+ */
 export function SignupForm({
   className,
   ...props
@@ -21,6 +24,17 @@ export function SignupForm({
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    fetchApi("/api/setup-status")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { needsSetup: boolean } | null) => {
+        if (data && !data.needsSetup) window.location.replace("/login");
+        else setChecking(false);
+      })
+      .catch(() => setChecking(false));
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,6 +73,8 @@ export function SignupForm({
     }
   };
 
+  if (checking) return null;
+
   return (
     <div className={cn("w-full max-w-md", className)} {...props}>
       <Card className="p-0">
@@ -66,9 +82,10 @@ export function SignupForm({
           <form onSubmit={handleSubmit}>
             <FieldGroup>
               <div className="flex flex-col items-center gap-2 text-center">
-                <h1 className="text-2xl font-bold">Create your account</h1>
+                <h1 className="text-2xl font-bold">Set up MakiSend</h1>
                 <p className="text-sm text-balance text-muted-foreground">
-                  Enter your email below to create your account
+                  Create the administrator account. It is the only account on this instance:
+                  once it exists, nobody else can sign up.
                 </p>
               </div>
 
@@ -83,7 +100,8 @@ export function SignupForm({
                 <Input
                   id="email"
                   type="email"
-                  placeholder="m@example.com"
+                  autoComplete="email"
+                  placeholder="admin@example.com"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -95,23 +113,21 @@ export function SignupForm({
                 <Input
                   id="password"
                   type="password"
+                  autoComplete="new-password"
                   required
                   minLength={8}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                 />
-                <FieldDescription>
-                  Must be at least 8 characters long.
-                </FieldDescription>
+                <FieldDescription>Must be at least 8 characters long.</FieldDescription>
               </Field>
 
               <Field>
-                <FieldLabel htmlFor="confirm-password">
-                  Confirm Password
-                </FieldLabel>
+                <FieldLabel htmlFor="confirm-password">Confirm Password</FieldLabel>
                 <Input
                   id="confirm-password"
                   type="password"
+                  autoComplete="new-password"
                   required
                   minLength={8}
                   value={confirmPassword}
@@ -121,16 +137,9 @@ export function SignupForm({
 
               <Field>
                 <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? "Creating account..." : "Create Account"}
+                  {loading ? "Creating account..." : "Create administrator"}
                 </Button>
               </Field>
-
-              <FieldDescription className="text-center">
-                Already have an account?{" "}
-                <a href="/login" className="text-primary underline-offset-4 hover:underline">
-                  Sign in
-                </a>
-              </FieldDescription>
             </FieldGroup>
           </form>
         </CardContent>
