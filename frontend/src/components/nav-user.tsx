@@ -20,9 +20,11 @@ import {
 } from "@/components/ui/sidebar"
 import { EllipsisVerticalIcon, CircleUserRoundIcon, BellIcon, LogOutIcon } from "lucide-react"
 import { fetchApi } from "@/lib/api"
+import { useTranslation } from "@/i18n"
 
 export function NavUser() {
   const { isMobile } = useSidebar()
+  const { t } = useTranslation()
   const [user, setUser] = useState<{ name: string; email: string } | null>(null)
 
   useEffect(() => {
@@ -31,7 +33,7 @@ export function NavUser() {
       .then((data) => {
         const user = data?.data?.user ?? data?.user
         if (user) {
-          setUser({ name: user.name || "User", email: user.email })
+          setUser({ name: user.name || t("nav.user"), email: user.email })
         }
       })
       .catch(() => {})
@@ -59,7 +61,7 @@ export function NavUser() {
               <AvatarFallback className="rounded-lg">{initials}</AvatarFallback>
             </Avatar>
             <div className="grid flex-1 text-left text-sm leading-tight">
-              <span className="truncate font-medium">{user?.name ?? "Loading..."}</span>
+              <span className="truncate font-medium">{user?.name ?? t("common.loading")}</span>
               <span className="truncate text-xs text-foreground/70">
                 {user?.email ?? ""}
               </span>
@@ -91,17 +93,17 @@ export function NavUser() {
             <DropdownMenuGroup>
               <DropdownMenuItem>
                 <CircleUserRoundIcon />
-                Account
+                {t("nav.account")}
               </DropdownMenuItem>
               <DropdownMenuItem>
                 <BellIcon />
-                Notifications
+                {t("nav.notifications")}
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleLogout}>
               <LogOutIcon />
-              Log out
+              {t("nav.logOut")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

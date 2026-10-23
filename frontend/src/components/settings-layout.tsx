@@ -159,7 +159,7 @@ export function SettingsLayout() {
       <AppSidebar />
       <Toaster position="top-right" />
       <SidebarInset>
-        <SiteHeader title="Settings" />
+        <SiteHeader titleKey="nav.settings" />
         <SessionGuard>
         <div className="flex flex-1 flex-col gap-8 p-4 sm:p-6 max-w-2xl">
           <div>

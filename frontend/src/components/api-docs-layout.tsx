@@ -545,7 +545,7 @@ res.raise_for_status()  # 202 when queued`
       <AppSidebar />
       <Toaster position="top-right" />
       <SidebarInset>
-        <SiteHeader title="API reference" />
+        <SiteHeader titleKey="nav.apiReference" />
         <SessionGuard>
           <div className="flex flex-1 flex-col p-4 sm:p-6">
             <div className="mx-auto flex w-full max-w-6xl flex-col gap-8">

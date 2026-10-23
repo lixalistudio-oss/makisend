@@ -110,7 +110,7 @@ export function TemplatesLayout() {
     <SidebarProvider>
       <AppSidebar />
       <SidebarInset>
-        <SiteHeader title="Templates" />
+        <SiteHeader titleKey="nav.templates" />
         <SessionGuard>
         <div className="flex flex-1 flex-col gap-8 p-4 sm:p-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

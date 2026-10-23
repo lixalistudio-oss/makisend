@@ -22,43 +22,44 @@ import {
   BookOpenIcon,
   Settings2Icon,
 } from "lucide-react"
+import type { UiKey } from "@/i18n"
 
-const data = {
+const data: Record<"navMain" | "navSecondary", { titleKey: UiKey; url: string; icon: React.ReactNode }[]> = {
   navMain: [
     {
-      title: "Dashboard",
+      titleKey: "nav.dashboard",
       url: "/dashboard",
       icon: <LayoutDashboardIcon />,
     },
     {
-      title: "SMTP configuration",
+      titleKey: "nav.smtpConfig",
       url: "/dashboard/smtp-config",
       icon: <MailIcon />,
     },
     {
-      title: "API keys",
+      titleKey: "nav.apiKeys",
       url: "/dashboard/api-keys",
       icon: <KeyIcon />,
     },
     {
-      title: "Email logs",
+      titleKey: "nav.emailLogs",
       url: "/dashboard/email-logs",
       icon: <FileTextIcon />,
     },
     {
-      title: "Templates",
+      titleKey: "nav.templates",
       url: "/dashboard/templates",
       icon: <LayoutTemplateIcon />,
     },
   ],
   navSecondary: [
     {
-      title: "API reference",
+      titleKey: "nav.apiReference",
       url: "/dashboard/api-docs",
       icon: <BookOpenIcon />,
     },
     {
-      title: "Settings",
+      titleKey: "nav.settings",
       url: "/dashboard/settings",
       icon: <Settings2Icon />,
     },

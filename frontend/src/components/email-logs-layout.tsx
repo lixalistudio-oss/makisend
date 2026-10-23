@@ -208,7 +208,7 @@ export function EmailLogsLayout() {
       <AppSidebar />
       <Toaster position="top-right" />
       <SidebarInset>
-        <SiteHeader title="Email logs" />
+        <SiteHeader titleKey="nav.emailLogs" />
         <SessionGuard>
         <div className="flex flex-1 flex-col gap-6 p-4 sm:p-6">
           <div>
