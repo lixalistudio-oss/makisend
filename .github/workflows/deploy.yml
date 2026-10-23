@@ -111,93 +111,39 @@ jobs:
 
       # --- Backend (Workers) ---
 
-      # TODO(security): re-establish this guard before real data lives in prod.
-      # Temporarily commented out because prod is wiped on every deploy while the
-      # POC iterates on schema changes (the squashed drizzle baseline would fail
-      # to apply against the old schema).
-      # - name: Guard production database (no delete/recreate)
-      #   run: |
-      #     set -eo pipefail
-      #     # Pattern is bracketed so this script's own source can never match it.
-      #     if grep -nE 'd1[[:space:]]+delete' .github/workflows/deploy.yml | grep -v 'makisend-db-preview'; then
-      #       echo "::error::Destructive D1 removal found outside the preview job — aborting production deploy"
-      #       exit 1
-      #     fi
-      #     if ! grep -q '"database_name": "makisend-db"' backend/wrangler.jsonc; then
-      #       echo "::error::Production D1 binding (makisend-db) not found in wrangler.jsonc — aborting"
-      #       exit 1
-      #     fi
-      #     echo "OK: production D1 is never removed, only created once and migrated."
+      - name: Guard production database
+        run: |
+          set -eo pipefail
+          # Only inspect the production job: the preview job intentionally
+          # recreates its disposable database.
+          if awk '/^  deploy-preview:/ { exit } { print }' .github/workflows/deploy.yml \
+            | grep -nE 'd1[[:space:]]+(delete|create)'; then
+            echo "::error::Destructive D1 operation found in the production deploy job"
+            exit 1
+          fi
+          if ! grep -q '"database_name": "makisend-db"' backend/wrangler.jsonc; then
+            echo "::error::Production D1 binding (makisend-db) not found in wrangler.jsonc — aborting"
+            exit 1
+          fi
+          echo "OK: production D1 is persistent."
 
-      # TEMPORARY (POC): production is rebuilt from scratch on every deploy so
-      # the schema always matches the committed migrations. The goal is always
-      # the same: when this step is done, a brand new makisend-db exists and
-      # wrangler.jsonc points at it. Deletion is eventually consistent, so a
-      # "database could not be found" (7404) during delete is NOT an error —
-      # it just means the previous wipe already removed it.
-      - name: Rebuild production D1 (wipe + create)
+      - name: Configure production database ID
         id: prod-db
         run: |
           set -eo pipefail
-
-          list_id() {
-            npx wrangler@4.131.1 d1 list --json 2>/dev/null \
-              | jq -r '.[] | select(.name == "makisend-db") | .uuid' \
-              | head -n1 || true
-          }
-          id_exists() {
-            npx wrangler@4.131.1 d1 info "$1" --json >/dev/null 2>&1
-          }
-
-          # --- 1. Make sure the name "makisend-db" is free -------------------
-          for i in $(seq 1 6); do
-            ID=$(list_id)
-            if [ -z "$ID" ] || [ "$ID" = "null" ]; then
-              echo "makisend-db name is free."
-              break
-            fi
-            if id_exists "$ID"; then
-              echo "Deleting makisend-db ($ID)... attempt $i"
-              npx wrangler@4.131.1 d1 delete "$ID" -y || true
-            else
-              echo "Listed id $ID is already gone (stale list, 7404) — waiting for it to disappear... ($i)"
-            fi
-            sleep 5
-          done
-
-          # --- 2. Create a brand new production database ---------------------
-          DB_ID=$(list_id)
-          if [ -n "$DB_ID" ] && [ "$DB_ID" != "null" ]; then
-            echo "::error::makisend-db ($DB_ID) still exists after purge — cannot create a fresh database"
+          DB_ID=$(npx wrangler@4.131.1 d1 list --json 2>/dev/null \
+            | jq -r '[.[] | select(.name == "makisend-db") | .uuid][0] // empty')
+          if [ -z "$DB_ID" ] || [ "$DB_ID" = "null" ]; then
+            echo "::error::Production D1 makisend-db not found — refusing to create or recreate it"
             exit 1
           fi
-
-          echo "Creating fresh makisend-db..."
-          npx wrangler@4.131.1 d1 create makisend-db
-
-          DB_ID=""
-          for i in $(seq 1 12); do
-            CAND=$(list_id)
-            if [ -n "$CAND" ] && [ "$CAND" != "null" ] && id_exists "$CAND"; then
-              DB_ID="$CAND"
-              break
-            fi
-            echo "waiting for the new database to be reachable... ($i)"
-            sleep 5
-          done
-          if [ -z "$DB_ID" ]; then
-            echo "::error::Could not resolve the freshly created makisend-db uuid"
-            exit 1
-          fi
-          echo "Production D1 created: $DB_ID"
-
-          # --- 3. Point wrangler.jsonc at the new database -------------------
           sed -i "0,/\"database_id\":/s|\"database_id\": \"[^\"]*\"|\"database_id\": \"$DB_ID\"|" wrangler.jsonc
           if ! grep -q "\"database_id\": \"$DB_ID\"" wrangler.jsonc; then
             echo "::error::Failed to write production database_id into wrangler.jsonc"
             exit 1
           fi
           echo "db_id=$DB_ID" >> "$GITHUB_OUTPUT"
+          echo "Production D1: $DB_ID (existing, untouched)"
         working-directory: backend
 
       - name: Apply D1 migrations (production)

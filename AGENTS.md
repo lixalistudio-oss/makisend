@@ -72,14 +72,14 @@ src/
 │   ├── smtp-host.ts            # Hostname/port/security parsing and defaults
 │   ├── smtp-connection.ts      # Shared nodemailer options, check/test-send helpers
 │   └── smtp-health.ts          # Scheduled check over every stored config
-├── templates/                  # Email templates with {{variable}} placeholders
+├── templates/                  # Email templates (legacy HTML, React Email visual editor, or pasted TSX)
 │   ├── index.ts                # Barrel export
 │   ├── templates.types.ts      # Contracts / repository interface
-│   ├── templates.dto.ts        # Create/Update Zod schemas
+│   ├── templates.dto.ts        # Create/Update/Preview Zod schemas + format/editorJson/source
 │   ├── templates.repository.ts # Drizzle/D1 persistence
-│   ├── templates.service.ts    # CRUD + ownership checks
+│   ├── templates.service.ts    # CRUD + ownership + format/source invariants + preview
 │   ├── templates.controller.ts # /templates routes (session auth)
-│   └── template-renderer.ts    # extractVariables / renderTemplate / renderHtmlTemplate
+│   └── template-renderer.ts    # extractVariables / render / shared output caps
 └── workflows/                  # Cloudflare Workflows (durable async orchestration)
     ├── index.ts                # Barrel export
     ├── send-email.flow.ts      # Durable steps + 3 retries + dead-letter publication
@@ -197,7 +197,8 @@ Even though the runtime remains **Hono** (not NestJS), the code organization is 
 - **Verified TLS** (`rejectUnauthorized: true`) to prevent MITM attacks
 - **Encryption** of recipient email address before database storage
 - **HTML sanitization** of incoming content before sending
-- **Templates render at request time**: `templateId` payloads are resolved (load → missing-variable check → render → HTML-escape) into the same inline shape before enqueueing, so the queue, workflow and SMTP layer never learn that templates exist; missing variables fail fast with `400` and a list of names
+- **Templates render at request time**: `templateId` payloads are resolved (load → missing-variable check → render → HTML-escape → output caps) into the same inline shape before enqueueing, so the queue, workflow and SMTP layer never learn that templates exist; missing variables fail fast with `400` and a list of names. `POST /templates/:id/preview` uses the same `renderTemplateContent` helper.
+- **React Email editor is browser-only**: visual mode mounts the full `@react-email/editor` builder (canvas, `Inspector`, Basic/Minimal themes, Export HTML) and stores `format: "react-email"`, an `editorJson` envelope (`{ version: 2, theme, content }`), and exported `html`/`text`. Legacy raw TipTap documents still load. Code mode stores `format: "react-email-code"`, `source`, and the HTML/text rendered by a browser Web Worker (Sucrase + `react-email`). The Worker never executes React Email or user-pasted TSX.
 - No Node.js `Buffer`: use `Uint8Array`, `TextEncoder` / `TextDecoder`, and Web Crypto API
 
 ## Tests
@@ -208,7 +209,9 @@ Even though the runtime remains **Hono** (not NestJS), the code organization is 
 - Current coverage:
   - `POST /send-email` route (validation + 202 response, inline and `templateId` branches: rendering, missing variables → 400, foreign template → 404, mixed payload → 400)
   - Email service (mock transport, repository, encryption)
-  - Template renderer (`extractVariables` / `renderTemplate` / `renderHtmlTemplate` with HTML escaping)
+  - Template renderer (`extractVariables` / `renderTemplate` / `renderHtmlTemplate` / `renderTemplateContent` with HTML escaping and output caps)
+  - Pasted TSX code templates: source round-trip, required-source validation, code-mode UI preview
+  - Template editor storage and preview (DTO format/editorJson/source, repository round-trip, service invariants, preview route)
   - Retry pipeline: error classifier, workflow retries, DLQ publication, queue consumer dedup
   - HTTP idempotency: replay, body-mismatch conflict, in-progress conflict, 5xx retry
   - API key middleware (401/403 + context wiring, inactive SMTP config refusal)
@@ -225,7 +228,7 @@ Even though the runtime remains **Hono** (not NestJS), the code organization is 
 - Config: `drizzle.config.ts`
 - Migrations: managed in the `drizzle/` folder
 - Wrangler binding: `makisend_db`
-- Email bodies live in `email_contents` (encrypted, keyed by `email_logs.internalId`);
+- Email bodies live in `email_contents` (encrypted, keyed by `email_logs.internalId`); templates store visual-builder JSON (theme + TipTap content) or pasted TSX source alongside exported HTML/text;
   queue/workflow payloads carry only `emailId`
 - HTTP idempotency reservations/responses live in `idempotency_keys` (24h TTL)
 
@@ -283,7 +286,7 @@ Steps run:
 ### POC (current)
 
 - `POST /send-email` endpoint with per-user API key auth (Better Auth)
-- Email templates: `/templates` CRUD (session auth) + `templateId`/`variables` branch on `POST /send-email` (API key auth), rendered at request time before enqueueing; frontend page at `/dashboard/templates` with live preview
+- Email templates: `/templates` CRUD (session auth) + `templateId`/`variables` branch on `POST /send-email` (API key auth), rendered at request time before enqueueing; frontend page at `/dashboard/templates` with full visual builder (inspector, themes, export), pasted-TSX code mode, and live preview
 - Async delivery pipeline: Cloudflare Queues → SendEmailWorkflow → SMTP
 - Delivery via nodemailer + raw SMTP
 - Retry loop: one initial SMTP attempt + 3 retries 30 s apart inside the same workflow; permanent failures stop immediately, and an exhausted budget writes `failed` and dead-letters the email. The Queue consumer retries only workflow startup with exponential backoff before the DLQ

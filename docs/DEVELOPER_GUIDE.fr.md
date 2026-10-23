@@ -52,7 +52,7 @@ Ouvrez `http://localhost:4321`, inscrivez le **premier** utilisateur
 1. **SMTP Config** → créer une config (host, username, password, sender email).
 2. **API Keys** → créer une clé liée à cette config SMTP. Copiez immédiatement
    la valeur `mk_...` ; elle n'est affichée qu'une fois.
-3. **Templates** (optionnel) → créer un template avec des `{{variables}}`.
+3. **Templates** (optionnel) → en créer un dans l’éditeur visuel ou coller un composant React Email TSX avec des `{{variables}}`.
 4. Envoyer un email de test avec `curl` (§4).
 
 ---
@@ -154,6 +154,7 @@ Règles :
 | DELETE | `/api-keys/:id` | révoquer |
 | GET/POST | `/templates` | lister / créer |
 | GET/PUT/DELETE | `/templates/:id` | lire / mettre à jour / supprimer |
+| POST | `/templates/:id/preview` | rendre le template enregistré avec des variables d’exemple |
 | GET | `/email-logs?limit=&cursor=&status=&smtpConfigId=&to=` | logs paginés |
 | GET | `/email-logs/:id` | un log + historique |
 | GET | `/dashboard/stats?days=7` | totaux + taux de succès |
@@ -227,14 +228,11 @@ backend/test/
     ├── smtp-config/ templates/ workflows/
 ```
 
-Référence actuelle : **18 fichiers / 155 tests passent** en ~25 s avec
-`pnpm test:run`. Le lint passe.
+Référence actuelle : **30 fichiers / 308 tests passent** en ~40 s avec
+`pnpm test:run`. Le lint et `pnpm exec tsc --noEmit` passent.
 
-`pnpm exec tsc --noEmit` signale actuellement **3 erreurs préexistantes
-limitées aux tests** (`full-flow.test.ts:115`, `full-flow.test.ts:130`
-manquant `ASSETS`, `send_email_route.test.ts:69` mismatch `Variables` Hono).
-La CI ne lance pas `tsc` ; ne prétendez pas que le typecheck est propre sans
-les corriger.
+La CI ne lance pas `tsc` ; lancez-le manuellement avant d’affirmer que le
+typechecking est propre.
 
 ### 6.2 Comment les tests sont câblés
 
@@ -258,7 +256,8 @@ les corriger.
 |---|---|
 | DTO / validation | invalide, manquant, champ en trop, bornes de longueur |
 | Controller | code de statut, payload de file, log pending, chemin d'erreur |
-| Renderer de template | ordre d'extraction, espaces, marqueurs malformés, échappement HTML |
+| Renderer de template | ordre d’extraction, espaces, marqueurs malformés, échappement HTML, variables manquantes/prototype, caps de rendu |
+| Sauvegarde de l’éditeur | le DTO accepte `format` + `editorJson`/`source`, exige le JSON pour `react-email` et la source pour `react-email-code`, la route preview rend le contenu stocké |
 | Étape de workflow | séquence d'historique, forme primitive retournée, config d'étape |
 | Classifier d'erreurs | `responseCode`, statut SMTP dans le message, `err.code`, token du message, défaut |
 | Décision de retry | requeue + backoff, plafond de cycles, permanent, file absente, échec de ré-enqueue |
@@ -412,8 +411,8 @@ const value = await step.do("my-step", async () => {
 
 ### 8.6 Ajouter une fonctionnalité de variables de template
 
-Le renderer est partagé par le controller et la prévisualisation frontend. Si
-vous changez la syntaxe :
+Le renderer est partagé par le controller, l’endpoint preview et la preview
+live du frontend. Si vous changez la syntaxe :
 
 1. Mettre à jour `VARIABLE_PATTERN` dans
    `backend/src/templates/template-renderer.ts`.
@@ -421,11 +420,16 @@ vous changez la syntaxe :
    `frontend/src/components/templates-layout.tsx`.
 3. Mettre à jour `template-renderer.test.ts`.
 4. Décider l'échappement par champ : sujet/texte littéral, HTML échappé.
-5. Rappel : la vérification des variables manquantes utilise
-   `name in variables` (les noms de prototype passent) ; envisagez
-   `Object.hasOwn(variables, name)` si vous y touchez.
-6. La sortie rendue n'est pas re-plafonnée — si vous ajoutez de grosses
-   variables, ajoutez une vérification de taille explicite avant l'enqueue.
+5. Garder la vérification des variables manquantes sur
+   `Object.prototype.hasOwnProperty` (les noms de prototype ne doivent pas
+   passer).
+6. `renderTemplateContent` re-plafonne la sortie rendue ; l’endpoint preview
+   doit continuer à l’utiliser.
+7. L’éditeur visuel stocke `format: "react-email"`, une enveloppe `editorJson`
+   (`{ version: 2, theme, content }`) et les champs `html`/`text` exportés. Il
+   monte le builder complet `@react-email/editor` : canvas, inspecteur
+   (couleurs/espacement/bordure body, container et nœuds), thèmes Basic/Minimal
+   et Export HTML. Le Worker ne doit pas exécuter de TSX collé.
 
 ### 8.7 Page frontend
 
@@ -437,6 +441,10 @@ vous changez la syntaxe :
 - Ajouter le chemin API au proxy de dev dans `frontend/astro.config.mjs`.
 - Suivre les composants shadcn/Base UI existants ; ne pas introduire une
   nouvelle librairie UI.
+- La page templates est l’exception : elle importe `@react-email/editor` dans
+  une île React et persiste le HTML/texte exporté ainsi que l’enveloppe du
+  builder. Le mode visuel inclut l’inspecteur, le sélecteur de thème et Export
+  HTML. Ne jamais exécuter l’éditeur ni du TSX collé dans le Worker.
 - Il n'y a pas de setup test/lint frontend ; au minimum lancer
   `pnpm --filter ./frontend build` et tester la page manuellement.
 
@@ -490,7 +498,7 @@ colonne `error` explique pourquoi un envoi s'est arrêté.
 | `400 Validation failed` | Zod `.strict()` a rejeté un champ en trop ou un cap de longueur. |
 | `400 Missing template variables` | Fournissez chaque `{{name}}` utilisé dans subject/html/text. |
 | `404 Template not found` | Mauvais id ou appartient à un autre utilisateur (anti-sondage volontaire). |
-| Échec d'enqueue pour taille | Le template rendu a dépassé la limite de 128 Ko de la file. |
+| Échec d'enqueue pour taille | Le template rendu a dépassé la limite de 128 Ko de la file ; `renderTemplateContent` devrait le rejeter avant. |
 | La pagination des logs saute des lignes | Bug de curseur connu (`:` dans le timestamp ISO). Corrigez `encode/decodeCursor` avant de vous appuyer sur la pagination. |
 | Le taux de succès du dashboard semble faux | Connu : double comptage succès+échec, pending au dénominateur. |
 | `GET /smtp-config` expose les mots de passe | Problème de sécurité connu ; ne construisez pas d'UI qui en dépend, et corrigez avant la production. |
@@ -679,8 +687,8 @@ Lorsqu'un agent automatique travaille dans ce dépôt, il doit :
 5. **Ajouter ou mettre à jour les tests** pour chaque changement de
    comportement.
 6. **Lancer** `cd backend && pnpm lint && pnpm test:run` avant de terminer. Ne
-   pas prétendre que `tsc` passe : il y a actuellement 3 erreurs connues
-   limitées aux tests.
+   pas prétendre que `tsc` passe sans avoir lancé
+   `pnpm exec tsc --noEmit`.
 7. **Builder le frontend** (`pnpm --filter ./frontend build`) si vous y avez
    touché.
 8. **Ne pas committer** sans demande explicite ; ne jamais committer

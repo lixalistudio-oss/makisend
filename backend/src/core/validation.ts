@@ -11,6 +11,8 @@ export const MAX_ID_LENGTH = 128;
 export const MAX_NAME_LENGTH = 100;
 export const MAX_TEXT_LENGTH = 20_000;
 export const MAX_HTML_LENGTH = 100_000;
+export const MAX_TEMPLATE_EDITOR_JSON_LENGTH = 250_000;
+export const MAX_TEMPLATE_SOURCE_LENGTH = 100_000;
 
 export const MAX_SMTP_HOSTNAME_LENGTH = 253;
 export const MAX_SMTP_USERNAME_LENGTH = 320;

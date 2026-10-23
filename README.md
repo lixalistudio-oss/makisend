@@ -151,6 +151,7 @@ Les schémas de requête sont générés depuis les DTO Zod afin de rester align
 | `GET` | `/dashboard/stats`, `/dashboard/by-config`, `/dashboard/recent`, `/dashboard/errors` | Session | Métriques de livraison |
 | `GET/POST` | `/templates` | Session | Liste / crée un template |
 | `GET/PUT/DELETE` | `/templates/{id}` | Session | Consulte / modifie / supprime un template |
+| `POST` | `/templates/{id}/preview` | Session | Rend le template avec des variables d’exemple |
 
 Les routes `/api/auth/*` sont fournies par [Better Auth](https://www.better-auth.com/) (inscription, connexion, session, déconnexion).
 
@@ -261,7 +262,7 @@ Avant de déployer, assure-toi que :
 - Endpoint `POST /send-email` avec authentification par clé API par utilisateur
 - Pipeline asynchrone : Cloudflare Queues → Workflow durable → SMTP, avec retries bornés et DLQ
 - Envoi via nodemailer + SMTP brut, port et TLS configurables par SMTP
-- Templates réutilisables, logs chiffrés et idempotence HTTP
+- Templates réutilisables avec builder visuel React Email complet (inspecteur, thèmes, export) ou TSX collé, preview et variables ; logs chiffrés et idempotence HTTP
 - Vérification de connexion SMTP à la demande + health check quotidien planifié
 - Documentation OpenAPI 3.1 servie par Scalar (`/docs`, `/openapi.json`)
 - Tests unitaires route / service / middleware + intégration

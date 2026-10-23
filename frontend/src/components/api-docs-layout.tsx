@@ -112,13 +112,14 @@ const ENDPOINT_GROUPS: {
   {
     title: "Templates",
     auth: "Dashboard session",
-    description: "Reusable HTML/text content with {{variable}} placeholders.",
+    description: "Reusable React Email content with {{variable}} placeholders.",
     endpoints: [
       { method: "GET", path: "/templates", description: "List templates." },
       { method: "POST", path: "/templates", description: "Create a template." },
       { method: "GET", path: "/templates/{id}", description: "Read one template." },
       { method: "PUT", path: "/templates/{id}", description: "Update a template." },
       { method: "DELETE", path: "/templates/{id}", description: "Delete a template." },
+      { method: "POST", path: "/templates/{id}/preview", description: "Render a template with sample variables." },
     ],
   },
   {
@@ -224,6 +225,7 @@ const LIMITS: [string, string][] = [
   ["Plain text", "10 to 20,000 characters for inline sends; 1 to 20,000 for templates."],
   ["HTML", "1 to 100,000 characters. Sanitized before sending."],
   ["Template variables", "Up to 50 variables; names up to 64 chars, values up to 10,000 chars."],
+  ["TSX source", "1 to 100,000 characters for pasted React Email code."],
   ["Idempotency-Key", "1 to 255 visible ASCII characters; replay window 24 hours."],
   ["API key throughput", "10,000 requests per day per key, enforced by Better Auth."],
   ["SMTP ports", "465, 587, 2465, 2525 or 2587. Port 25 is blocked on Workers."],
@@ -977,7 +979,7 @@ res.raise_for_status()  # 202 when queued`
                   <DocSection
                     id="templates"
                     title="Templates"
-                    description="Templates keep content reusable while variables personalize each send. Rendering happens before the email enters the queue."
+                    description="Templates keep content reusable while variables personalize each send. The dashboard supports the full React Email visual builder (inspector, themes, export) and pasted TSX code; both store the exported HTML/text, and content is rendered before the email enters the queue."
                   >
                     <Card>
                       <CardHeader>
@@ -992,12 +994,16 @@ res.raise_for_status()  # 202 when queued`
                         <CodeBlock code={templateExample} label="template request" />
                         <div className="grid gap-3 text-sm text-muted-foreground sm:grid-cols-2">
                           <p>
-                            Placeholders use <InlineCode>{"{{variableName}}"}</InlineCode> in the subject, HTML,
-                            and text. Values are inserted literally; HTML values are escaped.
+                            Compose visually with the inspector or paste a React Email component, then use{" "}
+                            <InlineCode>{"{{variableName}}"}</InlineCode> in the subject, HTML, and text.
+                            Values are inserted literally; HTML values are escaped.
                           </p>
                           <p>
-                            Missing variables cause a 400 before enqueueing. Malformed placeholders that do
-                            not match the pattern are left untouched. Up to 50 variables are allowed per send.
+                            Pasted TSX runs only in a sandboxed browser worker; the API stores the source
+                            and compiled output. Missing variables cause a 400 before enqueueing. Up to 50
+                            variables are allowed per send.{" "}
+                            <InlineCode>POST /templates/{"{id}"}/preview</InlineCode> renders the saved
+                            template with sample values and applies the same checks.
                           </p>
                         </div>
                         <a

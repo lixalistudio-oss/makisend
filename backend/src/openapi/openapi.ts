@@ -9,6 +9,7 @@ import {
 import { SMTP_PORTS } from "@/smtp-config/smtp-host";
 import {
   CreateTemplateDto,
+  PreviewTemplateDto,
   UpdateTemplateDto,
 } from "@/templates/templates.dto";
 
@@ -634,6 +635,31 @@ export const openApiDocument = {
         },
       },
     },
+    "/templates/{id}/preview": {
+      post: {
+        tags: ["Templates"],
+        summary: "Preview a template",
+        operationId: "previewTemplate",
+        description:
+          "Renders the saved subject, HTML, and text with the supplied variables. Missing variables, line breaks, and length limits are reported exactly as they would be by `POST /send-email`.",
+        security: sessionSecurity,
+        parameters: [idParameter],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: schemaRef("PreviewTemplate"),
+            },
+          },
+        },
+        responses: {
+          200: jsonResponse("Rendered template preview.", "TemplatePreviewEnvelope"),
+          400: responseRef("ValidationError"),
+          ...sessionErrors,
+          404: responseRef("NotFound"),
+        },
+      },
+    },
     "/openapi.json": {
       get: {
         tags: ["Meta"],
@@ -684,6 +710,10 @@ export const openApiDocument = {
       CreateApiKey: inputSchema(CreateApiKeyDto, "Bind a new API key to an SMTP configuration."),
       CreateTemplate: inputSchema(CreateTemplateDto, "New reusable email template."),
       UpdateTemplate: inputSchema(UpdateTemplateDto, "Partial template update."),
+      PreviewTemplate: inputSchema(
+        PreviewTemplateDto,
+        "Variable values used to render a saved template preview.",
+      ),
       SendEmailAccepted: {
         type: "object",
         required: ["success", "message", "emailId"],
@@ -902,17 +932,56 @@ export const openApiDocument = {
       },
       Template: {
         type: "object",
-        required: ["id", "userId", "name", "subject", "html", "text", "createdAt", "updatedAt"],
+        required: [
+          "id",
+          "userId",
+          "name",
+          "subject",
+          "format",
+          "source",
+          "html",
+          "text",
+          "createdAt",
+          "updatedAt",
+        ],
         properties: {
           id: { type: "string" },
           userId: { type: "string" },
           name: { type: "string" },
           subject: { type: "string" },
+          format: {
+            type: "string",
+            enum: ["legacy", "react-email", "react-email-code"],
+          },
+          editorJson: {
+            type: ["string", "null"],
+            description:
+              "Serialized builder envelope ({ version, theme, content }) for react-email templates. Legacy raw TipTap documents are still accepted.",
+          },
+          source: {
+            type: ["string", "null"],
+            description:
+              "Pasted TSX source for react-email-code templates. The Worker never executes it.",
+          },
           html: { type: "string" },
           text: { type: "string" },
           createdAt: { type: "string", format: "date-time" },
           updatedAt: { type: "string", format: "date-time" },
         },
+      },
+      TemplatePreview: {
+        type: "object",
+        required: ["subject", "html", "text"],
+        properties: {
+          subject: { type: "string" },
+          html: { type: "string" },
+          text: { type: "string" },
+        },
+      },
+      TemplatePreviewEnvelope: {
+        type: "object",
+        required: ["preview"],
+        properties: { preview: schemaRef("TemplatePreview") },
       },
       TemplateEnvelope: {
         type: "object",

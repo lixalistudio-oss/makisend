@@ -226,6 +226,15 @@ export const templates = sqliteTable(
       .references(() => user.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     subject: text("subject").notNull(),
+    // "legacy" templates are edited as raw HTML. "react-email" templates keep
+    // their TipTap document in editor_json and are rendered by the dashboard.
+    // "react-email-code" templates keep pasted TSX in source; the dashboard
+    // transpiles/renders it in the browser and stores the resulting html/text.
+    format: text("format", { enum: ["legacy", "react-email", "react-email-code"] })
+      .default("legacy")
+      .notNull(),
+    editorJson: text("editor_json"),
+    source: text("source"),
     html: text("html").notNull(),
     text: text("text").notNull(),
     createdAt: integer("created_at", { mode: "timestamp_ms" })

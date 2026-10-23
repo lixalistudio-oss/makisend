@@ -4,7 +4,7 @@ import { z } from "zod";
 import { pinoLogger } from "@/core/logger";
 import { MAX_ID_LENGTH } from "@/core/validation";
 import type { Bindings, UserInfoVariables } from "@/index";
-import { CreateTemplateDto, UpdateTemplateDto } from "./templates.dto";
+import { CreateTemplateDto, PreviewTemplateDto, UpdateTemplateDto } from "./templates.dto";
 import type { TemplateService } from "./templates.service";
 
 export function createTemplatesController(
@@ -48,6 +48,38 @@ export function createTemplatesController(
       const template = await service.create(userId, data);
       pinoLogger.info({ userId, templateId: template.id }, "POST /templates - template created");
       return c.json({ template }, 201);
+    },
+  );
+
+  controller.post(
+    "/:id/preview",
+    zValidator("param", z.object({ id: z.string().min(1).max(MAX_ID_LENGTH) })),
+    zValidator("json", PreviewTemplateDto, (result, c) => {
+      if (!result.success) {
+        const errors = z.flattenError(result.error);
+        pinoLogger.error({ errors }, "POST /templates/:id/preview - validation failed");
+        return c.json(
+          {
+            error: "Validation failed",
+            details: {
+              fieldErrors: errors.fieldErrors,
+              formErrors: errors.formErrors,
+            },
+          },
+          400,
+        );
+      }
+    }),
+    async (c) => {
+      const userId = c.get("userId");
+      const { id } = c.req.valid("param");
+      const { variables } = c.req.valid("json");
+      pinoLogger.info({ userId, id }, "POST /templates/:id/preview - rendering template");
+      const service = getService();
+
+      const preview = await service.preview(id, userId, variables ?? {});
+      pinoLogger.info({ userId, id }, "POST /templates/:id/preview - template rendered");
+      return c.json({ preview }, 200);
     },
   );
 

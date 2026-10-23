@@ -19,6 +19,8 @@ export default defineConfig({
     server: {
       proxy: {
         "/api": backendUrl,
+        "/docs": backendUrl,
+        "/openapi.json": backendUrl,
         "/smtp-config": backendUrl,
         "/api-keys": backendUrl,
         "/email-logs": backendUrl,
