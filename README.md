@@ -329,7 +329,7 @@ Secrets to define in the GitHub repository: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_
 
 ### Self-hosting with an agent
 
-[`docs/AGENT_SELF_HOST.md`](docs/AGENT_SELF_HOST.md) is a prompt to paste into a coding agent: it reads the repo, creates the resources on your own Cloudflare account with the `cf` CLI, sets the secrets, deploys, and applies the security practices (instance claimed at once, 2FA, `SEND_RATE_LIMIT`, key rotation, SPF/DKIM/DMARC).
+[`docs/AGENT_SELF_HOST.md`](docs/AGENT_SELF_HOST.md) is a prompt to paste into a coding agent opened in any folder: it clones the repo, reads it, creates the resources on your own Cloudflare account with the `cf` CLI, sets the secrets, deploys, and applies the security practices (instance claimed at once, 2FA, `SEND_RATE_LIMIT`, key rotation, SPF/DKIM/DMARC).
 
 ---
 
