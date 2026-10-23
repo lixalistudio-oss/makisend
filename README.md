@@ -8,7 +8,87 @@ Ce POC vise à valider trois hypothèses :
 2. Peut-il fonctionner à l’échelle ?
 3. Les emails peuvent-ils atterrir dans la boîte de réception plutôt que dans les spams ?
 
-Pour le contexte technique complet — architecture, conventions, flux de développement et limitations — voir [`AGENTS.md`](./AGENTS.md).
+Pour le contexte technique complet — architecture, conventions, flux de développement et limitations — voir [`AGENTS.md`](./AGENTS.md) et [`docs/ARCHITECTURE.fr.md`](./docs/ARCHITECTURE.fr.md).
+
+---
+
+## Architecture
+
+Un seul **Worker Cloudflare** sert à la fois le dashboard (fichiers statiques Astro) et l'API Hono. L'envoi est **asynchrone** : la requête HTTP chiffre l'email, l'enregistre dans D1, met son identifiant en file et répond `202` ; un **Workflow durable** l'envoie ensuite en SMTP chez le fournisseur configuré par l'utilisateur.
+
+**1. Requête HTTP** — ce qui se passe pendant l'appel :
+
+```mermaid
+flowchart LR
+    browser["Navigateur<br/>dashboard"]
+    client["Application cliente<br/>clé API mk_…"]
+
+    subgraph worker["Worker Cloudflare « makisend-poc »"]
+        assets["Assets statiques<br/>frontend/dist"]
+        mw["Hono<br/>middlewares globaux"]
+        auth["/api/auth/*<br/>Better Auth"]
+        dash["Routes du dashboard<br/>session"]
+        send["POST /send-email<br/>clé API · idempotence<br/>Zod · chiffrement<br/>→ répond 202"]
+    end
+
+    d1[("D1<br/>makisend_db")]
+    q[["Queue<br/>send-email"]]
+
+    browser -- "pages" --> assets
+    browser -- "fetch" --> mw
+    client -- "HTTPS" --> mw
+    mw --> auth & dash & send
+    auth & dash --> d1
+    send -- "log pending<br/>+ contenu chiffré" --> d1
+    send -- "{ emailId }" --> q
+```
+
+**2. Livraison asynchrone** — ce qui se passe après le `202` :
+
+```mermaid
+flowchart TB
+    q[["Queue<br/>send-email"]]
+    consumer["queue()<br/>un Workflow par message"]
+    wf["SendEmailWorkflow<br/>déchiffre, nettoie le HTML<br/>4 tentatives SMTP à 30 s"]
+    d1[("D1<br/>makisend_db")]
+    smtp["Fournisseur SMTP<br/>de l'utilisateur"]
+    inbox["Boîte du destinataire"]
+    dlq[["DLQ<br/>send-email-dlq"]]
+
+    q -- "consomme" --> consumer
+    consumer -- "create()" --> wf
+    wf <-- "contenu · historique" --> d1
+    wf -- "nodemailer" --> smtp
+    smtp --> inbox
+    wf -. "échec définitif" .-> dlq
+    consumer -. "create() en échec ×4" .-> dlq
+```
+
+Hors de ces deux chemins, un **Cron Trigger** quotidien (`scheduled()`) teste chaque configuration SMTP et enregistre le résultat dans D1.
+
+Le trajet d'un email :
+
+1. Le client appelle `POST /send-email` avec sa clé API. La clé désigne l'utilisateur **et** la configuration SMTP à utiliser ; le corps ne peut pas les choisir.
+2. Le Worker chiffre destinataire et contenu, écrit un log `pending` dans D1, puis met `{ emailId }` en file. Aucune donnée personnelle ne passe par la Queue.
+3. Le client reçoit `202` immédiatement : l'envoi réel n'a pas encore eu lieu.
+4. Le consumer démarre un Workflow par email (l'identifiant d'instance est l'`emailId`, donc un doublon est refusé).
+5. Le Workflow envoie en SMTP. Chaque étape ajoute une ligne à `email_histories`, visible dans le dashboard.
+6. Erreur temporaire : 3 nouvelles tentatives espacées de 30 s. Erreur définitive (auth, TLS, DNS, 5xx) ou budget épuisé : statut `failed` et DLQ.
+
+Le schéma détaillé (avec les notes de conception du POC) est dans [`makisend-design.excalidraw`](./makisend-design.excalidraw), à ouvrir sur [excalidraw.com](https://excalidraw.com) ou avec le plugin Excalidraw d'Obsidian / VS Code.
+
+### Organisation du dépôt
+
+```
+makisend/
+├── backend/     # Worker Cloudflare : Hono, Drizzle (D1), Queues, Workflows
+│   ├── src/     # un dossier par module : controller → service → repository + dto
+│   ├── drizzle/ # migrations SQL
+│   └── test/    # Vitest (unitaires + intégration Miniflare)
+├── frontend/    # Dashboard Astro + React, compilé dans frontend/dist
+├── docs/        # Architecture et guide développeur (FR / EN)
+└── .github/     # CI et déploiement (GitHub Actions)
+```
 
 ---
 
@@ -44,19 +124,19 @@ Pour le contexte technique complet — architecture, conventions, flux de dével
 pnpm install
 ```
 
-Copie le fichier d’exemple des variables d’environnement :
+Copie le fichier d’exemple des variables d’environnement du Worker :
 
 ```bash
-cp .env.example .env
+cp backend/.env.example backend/.env
 ```
 
-Puis remplis les valeurs dans `.env` (voir la section [Configuration](#configuration)).
+Puis remplis les valeurs dans `backend/.env` (voir la section [Configuration](#configuration)).
 
 ---
 
 ## Configuration
 
-Les variables suivantes sont définies dans `.env` et mappées dans `src/index.ts` via le type `Bindings` :
+Les variables suivantes sont définies dans `backend/.env` et mappées dans `backend/src/index.ts` via le type `Bindings` :
 
 | Variable | Description |
 |----------|-------------|
@@ -65,7 +145,7 @@ Les variables suivantes sont définies dans `.env` et mappées dans `src/index.t
 | `BETTER_AUTH_URL` | URL de base du Worker (ex. `http://localhost:8787`) |
 | `FRONTEND_URL` | Origine frontend autorisée (CORS / redirections) |
 
-Plus des variables d'environnement :
+Ne sont **plus** des variables d'environnement :
 
 - **Identifiants SMTP** (`SMTP_USER`, `SMTP_PASSWORD`, `SENDER_EMAIL`, `HOST`) : stockés par utilisateur, chiffrés dans D1, gérés via le module `smtp-config`. Le port et le mode TLS (`tls` ou `starttls`) sont propres à chaque configuration ; le port 25 est refusé.
 - **`API_KEY`** : les clés API sont par utilisateur (module `api-keys`, Better Auth), envoyées dans `x-api-key` ou `Authorization: Bearer`.
@@ -76,10 +156,11 @@ Ces variables sont transformées en un objet `Config` typé par `createConfig()`
 
 ## Commandes disponibles
 
+À lancer depuis `backend/` (le frontend se lance avec `pnpm --filter frontend dev`).
+
 | Commande | Description |
 |----------|-------------|
 | `pnpm dev` | Démarre le serveur de développement local |
-| `pnpm deploy` | Déploie sur Cloudflare Workers |
 | `pnpm cf-typegen` | Génère les types TypeScript à partir de la configuration Wrangler |
 | `pnpm test` | Lance les tests en mode watch |
 | `pnpm test:run` | Lance les tests une fois |
@@ -118,7 +199,7 @@ pnpm docker:migrate    # applique les migrations D1 en local
 pnpm docker:down       # arrête la stack
 ```
 
-Le déploiement sur Cloudflare (`pnpm deploy`) reste inchangé et se fait depuis l'hôte ou depuis le conteneur (avec `CLOUDFLARE_API_TOKEN`).
+Le déploiement sur Cloudflare ne se fait pas depuis Docker : il passe par GitHub Actions (voir [Déploiement](#déploiement)).
 
 Un devcontainer (` .devcontainer/`) réutilise la même compose pour ouvrir le projet dans VS Code / Cursor.
 
@@ -187,31 +268,16 @@ Envoie un email transactionnel au destinataire spécifié.
 
 ## Déploiement
 
-Le déploiement se fait via Wrangler :
+Le déploiement passe **uniquement par GitHub Actions** (`.github/workflows/deploy.yml`) ; rien ne se déploie depuis un poste local.
 
-```bash
-pnpm deploy
-```
+| Déclencheur | Job | Effet |
+|-------------|-----|-------|
+| Pull request vers `main` ou `dev` | `Deploy preview to Cloudflare` | Worker `makisend-poc-preview`, avec une D1 recréée à chaque déploiement et ses propres queues `-preview` |
+| Push | `Deploy to Cloudflare (production)` | Migrations D1 distantes, création de la queue si besoin, puis `wrangler deploy` du Worker `makisend-poc` |
 
-La configuration est dans `wrangler.jsonc` :
+Les deux jobs dépendent de `Verify and build` (lint, tests, build du frontend). La configuration Cloudflare est dans `backend/wrangler.jsonc` : Worker `makisend-poc`, point d’entrée `src/index.ts`, compatibilité `2026-07-10` avec `nodejs_compat`, D1 `makisend_db`, queue `makisend-send-email` et sa DLQ, Workflow `makisend-send-email`, cron quotidien.
 
-- Nom du Worker : `makisend-poc`
-- Point d’entrée : `src/index.ts`
-- Compatibilité : `2026-07-10` avec le flag `nodejs_compat`
-- Binding D1 : `makisend_db`
-
-Avant de déployer, assure-toi que :
-
-1. Les secrets sont configurés dans Cloudflare :
-   ```bash
-   pnpm wrangler secret put AES_256_KEY
-   pnpm wrangler secret put BETTER_AUTH_SECRET
-   pnpm wrangler secret put BETTER_AUTH_URL
-   pnpm wrangler secret put FRONTEND_URL
-   ```
-2. La base D1 est créée et liée via `wrangler.jsonc`.
-3. Les migrations sont appliquées.
-4. La queue `makisend-send-email` et son DLQ existent (déclarées dans `wrangler.jsonc`).
+Secrets à définir dans le dépôt GitHub : `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `AES_256_KEY`, `BETTER_AUTH_SECRET`. Le Worker de production lit ses propres secrets Cloudflare (`AES_256_KEY`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `FRONTEND_URL`) ; le job vérifie leur présence après le déploiement.
 
 > Les identifiants SMTP ne sont pas des secrets Worker : ils sont chiffrés dans D1 et gérés par utilisateur (module `smtp-config`).
 
