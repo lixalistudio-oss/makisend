@@ -1,0 +1,56 @@
+{
+  "A1:received": {
+    "attachments": [
+      {
+        "filename": "recu-REC-1.pdf",
+        "contentType": "application/pdf",
+        "sha": "c8f5d0341d54d951",
+        "size": 4096
+      },
+      {
+        "filename": "detail.csv",
+        "contentType": "application/octet-stream",
+        "sha": "1c72ae601c9a3fb0",
+        "size": 22
+      }
+    ],
+    "text": "Votre paiement est confirmé. Le reçu est joint."
+  },
+  "A3:stored": [
+    {
+      "position": 0,
+      "filename": "recu-REC-1.pdf",
+      "contentType": "application/pdf",
+      "encrypted": true
+    },
+    {
+      "position": 1,
+      "filename": "detail.csv",
+      "contentType": "application/octet-stream",
+      "encrypted": true
+    }
+  ],
+  "A4:keys": [
+    "html",
+    "smtpConfigId",
+    "subject",
+    "text",
+    "to"
+  ],
+  "A5/A6:verdicts": {
+    "resend shape, no content_type": 202,
+    "exactly the size limit": 202,
+    "5 files": 202,
+    "empty list": 202,
+    "not base64": 400,
+    "base64 with a line break": 400,
+    "one byte over the limit": 400,
+    "6 files": 400,
+    "CRLF in the filename": 400,
+    "path in the filename": 400,
+    "content_type with a parameter": 400,
+    "resend path (URL)": 400,
+    "unknown field": 400,
+    "empty filename": 400
+  }
+}

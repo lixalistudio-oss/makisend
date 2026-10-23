@@ -7,9 +7,10 @@ export class SmtpEmailTransport implements IEmailTransport {
   private readonly transporter: Transporter;
   private readonly senderEmail: string;
 
-  constructor(smtpConfig: SmtpConfig) {
+  /** `options` exists for tests against a self-signed server; production never passes it. */
+  constructor(smtpConfig: SmtpConfig, options?: { rejectUnauthorized?: boolean }) {
     this.senderEmail = smtpConfig.senderEmail;
-    this.transporter = createSmtpTransport(smtpConfig);
+    this.transporter = options ? createSmtpTransport(smtpConfig, options) : createSmtpTransport(smtpConfig);
   }
 
   async send(input: EmailInput): Promise<EmailSendResult> {
@@ -20,6 +21,15 @@ export class SmtpEmailTransport implements IEmailTransport {
         subject: input.subject,
         text: input.text,
         html: input.html,
+        ...(input.attachments && input.attachments.length > 0
+          ? {
+              attachments: input.attachments.map((file) => ({
+                filename: file.filename,
+                contentType: file.contentType,
+                content: Buffer.from(file.content),
+              })),
+            }
+          : {}),
       });
 
       return { messageId: info.messageId };

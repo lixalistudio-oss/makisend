@@ -1,8 +1,14 @@
+import type { EmailAttachment } from "./attachments";
+
+export type { EmailAttachment } from "./attachments";
+
 export interface EmailInput {
   to: string;
   subject: string;
   text: string;
   html: string;
+  /** Absent or empty: a message without attachments. */
+  attachments?: EmailAttachment[];
 }
 
 export interface EmailSendResult {
@@ -50,6 +56,17 @@ export interface IEmailRepository {
   saveEmailContent(emailId: string, content: StoredEmailContent): Promise<void>;
   /** Everything needed to send an email, as stored (to/text/html are encrypted). */
   getEmailForSending(emailId: string): Promise<StoredEmail | null>;
+  /** Stores the attachments (`content` already AES-GCM encrypted by the caller), in order. */
+  saveEmailAttachments(emailId: string, attachments: StoredEmailAttachment[]): Promise<void>;
+  /** The attachments of an email, in the order they were sent (`content` encrypted). */
+  getEmailAttachments(emailId: string): Promise<StoredEmailAttachment[]>;
+}
+
+/** An attachment as stored: `content` is the file as base64, AES-GCM encrypted. */
+export interface StoredEmailAttachment {
+  filename: string;
+  contentType: string;
+  content: string;
 }
 
 /** Message bodies as written at enqueue time: `text` and `html` are encrypted. */

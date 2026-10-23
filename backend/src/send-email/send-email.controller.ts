@@ -4,6 +4,7 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import type { Bindings, UserInfoVariables } from "@/index";
 import { SendEmailPayloadDto } from "./send-email.dto";
+import { DEFAULT_ATTACHMENT_CONTENT_TYPE } from "./attachments";
 import type { SendEmailDto, SendTemplateEmailDto } from "./send-email.dto";
 import type { SendEmailQueueMessage, IEmailRepository } from "./send-email.types";
 import type { ITemplateRepository } from "@/templates/templates.types";
@@ -37,6 +38,7 @@ async function resolveTemplatePayload(
     subject: rendered.subject,
     html: rendered.html,
     text: rendered.text,
+    ...(payload.attachments ? { attachments: payload.attachments } : {}),
   };
 }
 
@@ -95,6 +97,19 @@ export function createSendEmailController(
           html: encryptedHtml,
           smtpConfigId,
         });
+
+        // Attachments: base64 as received, encrypted, one row each (never in the queue).
+        if (data.attachments && data.attachments.length > 0) {
+          const keys = resolveEncryptionKeys(c.env);
+          const stored = await Promise.all(
+            data.attachments.map(async (file) => ({
+              filename: file.filename,
+              contentType: file.content_type ?? DEFAULT_ATTACHMENT_CONTENT_TYPE,
+              content: await encrypt(file.content, keys),
+            })),
+          );
+          await repository.saveEmailAttachments(emailId, stored);
+        }
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err);
         await repository.saveEmailHistory(

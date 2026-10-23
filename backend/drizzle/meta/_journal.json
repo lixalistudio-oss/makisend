@@ -29,6 +29,13 @@
       "when": 1792746462960,
       "tag": "0003_email_log_source_many_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1792748692839,
+      "tag": "0003_email_attachments",
+      "breakpoints": true
     }
   ]
 }

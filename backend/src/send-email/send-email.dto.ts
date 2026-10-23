@@ -8,6 +8,7 @@ import {
   MAX_TEXT_LENGTH,
 } from "@/core/validation";
 import { TemplateVariablesDto } from "@/templates/templates.dto";
+import { AttachmentsDto } from "./attachments";
 
 export const SendEmailDto = z
   .object({
@@ -47,6 +48,8 @@ export const SendEmailDto = z
         message: `HTML content must be at most ${MAX_HTML_LENGTH} characters.`,
       }),
 
+    // Resend's shape: `[{ filename, content (base64), content_type? }]`. See attachments.ts.
+    attachments: AttachmentsDto.optional(),
   })
   .strict();
 
@@ -73,6 +76,9 @@ export const SendTemplateEmailDto = z
 
     // Optional: templates without placeholders send with no variables at all.
     variables: TemplateVariablesDto.optional(),
+
+    // Same as the inline shape: a templated email can carry files too.
+    attachments: AttachmentsDto.optional(),
   })
   .strict();
 

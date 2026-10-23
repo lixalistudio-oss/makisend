@@ -274,6 +274,24 @@ Sends a transactional email to the given recipient.
 | `subject` | string | At least 3 characters |
 | `text` | string | At least 10 characters |
 | `html` | string | Not empty, sanitized before sending |
+| `attachments` | array, optional | Resend's shape: `[{ "filename", "content", "content_type"? }]`; also accepted with `templateId` |
+
+#### Attachments
+
+The same shape as Resend's API, so a client written for Resend sends the same JSON.
+
+```json
+"attachments": [
+  { "filename": "receipt-REC-1.pdf", "content": "JVBERi0xLjQK…", "content_type": "application/pdf" }
+]
+```
+
+- `content`: the file as base64 (standard alphabet, no line breaks).
+- `content_type`: optional, defaults to `application/octet-stream`; a MIME type with no parameter.
+- At most 5 files, at most 512 KB each (decoded).
+- `filename`: at most 200 characters, no control characters, no `/` or `\`.
+- Resend's `path` field (a URL to fetch) is refused: MakiSend fetches no URL on a caller's behalf.
+- Files are stored AES-GCM encrypted in D1, one row per file (`email_attachments`), never travel through the queue, are re-encrypted by the key rotation and are deleted with the email.
 
 
 ## Deployment

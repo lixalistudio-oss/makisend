@@ -57,6 +57,27 @@ export const emailContents = sqliteTable("email_contents", {
   createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
 });
 
+// Attachments of an email (POST /send-email `attachments`), one row each so a row stays under
+// D1's 2 MB limit. `content` is the file as base64, then AES-GCM encrypted (hex, ~2.7x the raw
+// size: the DTO caps a file at 512 KB). Read back only by the send-email workflow, like the
+// bodies; deleting the email_logs row deletes them with it.
+export const emailAttachments = sqliteTable(
+  "email_attachments",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    emailId: text("email_id")
+      .notNull()
+      .references(() => emailLogs.internalId, { onDelete: "cascade" }),
+    // The order the caller sent them in.
+    position: integer("position").notNull(),
+    filename: text("filename").notNull(),
+    contentType: text("content_type").notNull(),
+    content: text("content").notNull(),
+    createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
+  },
+  (table) => [uniqueIndex("emailAttachments_emailId_position_unique").on(table.emailId, table.position)],
+);
+
 // HTTP idempotency for POST /send-email. A row is reserved before the handler
 // runs and filled with the response afterwards, so a client retry with the same
 // Idempotency-Key replays the original emailId instead of sending twice.
