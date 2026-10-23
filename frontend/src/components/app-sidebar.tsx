@@ -4,6 +4,7 @@ import { NavMain } from "@/components/nav-main"
 import { NavSecondary } from "@/components/nav-secondary"
 import { NavUser } from "@/components/nav-user"
 import { MakiSendMark } from "@/components/makisend-mark"
+import { StarOnGitHub } from "@/components/star-on-github"
 import {
   Sidebar,
   SidebarContent,
@@ -87,6 +88,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
       <SidebarFooter>
+        <StarOnGitHub />
         <NavUser />
       </SidebarFooter>
     </Sidebar>

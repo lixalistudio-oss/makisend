@@ -56,7 +56,7 @@ export function ErrorsCard() {
         </CardTitle>
         <CardAction>
           <Select value={days} onValueChange={(v) => v && setDays(v)}>
-            <SelectTrigger className="w-[140px]" size="sm">
+            <SelectTrigger className="w-auto min-w-[140px]" size="sm">
               <SelectValue>
                 {(value: string) => {
                   const option = RANGE_OPTIONS.find((opt) => opt.value === value)
