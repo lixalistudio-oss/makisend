@@ -4,7 +4,6 @@ export default {
   "common.loading": "Loading...",
   "common.cancel": "Cancel",
   "common.close": "Close",
-  "common.save": "Save",
   "common.delete": "Delete",
   "common.never": "Never",
 }

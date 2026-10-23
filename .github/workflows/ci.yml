@@ -53,5 +53,9 @@ jobs:
         run: pnpm test:run
         working-directory: backend
 
+      - name: Typecheck frontend (also proves every language has every key)
+        run: pnpm exec tsc --noEmit -p .
+        working-directory: frontend
+
       - name: Build frontend
         run: pnpm --filter frontend build

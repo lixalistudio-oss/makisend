@@ -9,6 +9,7 @@ import {
 } from "lucide-react"
 
 import { fetchApi } from "@/lib/api"
+import { useTranslation, type UiKey } from "@/i18n"
 import { Badge } from "@/components/ui/badge"
 import {
   Table,
@@ -37,52 +38,64 @@ interface EmailLog {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const variants: Record<string, { icon: React.ReactNode; className: string }> = {
+  const { t } = useTranslation()
+  const variants: Record<string, { icon: React.ReactNode; className: string; labelKey: UiKey }> = {
     received: {
+      labelKey: "dashboard.status.received",
       icon: <MailIcon className="size-3" />,
       className: "text-muted-foreground",
     },
     processing: {
+      labelKey: "dashboard.status.processing",
       icon: <LoaderIcon className="size-3 animate-spin motion-reduce:animate-none" />,
       className: "text-brand-strong",
     },
     cleaned: {
+      labelKey: "dashboard.status.cleaned",
       icon: <CircleCheckIcon className="size-3" />,
       className: "text-muted-foreground",
     },
     sent: {
+      labelKey: "dashboard.status.sent",
       icon: <CircleCheckIcon />,
       className: "text-success",
     },
     delivered: {
+      labelKey: "dashboard.status.delivered",
       icon: <CircleCheckIcon />,
       className: "text-success",
     },
     attempt_failed: {
+      labelKey: "dashboard.status.attemptFailed",
       icon: <CircleXIcon />,
       className: "text-warning",
     },
     failed: {
+      labelKey: "dashboard.status.failed",
       icon: <CircleXIcon />,
       className: "text-destructive",
     },
     unknown: {
+      labelKey: "dashboard.status.unknown",
       icon: <LoaderIcon className="size-3" />,
       className: "text-muted-foreground",
     },
   }
 
-  const v = variants[status] ?? variants.unknown
+  const v = variants[status]
+  const config = v ?? variants.unknown
 
   return (
-    <Badge variant="outline" className={`gap-1 px-1.5 ${v.className}`}>
-      {v.icon}
-      {status}
+    <Badge variant="outline" className={`gap-1 px-1.5 ${config.className}`}>
+      {config.icon}
+      {/* A status the UI does not know yet stays as the server sent it. */}
+      {v ? t(v.labelKey) : status}
     </Badge>
   )
 }
 
 export function DataTable() {
+  const { t, locale } = useTranslation()
   const [logs, setLogs] = useState<EmailLog[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -99,7 +112,7 @@ export function DataTable() {
   if (loading) {
     return (
       <div className="flex items-center justify-center p-8 text-muted-foreground">
-        Loading email logs...
+        {t("dashboard.table.loading")}
       </div>
     )
   }
@@ -107,7 +120,7 @@ export function DataTable() {
   if (logs.length === 0) {
     return (
       <div className="flex items-center justify-center p-8 text-muted-foreground">
-        No emails sent yet.
+        {t("dashboard.table.empty")}
       </div>
     )
   }
@@ -117,11 +130,11 @@ export function DataTable() {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Recipient</TableHead>
-            <TableHead>Subject</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Date</TableHead>
-            <TableHead className="text-right">Duration</TableHead>
+            <TableHead>{t("dashboard.table.recipient")}</TableHead>
+            <TableHead>{t("dashboard.table.subject")}</TableHead>
+            <TableHead>{t("dashboard.table.status")}</TableHead>
+            <TableHead>{t("dashboard.table.date")}</TableHead>
+            <TableHead className="text-right">{t("dashboard.table.duration")}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -141,7 +154,7 @@ export function DataTable() {
                   <StatusBadge status={latestStatus} />
                 </TableCell>
                 <TableCell>
-                  {new Date(sentOrCreated).toLocaleDateString("en-US", {
+                  {new Date(sentOrCreated).toLocaleDateString(locale, {
                     month: "short",
                     day: "numeric",
                     hour: "2-digit",
@@ -150,7 +163,7 @@ export function DataTable() {
                 </TableCell>
                 <TableCell className="text-right text-muted-foreground">
                   {log.emailProcessingTimeMs
-                    ? `${log.emailProcessingTimeMs}ms`
+                    ? t("dashboard.table.durationValue", { ms: log.emailProcessingTimeMs.toLocaleString(locale) })
                     : "—"}
                 </TableCell>
               </TableRow>

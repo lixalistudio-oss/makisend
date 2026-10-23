@@ -10,6 +10,8 @@ import {
   FieldDescription,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { useDocumentTitle, useTranslation } from "@/i18n";
+import { LanguageSwitcher } from "@/components/language-switcher";
 
 /**
  * - "password": email + password; when two-factor is on, the server answers `twoFactorRedirect`
@@ -36,6 +38,8 @@ export function LoginForm({
   className,
   ...props
 }: React.ComponentProps<"div">) {
+  const { t } = useTranslation();
+  useDocumentTitle("nav.title.login");
   const [step, setStep] = useState<Step>("password");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -64,7 +68,7 @@ export function LoginForm({
       if (step === "password") {
         const res = await post("/api/auth/sign-in/email", { email, password });
         if (!res.ok) {
-          setError(await readError(res, "Invalid email or password"));
+          setError(await readError(res, t("auth.errorInvalidCredentials")));
           return;
         }
         const data = await res.json().catch(() => null);
@@ -81,7 +85,7 @@ export function LoginForm({
         const path = useBackupCode ? "/api/auth/two-factor/verify-backup-code" : "/api/auth/two-factor/verify-totp";
         const res = await post(path, { code: code.trim(), trustDevice });
         if (!res.ok) {
-          setError(await readError(res, "Invalid code"));
+          setError(await readError(res, t("auth.errorInvalidCode")));
           return;
         }
         window.location.href = "/dashboard";
@@ -90,12 +94,12 @@ export function LoginForm({
 
       const res = await post("/api/auth/sign-in/totp", { email, code: code.trim() });
       if (!res.ok) {
-        setError(await readError(res, "Invalid email or authenticator code"));
+        setError(await readError(res, t("auth.errorInvalidEmailOrCode")));
         return;
       }
       window.location.href = "/dashboard";
     } catch {
-      setError("Network error. Please try again.");
+      setError(t("auth.networkError"));
     } finally {
       setLoading(false);
     }
@@ -109,22 +113,25 @@ export function LoginForm({
 
   const backup = useBackupCode && step === "second-factor";
   const subtitle = {
-    password: "Sign in to your MakiSend account",
+    password: t("auth.subtitlePassword"),
     "second-factor": useBackupCode
-      ? "Enter one of your backup codes"
-      : "Enter the 6-digit code from your authenticator app",
-    code: "Sign in with your email and the code from your authenticator app",
+      ? t("auth.subtitleBackupCode")
+      : t("auth.subtitleTotp"),
+    code: t("auth.subtitleCode"),
   }[step];
 
   return (
     <div className={cn("w-full max-w-md", className)} {...props}>
+      <div className="mb-3 flex justify-end">
+        <LanguageSwitcher />
+      </div>
       <Card className="p-0">
         <CardContent className="p-6 md:p-8">
           <form onSubmit={handleSubmit}>
             <FieldGroup>
               <div className="flex flex-col items-center gap-2 text-center">
                 <h1 className="text-2xl font-medium">
-                  {step === "second-factor" ? "Two-factor authentication" : "Welcome back"}
+                  {step === "second-factor" ? t("auth.twoFactorTitle") : t("auth.welcomeBack")}
                 </h1>
                 <p className="text-sm text-balance text-muted-foreground">{subtitle}</p>
               </div>
@@ -137,7 +144,7 @@ export function LoginForm({
 
               {step !== "second-factor" && (
                 <Field>
-                  <FieldLabel htmlFor="email">Email</FieldLabel>
+                  <FieldLabel htmlFor="email">{t("auth.email")}</FieldLabel>
                   <Input
                     id="email"
                     type="email"
@@ -152,7 +159,7 @@ export function LoginForm({
 
               {step === "password" && (
                 <Field>
-                  <FieldLabel htmlFor="password">Password</FieldLabel>
+                  <FieldLabel htmlFor="password">{t("auth.password")}</FieldLabel>
                   <Input
                     id="password"
                     type="password"
@@ -166,7 +173,7 @@ export function LoginForm({
 
               {step !== "password" && (
                 <Field>
-                  <FieldLabel htmlFor="code">{backup ? "Backup code" : "Authenticator code"}</FieldLabel>
+                  <FieldLabel htmlFor="code">{backup ? t("auth.backupCode") : t("auth.authenticatorCode")}</FieldLabel>
                   <Input
                     id="code"
                     autoComplete="one-time-code"
@@ -185,25 +192,25 @@ export function LoginForm({
               {step === "second-factor" && (
                 <label className="flex items-center gap-2 text-sm text-muted-foreground">
                   <input type="checkbox" checked={trustDevice} onChange={(e) => setTrustDevice(e.target.checked)} />
-                  Trust this device for 30 days
+                  {t("auth.trustDevice")}
                 </label>
               )}
 
               <Field>
                 <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? "Signing in..." : step === "second-factor" ? "Verify" : "Sign in"}
+                  {loading ? t("auth.signingIn") : step === "second-factor" ? t("auth.verify") : t("auth.signIn")}
                 </Button>
               </Field>
 
               <FieldDescription className="text-center">
                 {step === "password" && (
                   <button type="button" className="text-brand underline-offset-4 hover:underline" onClick={() => switchTo("code")}>
-                    Sign in with an authenticator code instead
+                    {t("auth.useCodeInstead")}
                   </button>
                 )}
                 {step === "code" && (
                   <button type="button" className="text-brand underline-offset-4 hover:underline" onClick={() => switchTo("password")}>
-                    Sign in with your password instead
+                    {t("auth.usePasswordInstead")}
                   </button>
                 )}
                 {step === "second-factor" && (
@@ -216,7 +223,7 @@ export function LoginForm({
                       setError(null);
                     }}
                   >
-                    {useBackupCode ? "Use your authenticator app" : "Use a backup code"}
+                    {useBackupCode ? t("auth.useAuthenticator") : t("auth.useBackupCode")}
                   </button>
                 )}
               </FieldDescription>

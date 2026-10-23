@@ -6,6 +6,8 @@
  * this file only saves a round trip for what is obvious, and never decides alone.
  */
 
+import type { UiKey } from "@/i18n"
+
 export type SmtpSecurity = "tls" | "starttls"
 
 /** Must match the backend's `SMTP_PORTS` (backend/src/smtp-config/smtp-host.ts): 25 is blocked outbound on Workers. */
@@ -24,8 +26,8 @@ export interface SmtpPreset {
   hostname: string
   port: number
   security: SmtpSecurity
-  /** What the person needs to know that the form cannot guess. */
-  hint?: string
+  /** What the person needs to know that the form cannot guess (a translation key). */
+  hintKey?: UiKey
 }
 
 export const PRESETS: readonly SmtpPreset[] = [
@@ -35,7 +37,7 @@ export const PRESETS: readonly SmtpPreset[] = [
     hostname: "smtp.zoho.com",
     port: 465,
     security: "tls",
-    hint: "An account in Europe uses smtp.zoho.eu; a paid organisation account uses smtppro.zoho.com. The user name is the full address, and a two-factor account needs an app-specific password.",
+    hintKey: "smtp.hintZoho",
   },
   {
     id: "gmail",
@@ -43,7 +45,7 @@ export const PRESETS: readonly SmtpPreset[] = [
     hostname: "smtp.gmail.com",
     port: 465,
     security: "tls",
-    hint: "Use an app password (the account needs 2-step verification), not the account password.",
+    hintKey: "smtp.hintGmail",
   },
   {
     id: "microsoft",
@@ -51,12 +53,12 @@ export const PRESETS: readonly SmtpPreset[] = [
     hostname: "smtp.office365.com",
     port: 587,
     security: "starttls",
-    hint: "SMTP AUTH must be enabled for the mailbox by an administrator.",
+    hintKey: "smtp.hintMicrosoft",
   },
-  { id: "resend", label: "Resend", hostname: "smtp.resend.com", port: 465, security: "tls", hint: 'The user name is "resend" and the password is an API key.' },
-  { id: "sendgrid", label: "SendGrid", hostname: "smtp.sendgrid.net", port: 587, security: "starttls", hint: 'The user name is "apikey" and the password is an API key.' },
+  { id: "resend", label: "Resend", hostname: "smtp.resend.com", port: 465, security: "tls", hintKey: "smtp.hintResend" },
+  { id: "sendgrid", label: "SendGrid", hostname: "smtp.sendgrid.net", port: 587, security: "starttls", hintKey: "smtp.hintSendgrid" },
   { id: "mailgun", label: "Mailgun", hostname: "smtp.mailgun.org", port: 587, security: "starttls" },
-  { id: "cloudflare", label: "Cloudflare Email Service", hostname: "smtp.mx.cloudflare.net", port: 465, security: "tls", hint: 'Sent through the Worker\'s Cloudflare binding, not over SMTP (a Worker cannot reach this host). The user name and password are not used: enter any value. The sender address must use a domain onboarded to Email Sending.' },
+  { id: "cloudflare", label: "Cloudflare Email Service", hostname: "smtp.mx.cloudflare.net", port: 465, security: "tls", hintKey: "smtp.hintCloudflare" },
 ] as const
 
 export interface CleanedHostname {

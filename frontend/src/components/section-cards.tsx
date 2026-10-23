@@ -9,6 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { fetchApi } from "@/lib/api"
+import { useTranslation } from "@/i18n"
 
 interface Stats {
   totalSent: number
@@ -18,6 +19,7 @@ interface Stats {
 }
 
 export function SectionCards() {
+  const { t, locale } = useTranslation()
   const [stats, setStats] = useState<Stats>({
     totalSent: 0,
     successCount: 0,
@@ -34,17 +36,23 @@ export function SectionCards() {
       .catch(() => {})
   }, [])
 
+  const count = (value: number | undefined) => (value == null ? "—" : value.toLocaleString(locale))
   const cards = [
-    { title: "Total emails sent", value: stats?.totalSent ?? "—", description: "All time" },
-    { title: "Delivered", value: stats?.successCount ?? "—", description: "Successfully sent" },
-    { title: "Failed", value: stats?.failureCount ?? "—", description: "Delivery errors" },
-    { title: "Delivery rate", value: `${stats?.successRate ?? 0}%`, description: "Success percentage" },
+    { id: "total", title: t("dashboard.cards.totalSent"), value: count(stats?.totalSent), description: t("dashboard.cards.totalSentDescription") },
+    { id: "delivered", title: t("dashboard.cards.delivered"), value: count(stats?.successCount), description: t("dashboard.cards.deliveredDescription") },
+    { id: "failed", title: t("dashboard.cards.failed"), value: count(stats?.failureCount), description: t("dashboard.cards.failedDescription") },
+    {
+      id: "rate",
+      title: t("dashboard.cards.rate"),
+      value: t("dashboard.cards.rateValue", { rate: (stats?.successRate ?? 0).toLocaleString(locale) }),
+      description: t("dashboard.cards.rateDescription"),
+    },
   ]
 
   return (
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
       {cards.map((card) => (
-        <Card key={card.title} className="@container/card min-w-0">
+        <Card key={card.id} className="@container/card min-w-0">
           <CardHeader>
             <CardDescription>{card.title}</CardDescription>
             <CardTitle className="font-heading text-[1.75rem] leading-tight font-medium tracking-[-0.03em] tabular-nums @[250px]/card:text-4xl">

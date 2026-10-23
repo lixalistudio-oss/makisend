@@ -42,6 +42,7 @@ import {
   renderReactEmailCode,
   type ReactEmailCodeSnapshot,
 } from "@/lib/react-email-code"
+import { useTranslation } from "@/i18n"
 
 const EMPTY_SNAPSHOT: TemplateEditorSnapshot = {
   html: "",
@@ -118,6 +119,7 @@ const LivePreview = memo(function LivePreview({
   sampleValues,
   onSampleChange,
 }: LivePreviewProps) {
+  const { t } = useTranslation()
   const values = useMemo(() => {
     const next: Record<string, string> = {}
     for (const name of variables) {
@@ -144,16 +146,16 @@ const LivePreview = memo(function LivePreview({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-medium">Live preview</span>
+        <span className="text-sm font-medium">{t("templates.livePreview")}</span>
         <Badge variant="outline">
-          {variables.length} {variables.length === 1 ? "variable" : "variables"}
+          {t(variables.length === 1 ? "templates.variableCount.one" : "templates.variableCount.other", { count: variables.length })}
         </Badge>
       </div>
 
       {variables.length > 0 && (
         <div className="flex flex-col gap-2 rounded-lg border p-3">
           <span className="text-xs font-medium text-muted-foreground">
-            Sample values
+            {t("templates.sampleValues")}
           </span>
           {variables.map((name) => (
             <div key={name} className="flex items-center gap-2">
@@ -172,13 +174,13 @@ const LivePreview = memo(function LivePreview({
       )}
 
       <div className="rounded-lg border p-3">
-        <span className="text-xs font-medium text-muted-foreground">Subject</span>
+        <span className="text-xs font-medium text-muted-foreground">{t("templates.subject")}</span>
         <p className="mt-1 text-sm font-medium">{previewSubject || "—"}</p>
       </div>
 
       {html ? (
         <iframe
-          title="Template preview"
+          title={t("templates.previewFrame")}
           sandbox=""
           srcDoc={previewDoc}
           className="h-72 w-full rounded-lg border bg-white"
@@ -186,14 +188,14 @@ const LivePreview = memo(function LivePreview({
       ) : (
         <div className="flex h-72 items-center justify-center rounded-lg border border-dashed">
           <p className="text-sm text-muted-foreground">
-            The HTML preview appears here.
+            {t("templates.htmlPreviewEmpty")}
           </p>
         </div>
       )}
 
       <div className="rounded-lg border p-3">
         <span className="text-xs font-medium text-muted-foreground">
-          Plain text
+          {t("templates.plainText")}
         </span>
         <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap text-xs text-muted-foreground">
           {previewText || "—"}
@@ -208,6 +210,7 @@ export function TemplateEditorDialog({
   onClose,
   onSaved,
 }: TemplateEditorDialogProps) {
+  const { t } = useTranslation()
   const isCodeTemplate = template?.format === "react-email-code"
   const editingId = template?.id ?? null
 
@@ -261,7 +264,7 @@ export function TemplateEditorDialog({
       }
       return result
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Could not render the code"
+      const message = err instanceof Error ? err.message : t("templates.error.renderFailed")
       if (seq === codeRenderSeq.current) {
         setCodeSnapshot(null)
         setCodeError(message)
@@ -272,7 +275,7 @@ export function TemplateEditorDialog({
         setCodeRendering(false)
       }
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
     if (mode !== "code" || !source.trim()) return
@@ -296,7 +299,7 @@ export function TemplateEditorDialog({
   const addVariable = () => {
     const variableName = newVariable.trim()
     if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(variableName)) {
-      toast.error("Variable names must start with a letter or underscore.")
+      toast.error(t("templates.error.variableName"))
       return
     }
     editorRef.current?.insertVariable(variableName)
@@ -309,11 +312,11 @@ export function TemplateEditorDialog({
 
   const handleSubmit = async () => {
     if (!name || !subject) {
-      toast.error("Name and subject are required")
+      toast.error(t("templates.error.nameSubjectRequired"))
       return
     }
     if (mode === "code" && !source.trim()) {
-      toast.error("Paste a React Email component or load the example")
+      toast.error(t("templates.error.codeRequired"))
       return
     }
 
@@ -325,7 +328,7 @@ export function TemplateEditorDialog({
         const fresh = await editorRef.current?.getSnapshot()
         const current = fresh ?? editorSnapshot
         if (!current.html || !current.text) {
-          toast.error("Email content is required")
+          toast.error(t("templates.error.contentRequired"))
           return
         }
         body = JSON.stringify({
@@ -339,7 +342,7 @@ export function TemplateEditorDialog({
       } else {
         const current = await renderCode(source)
         if (!current.html || !current.text) {
-          toast.error("The component rendered an empty email")
+          toast.error(t("templates.error.emptyRender"))
           return
         }
         body = JSON.stringify({
@@ -358,21 +361,21 @@ export function TemplateEditorDialog({
           headers: { "Content-Type": "application/json" },
           body,
         })
-        if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to update"))
-        toast.success("Template updated")
+        if (!res.ok) throw new Error(await readErrorMessage(res, t("templates.error.updateFailed")))
+        toast.success(t("templates.toast.updated"))
       } else {
         const res = await fetchApi("/templates", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body,
         })
-        if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to create"))
-        toast.success("Template created")
+        if (!res.ok) throw new Error(await readErrorMessage(res, t("templates.error.createFailed")))
+        toast.success(t("templates.toast.created"))
       }
 
       onSaved()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save template")
+      toast.error(err instanceof Error ? err.message : t("templates.error.saveFailed"))
     } finally {
       setSubmitting(false)
     }
@@ -382,29 +385,28 @@ export function TemplateEditorDialog({
     <Dialog open onOpenChange={(value) => { if (!value) onClose() }}>
       <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-7xl">
         <DialogHeader>
-          <DialogTitle>{editingId ? "Edit template" : "Create template"}</DialogTitle>
+          <DialogTitle>{editingId ? t("templates.editTitle") : t("templates.createTitle")}</DialogTitle>
           <DialogDescription>
-            Compose visually or paste a React Email component. Use {"{{variable}}"}{" "}
-            placeholders in the subject or body; callers pass the values at send time.
+            {t("templates.editorDescription")}
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,0.65fr)]">
           <div className="flex flex-col gap-3">
             <FieldGroup className="gap-3">
               <Field>
-                <FieldLabel htmlFor="tpl-name">Name</FieldLabel>
+                <FieldLabel htmlFor="tpl-name">{t("templates.name")}</FieldLabel>
                 <Input
                   id="tpl-name"
-                  placeholder="Welcome email"
+                  placeholder={t("templates.namePlaceholder")}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                 />
               </Field>
               <Field>
-                <FieldLabel htmlFor="tpl-subject">Subject</FieldLabel>
+                <FieldLabel htmlFor="tpl-subject">{t("templates.subject")}</FieldLabel>
                 <Input
                   id="tpl-subject"
-                  placeholder="Welcome {{username}}!"
+                  placeholder={t("templates.subjectPlaceholder")}
                   value={subject}
                   onChange={(e) => setSubject(e.target.value)}
                 />
@@ -412,7 +414,7 @@ export function TemplateEditorDialog({
             </FieldGroup>
 
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-sm font-medium">Email body</span>
+              <span className="text-sm font-medium">{t("templates.emailBody")}</span>
               <div className="flex gap-2">
                 <Button
                   type="button"
@@ -420,7 +422,7 @@ export function TemplateEditorDialog({
                   variant={mode === "visual" ? "default" : "outline"}
                   onClick={() => switchMode("visual")}
                 >
-                  Visual
+                  {t("templates.mode.visual")}
                 </Button>
                 <Button
                   type="button"
@@ -429,7 +431,7 @@ export function TemplateEditorDialog({
                   onClick={() => switchMode("code")}
                 >
                   <Code2Icon />
-                  Paste code
+                  {t("templates.mode.code")}
                 </Button>
               </div>
             </div>
@@ -443,13 +445,12 @@ export function TemplateEditorDialog({
                   onChange={setEditorSnapshot}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Click the canvas background to style the email body and
-                  container, or click an element to edit its colors,
-                  spacing, and border. Type <code>/</code> for more blocks.
+                  {t("templates.canvasHintBefore")} <code>/</code>{" "}
+                  {t("templates.canvasHintAfter")}
                 </p>
 
                 <div className="flex flex-col gap-2 rounded-lg border p-3">
-                  <FieldLabel htmlFor="tpl-variable">Insert variable</FieldLabel>
+                  <FieldLabel htmlFor="tpl-variable">{t("templates.insertVariable")}</FieldLabel>
                   <div className="flex gap-2">
                     <Input
                       id="tpl-variable"
@@ -464,18 +465,18 @@ export function TemplateEditorDialog({
                       }}
                     />
                     <Button type="button" variant="outline" onClick={addVariable}>
-                      Insert
+                      {t("templates.insert")}
                     </Button>
                   </div>
                   <FieldDescription className="text-xs">
-                    The variable is inserted at the cursor as {"{{username}}"}.
+                    {t("templates.insertVariableHelp")}
                   </FieldDescription>
                 </div>
               </>
             ) : (
               <div className="flex flex-col gap-3">
                 <Textarea
-                  aria-label="React Email source"
+                  aria-label={t("templates.sourceLabel")}
                   spellCheck={false}
                   value={source}
                   onChange={(e) => setSource(e.target.value)}
@@ -484,9 +485,9 @@ export function TemplateEditorDialog({
                 />
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <p className="max-w-md text-xs text-muted-foreground">
-                    Export a default React component. Export{" "}
-                    <code className="rounded bg-muted px-1">variables</code> to receive
-                    props as {"{{placeholders}}"}. Rendered in a sandboxed browser worker.
+                    {t("templates.codeHintBefore")}{" "}
+                    <code className="rounded bg-muted px-1">variables</code>{" "}
+                    {t("templates.codeHintAfter")}
                   </p>
                   <div className="flex shrink-0 gap-2">
                     <Button
@@ -495,7 +496,7 @@ export function TemplateEditorDialog({
                       variant="outline"
                       onClick={() => setSource(CODE_EXAMPLE)}
                     >
-                      Use example
+                      {t("templates.useExample")}
                     </Button>
                     <Button
                       type="button"
@@ -508,7 +509,7 @@ export function TemplateEditorDialog({
                       ) : (
                         <PlayIcon />
                       )}
-                      Preview
+                      {t("templates.previewButton")}
                     </Button>
                   </div>
                 </div>
@@ -532,10 +533,10 @@ export function TemplateEditorDialog({
         </div>
         <DialogFooter className="flex-row justify-end">
           <Button type="button" variant="outline" onClick={onClose}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button type="button" onClick={handleSubmit} disabled={submitting}>
-            {submitting ? "Saving..." : editingId ? "Save changes" : "Create"}
+            {submitting ? t("templates.saving") : editingId ? t("templates.saveChanges") : t("templates.create")}
           </Button>
         </DialogFooter>
       </DialogContent>

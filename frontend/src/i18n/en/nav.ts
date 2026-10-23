@@ -16,7 +16,6 @@ export default {
   "nav.logOut": "Log out",
   "nav.title.home": "MakiSend",
   "nav.title.login": "Sign in - MakiSend",
-  "nav.title.register": "Create an account - MakiSend",
   "nav.title.setup": "Set up - MakiSend",
   "nav.title.dashboard": "Dashboard - MakiSend",
   "nav.title.smtpConfig": "SMTP configuration - MakiSend",

@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { MailIcon, PlusIcon, EllipsisVerticalIcon, PencilIcon, TrashIcon, CheckCircleIcon, XCircleIcon, LoaderIcon, SendIcon, ActivityIcon } from "lucide-react"
 import { fetchApi } from "@/lib/api"
+import { useTranslation } from "@/i18n"
 import { SmtpConfigForm, type SmtpConfigValues } from "@/components/smtp-config-form"
 import { SmtpTestSendDialog } from "@/components/smtp-test-send-dialog"
 import { DEFAULT_PORT, type SmtpSecurity } from "@/lib/smtp-form"
@@ -55,6 +56,7 @@ const EMPTY: SmtpConfigValues = {
 }
 
 export function SmtpConfigLayout() {
+  const { t } = useTranslation()
   const [configs, setConfigs] = useState<SmtpConfig[]>([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
@@ -68,7 +70,7 @@ export function SmtpConfigLayout() {
       const data = await res.json()
       setConfigs(data.configs ?? [])
     } catch {
-      toast.error("Failed to load SMTP configs")
+      toast.error(t("smtp.loadFailed"))
     } finally {
       setLoading(false)
     }
@@ -107,10 +109,10 @@ export function SmtpConfigLayout() {
       const res = await fetchApi(`/smtp-config/${id}/check`, { method: "POST" })
       const data = (await res.json()) as { ok?: boolean; message?: string }
       if (!res.ok) throw new Error(data.message ?? "Failed to check")
-      if (data.ok) toast.success("SMTP connection works")
-      else toast.error(data.message ?? "SMTP connection failed")
+      if (data.ok) toast.success(t("smtp.connectionWorks"))
+      else toast.error(data.message ?? t("smtp.connectionFailed"))
     } catch {
-      toast.error("SMTP connection check failed")
+      toast.error(t("smtp.connectionCheckFailed"))
     }
   }
 
@@ -119,9 +121,9 @@ export function SmtpConfigLayout() {
       const res = await fetchApi(`/smtp-config/${id}`, { method: "DELETE" })
       if (!res.ok) throw new Error("Failed to delete")
       setConfigs(configs.filter((c) => c.id !== id))
-      toast.success("SMTP config deleted")
+      toast.success(t("smtp.deleted"))
     } catch {
-      toast.error("Failed to delete config")
+      toast.error(t("smtp.deleteFailed"))
     }
   }
 
@@ -134,21 +136,21 @@ export function SmtpConfigLayout() {
         <div className="flex flex-1 flex-col gap-8 p-4 sm:p-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="font-heading text-[1.75rem] leading-tight font-medium tracking-[-0.03em]">SMTP configuration</h2>
+              <h2 className="font-heading text-[1.75rem] leading-tight font-medium tracking-[-0.03em]">{t("smtp.title")}</h2>
               <p className="text-sm text-muted-foreground">
-                Manage your SMTP server connections for sending emails.
+                {t("smtp.subtitle")}
               </p>
             </div>
             <Dialog open={open} onOpenChange={(v) => { if (v) setOpen(true); else closeForm() }}>
               <DialogTrigger render={<Button onClick={openCreate} />}>
                 <PlusIcon />
-                Add SMTP configuration
+                {t("smtp.add")}
               </DialogTrigger>
               <DialogContent className="max-h-[85dvh] gap-3 sm:max-w-[460px] sm:gap-4">
                 <DialogHeader>
-                  <DialogTitle>{editingId ? "Edit SMTP configuration" : "Create SMTP configuration"}</DialogTitle>
+                  <DialogTitle>{editingId ? t("smtp.dialogEditTitle") : t("smtp.dialogCreateTitle")}</DialogTitle>
                   <DialogDescription>
-                    {editingId ? "Update your SMTP server details." : "Add a new SMTP server to send emails through."}
+                    {editingId ? t("smtp.dialogEditDescription") : t("smtp.dialogCreateDescription")}
                   </DialogDescription>
                 </DialogHeader>
                 <SmtpConfigForm
@@ -175,7 +177,7 @@ export function SmtpConfigLayout() {
           ) : configs.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <MailIcon className="size-10 text-muted-foreground mb-3" />
-              <p className="text-muted-foreground">No SMTP configs yet. Add one to start sending emails.</p>
+              <p className="text-muted-foreground">{t("smtp.empty")}</p>
             </div>
           ) : (
             <ItemGroup className="gap-5">
@@ -193,7 +195,7 @@ export function SmtpConfigLayout() {
                   <ItemActions>
                     <Badge variant="outline" className={config.isActive ? "text-success" : "text-muted-foreground"}>
                       {config.isActive ? <CheckCircleIcon /> : <XCircleIcon />}
-                      {config.isActive ? "Active" : "Inactive"}
+                      {config.isActive ? t("smtp.active") : t("smtp.inactive")}
                     </Badge>
                     <DropdownMenu>
                       <DropdownMenuTrigger
@@ -202,25 +204,25 @@ export function SmtpConfigLayout() {
                         }
                       >
                         <EllipsisVerticalIcon />
-                        <span className="sr-only">Actions</span>
+                        <span className="sr-only">{t("smtp.actions")}</span>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-44">
                         <DropdownMenuItem onClick={() => handleCheck(config.id)}>
                           <ActivityIcon />
-                          Check connection
+                          {t("smtp.checkConnection")}
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => openEdit(config)}>
                           <PencilIcon />
-                          Edit
+                          {t("smtp.edit")}
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => setTesting(config)}>
                           <SendIcon />
-                          Send test email
+                          {t("smtp.sendTestEmail")}
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem variant="destructive" onClick={() => handleDelete(config.id)}>
                           <TrashIcon />
-                          Delete
+                          {t("common.delete")}
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>

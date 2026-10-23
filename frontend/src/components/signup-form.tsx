@@ -10,6 +10,8 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { useDocumentTitle, useTranslation } from "@/i18n";
+import { LanguageSwitcher } from "@/components/language-switcher";
 
 /**
  * First connection: creates the instance's only account, its super admin. Once it exists the
@@ -19,6 +21,8 @@ export function SignupForm({
   className,
   ...props
 }: React.ComponentProps<"div">) {
+  const { t } = useTranslation();
+  useDocumentTitle("nav.title.setup");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -41,12 +45,12 @@ export function SignupForm({
     setError(null);
 
     if (password !== confirmPassword) {
-      setError("Passwords do not match");
+      setError(t("auth.passwordsMismatch"));
       return;
     }
 
     if (password.length < 8) {
-      setError("Password must be at least 8 characters");
+      setError(t("auth.passwordTooShort"));
       return;
     }
 
@@ -61,13 +65,13 @@ export function SignupForm({
       const data = await res.json().catch(() => null);
 
       if (!res.ok) {
-        setError(data?.message || data?.error || "Something went wrong");
+        setError(data?.message || data?.error || t("auth.genericError"));
         return;
       }
 
       window.location.href = "/dashboard";
     } catch {
-      setError("Network error. Please try again.");
+      setError(t("auth.networkError"));
     } finally {
       setLoading(false);
     }
@@ -77,15 +81,17 @@ export function SignupForm({
 
   return (
     <div className={cn("w-full max-w-md", className)} {...props}>
+      <div className="mb-3 flex justify-end">
+        <LanguageSwitcher />
+      </div>
       <Card className="p-0">
         <CardContent className="p-6 md:p-8">
           <form onSubmit={handleSubmit}>
             <FieldGroup>
               <div className="flex flex-col items-center gap-2 text-center">
-                <h1 className="text-2xl font-medium">Set up MakiSend</h1>
+                <h1 className="text-2xl font-medium">{t("auth.setupTitle")}</h1>
                 <p className="text-sm text-balance text-muted-foreground">
-                  Create the administrator account. It is the only account on this instance:
-                  once it exists, nobody else can sign up.
+                  {t("auth.setupDescription")}
                 </p>
               </div>
 
@@ -96,7 +102,7 @@ export function SignupForm({
               )}
 
               <Field>
-                <FieldLabel htmlFor="email">Email</FieldLabel>
+                <FieldLabel htmlFor="email">{t("auth.email")}</FieldLabel>
                 <Input
                   id="email"
                   type="email"
@@ -109,7 +115,7 @@ export function SignupForm({
               </Field>
 
               <Field>
-                <FieldLabel htmlFor="password">Password</FieldLabel>
+                <FieldLabel htmlFor="password">{t("auth.password")}</FieldLabel>
                 <Input
                   id="password"
                   type="password"
@@ -119,11 +125,11 @@ export function SignupForm({
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                 />
-                <FieldDescription>Must be at least 8 characters long.</FieldDescription>
+                <FieldDescription>{t("auth.passwordHint")}</FieldDescription>
               </Field>
 
               <Field>
-                <FieldLabel htmlFor="confirm-password">Confirm password</FieldLabel>
+                <FieldLabel htmlFor="confirm-password">{t("auth.confirmPassword")}</FieldLabel>
                 <Input
                   id="confirm-password"
                   type="password"
@@ -137,7 +143,7 @@ export function SignupForm({
 
               <Field>
                 <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? "Creating account..." : "Create administrator"}
+                  {loading ? t("auth.creatingAccount") : t("auth.createAdmin")}
                 </Button>
               </Field>
             </FieldGroup>

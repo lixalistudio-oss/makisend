@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { fetchApi } from "@/lib/api"
+import { useTranslation } from "@/i18n"
 
 /** Shape of GET /updates/status (backend/src/updates/updates.types.ts). */
 export interface UpdateStatus {
@@ -55,6 +56,7 @@ function dismissed(version: string): boolean {
  * set), or the manual steps of docs/UPDATING.md.
  */
 export function UpdateBanner() {
+  const { t } = useTranslation()
   const [status, setStatus] = useState<UpdateStatus | null>(null)
   const [hidden, setHidden] = useState(false)
   const [open, setOpen] = useState(false)
@@ -88,20 +90,20 @@ export function UpdateBanner() {
         <div className="flex min-w-0 items-start gap-3">
           <ArrowUpCircleIcon className="mt-0.5 size-5 shrink-0 text-brand-strong" aria-hidden />
           <div className="min-w-0 text-sm">
-            <p className="font-medium text-brand-strong">MakiSend {status.latestVersion} is available</p>
+            <p className="font-medium text-brand-strong">{t("updates.banner.available", { version: status.latestVersion })}</p>
             <p className="text-muted-foreground">
-              You run {status.currentVersion}.{" "}
+              {t("updates.banner.running", { version: status.currentVersion })}{" "}
               {status.releaseUrl && (
                 <a className="text-brand underline-offset-4 hover:underline" href={status.releaseUrl} target="_blank" rel="noreferrer">
-                  What's new
+                  {t("updates.banner.whatsNew")}
                 </a>
               )}
             </p>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <Button onClick={() => setOpen(true)}>Update</Button>
-          <Button variant="ghost" size="icon" aria-label="Remind me at the next release" onClick={later}>
+          <Button onClick={() => setOpen(true)}>{t("updates.banner.update")}</Button>
+          <Button variant="ghost" size="icon" aria-label={t("updates.banner.dismiss")} onClick={later}>
             <XIcon />
           </Button>
         </div>
@@ -120,14 +122,14 @@ function UpdateDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
+  const { t } = useTranslation()
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Update to {status.latestVersion}</DialogTitle>
+          <DialogTitle>{t("updates.dialog.title", { version: status.latestVersion ?? "" })}</DialogTitle>
           <DialogDescription>
-            Your instance deploys from your own copy of the MakiSend repository. Updating merges the
-            release into it; Cloudflare then rebuilds the Worker and applies the database migrations.
+            {t("updates.dialog.description")}
           </DialogDescription>
         </DialogHeader>
 
@@ -140,20 +142,25 @@ function UpdateDialog({
         <ol className="flex list-decimal flex-col gap-1 pl-5 text-sm text-muted-foreground">
           {status.syncWorkflowUrl ? (
             <>
-              <li>Open the sync workflow of your repository.</li>
+              <li>{t("updates.dialog.syncStep1")}</li>
               <li>
-                Select <span className="text-foreground">Run workflow</span>, leave the version empty for the latest release.
+                {t("updates.dialog.syncStep2Before")}
+                <span className="text-foreground">{t("updates.dialog.syncStep2Action")}</span>
+                {t("updates.dialog.syncStep2After")}
               </li>
-              <li>Wait for the Cloudflare build to finish, then reload this page.</li>
+              <li>{t("updates.dialog.syncStep3")}</li>
             </>
           ) : (
             <>
               <li>
-                In your copy of the repository, run the <span className="text-foreground">Sync with upstream</span> workflow
-                (Actions tab), or merge the release by hand.
+                {t("updates.dialog.manualStep1Before")}
+                <span className="text-foreground">{t("updates.dialog.manualStep1Workflow")}</span>
+                {t("updates.dialog.manualStep1After")}
               </li>
               <li>
-                Set <code className="text-foreground">MAKISEND_REPOSITORY</code> on the Worker to make this button open it directly.
+                {t("updates.dialog.manualStep2Before")}
+                <code className="text-foreground">MAKISEND_REPOSITORY</code>
+                {t("updates.dialog.manualStep2After")}
               </li>
             </>
           )}
@@ -161,16 +168,16 @@ function UpdateDialog({
 
         <DialogFooter>
           <a className={buttonVariants({ variant: "outline" })} href={UPDATE_GUIDE} target="_blank" rel="noreferrer">
-            Update guide
+            {t("updates.dialog.guide")}
           </a>
           {status.syncWorkflowUrl ? (
             <a className={buttonVariants()} href={status.syncWorkflowUrl} target="_blank" rel="noreferrer">
-              Open the sync workflow
+              {t("updates.dialog.openWorkflow")}
             </a>
           ) : (
             status.releaseUrl && (
               <a className={buttonVariants()} href={status.releaseUrl} target="_blank" rel="noreferrer">
-                Open the release
+                {t("updates.dialog.openRelease")}
               </a>
             )
           )}
@@ -182,6 +189,7 @@ function UpdateDialog({
 
 /** Settings card: running version, last check, "Check now". */
 export function VersionCard() {
+  const { t, locale } = useTranslation()
   const [status, setStatus] = useState<UpdateStatus | null>(null)
   const [checking, setChecking] = useState(false)
 
@@ -194,38 +202,38 @@ export function VersionCard() {
     try {
       const next = await loadUpdateStatus(true)
       setStatus(next)
-      if (!next) toast.error("Could not check for updates")
+      if (!next) toast.error(t("updates.version.checkFailedToast"))
       else if (next.error) toast.error(next.error)
-      else if (next.updateAvailable) toast.success(`MakiSend ${next.latestVersion} is available`)
-      else toast.success("You run the latest release")
+      else if (next.updateAvailable) toast.success(t("updates.banner.available", { version: next.latestVersion ?? "" }))
+      else toast.success(t("updates.version.latestToast"))
     } finally {
       setChecking(false)
     }
-  }, [])
+  }, [t])
 
   return (
     <div className="flex flex-col gap-3 text-sm">
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-        <dt className="text-muted-foreground">Installed</dt>
+        <dt className="text-muted-foreground">{t("updates.version.installed")}</dt>
         <dd className="tabular-nums">{status?.currentVersion ?? "…"}</dd>
-        <dt className="text-muted-foreground">Latest release</dt>
+        <dt className="text-muted-foreground">{t("updates.version.latest")}</dt>
         <dd className="tabular-nums">
           {!status
             ? "…"
             : !status.enabled
-              ? "Check turned off (UPDATE_CHECK=off)"
-              : status.latestVersion ?? "None published yet"}
-          {status?.updateAvailable && <span className="ml-2 text-warning">Update available</span>}
+              ? t("updates.version.checkOff")
+              : status.latestVersion ?? t("updates.version.noneYet")}
+          {status?.updateAvailable && <span className="ml-2 text-warning">{t("updates.version.updateAvailable")}</span>}
         </dd>
-        <dt className="text-muted-foreground">Last check</dt>
-        <dd>{status?.checkedAt ? new Date(status.checkedAt).toLocaleString() : "Never"}</dd>
+        <dt className="text-muted-foreground">{t("updates.version.lastCheck")}</dt>
+        <dd>{status?.checkedAt ? new Date(status.checkedAt).toLocaleString(locale) : t("common.never")}</dd>
       </dl>
-      {status?.error && <p className="text-destructive">Last check failed: {status.error}</p>}
+      {status?.error && <p className="text-destructive">{t("updates.version.lastCheckFailed", { error: status.error })}</p>}
       {status?.enabled && (
         <div>
           <Button variant="outline" onClick={checkNow} disabled={checking}>
             <RefreshCwIcon className={checking ? "animate-spin" : undefined} />
-            {checking ? "Checking" : "Check now"}
+            {checking ? t("updates.version.checking") : t("updates.version.checkNow")}
           </Button>
         </div>
       )}

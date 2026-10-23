@@ -7,6 +7,7 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/c
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { DialogFooter } from "@/components/ui/dialog"
 import { fetchApi } from "@/lib/api"
+import { useTranslation, type UiKey } from "@/i18n"
 import {
   DEFAULT_PORT,
   PRESETS,
@@ -36,9 +37,9 @@ interface Props {
   onCancel: () => void
 }
 
-const SECURITY_LABEL: Record<SmtpSecurity, string> = {
-  tls: "TLS (implicit, port 465)",
-  starttls: "STARTTLS (upgrade, port 587)",
+const SECURITY_LABEL: Record<SmtpSecurity, UiKey> = {
+  tls: "smtp.securityTlsLabel",
+  starttls: "smtp.securityStarttlsLabel",
 }
 
 /**
@@ -47,6 +48,7 @@ const SECURITY_LABEL: Record<SmtpSecurity, string> = {
  * a wrong hostname or port is found here, with the reason, and not four retries later in the logs.
  */
 export function SmtpConfigForm({ editingId, initial, onSaved, onCancel }: Props) {
+  const { t } = useTranslation()
   const [hostname, setHostname] = useState(initial.smtpHostname)
   const [port, setPort] = useState(String(initial.smtpPort))
   const [security, setSecurity] = useState<SmtpSecurity>(initial.smtpSecurity)
@@ -57,7 +59,7 @@ export function SmtpConfigForm({ editingId, initial, onSaved, onCancel }: Props)
   const [submitting, setSubmitting] = useState(false)
   const [checking, setChecking] = useState(false)
   const [check, setCheck] = useState<CheckResult | null>(null)
-  const [hint, setHint] = useState<string | null>(null)
+  const [hint, setHint] = useState<UiKey | null>(null)
   const [presetId, setPresetId] = useState<string | null>(null)
 
   const portNumber = Number(port)
@@ -70,7 +72,7 @@ export function SmtpConfigForm({ editingId, initial, onSaved, onCancel }: Props)
     setHostname(preset.hostname)
     setPort(String(preset.port))
     setSecurity(preset.security)
-    setHint(preset.hint ?? null)
+    setHint(preset.hintKey ?? null)
     setErrors({})
     touched()
   }
@@ -121,7 +123,7 @@ export function SmtpConfigForm({ editingId, initial, onSaved, onCancel }: Props)
       if (!res.ok || !isCheckResult(data)) throw new Error("check failed")
       setCheck(data)
     } catch {
-      setCheck({ ok: false, reason: "unreachable", message: "The check itself could not run. Try again." })
+      setCheck({ ok: false, reason: "unreachable", message: t("smtp.checkCouldNotRun") })
     } finally {
       setChecking(false)
     }
@@ -141,10 +143,10 @@ export function SmtpConfigForm({ editingId, initial, onSaved, onCancel }: Props)
         return
       }
       if (!res.ok) throw new Error("save failed")
-      toast.success(editingId ? "SMTP config updated" : "SMTP config created")
+      toast.success(editingId ? t("smtp.updated") : t("smtp.created"))
       onSaved()
     } catch {
-      toast.error(editingId ? "Failed to update config" : "Failed to create config")
+      toast.error(editingId ? t("smtp.updateFailed") : t("smtp.createFailed"))
     } finally {
       setSubmitting(false)
     }
@@ -155,12 +157,12 @@ export function SmtpConfigForm({ editingId, initial, onSaved, onCancel }: Props)
       {/* The body scrolls, the footer does not: a taller form must never push its own buttons out of reach. */}
       <FieldGroup className={`${check ? "max-h-[calc(85dvh-18rem)]" : "max-h-[calc(85dvh-13rem)]"} overflow-y-auto py-1 pr-1 gap-1.5 sm:gap-2`}>
         <Field>
-          <FieldLabel htmlFor="preset">Provider</FieldLabel>
+          <FieldLabel htmlFor="preset">{t("smtp.provider")}</FieldLabel>
           <Select value={presetId ?? ""} onValueChange={(v) => typeof v === "string" && applyPreset(v)}>
             <SelectTrigger id="preset">
               <SelectValue>
                 {PRESETS.find((p) => p.id === presetId)?.label ?? (
-                  <span className="text-muted-foreground">Fill in from a provider (optional)</span>
+                  <span className="text-muted-foreground">{t("smtp.providerPlaceholder")}</span>
                 )}
               </SelectValue>
             </SelectTrigger>
@@ -172,11 +174,11 @@ export function SmtpConfigForm({ editingId, initial, onSaved, onCancel }: Props)
               ))}
             </SelectContent>
           </Select>
-          {hint && <FieldDescription className="text-xs leading-snug sm:text-sm">{hint}</FieldDescription>}
+          {hint && <FieldDescription className="text-xs leading-snug sm:text-sm">{t(hint)}</FieldDescription>}
         </Field>
 
         <Field data-invalid={!!errors.smtpHostname}>
-          <FieldLabel htmlFor="hostname">SMTP Hostname</FieldLabel>
+          <FieldLabel htmlFor="hostname">{t("smtp.hostname")}</FieldLabel>
           <Input
             id="hostname"
             placeholder="smtp.example.com"
@@ -191,14 +193,14 @@ export function SmtpConfigForm({ editingId, initial, onSaved, onCancel }: Props)
             <FieldError>{errors.smtpHostname}</FieldError>
           ) : (
             <FieldDescription className="text-xs leading-snug sm:text-sm">
-              Only the server name, without https:// and without the port.
+              {t("smtp.hostnameHelp")}
             </FieldDescription>
           )}
         </Field>
 
         <div className="grid grid-cols-2 gap-2">
           <Field data-invalid={!!errors.smtpPort}>
-            <FieldLabel htmlFor="port">Port</FieldLabel>
+            <FieldLabel htmlFor="port">{t("smtp.port")}</FieldLabel>
             <Select value={SMTP_PORTS.some((p) => String(p) === port) ? port : String(DEFAULT_PORT)} onValueChange={(v) => typeof v === "string" && changePort(v)}>
               <SelectTrigger id="port" aria-invalid={!!errors.smtpPort}>
                 <SelectValue>{port}</SelectValue>
@@ -214,25 +216,25 @@ export function SmtpConfigForm({ editingId, initial, onSaved, onCancel }: Props)
             {errors.smtpPort && <FieldError>{errors.smtpPort}</FieldError>}
           </Field>
           <Field data-invalid={!!errors.smtpSecurity}>
-            <FieldLabel htmlFor="security">Security</FieldLabel>
+            <FieldLabel htmlFor="security">{t("smtp.security")}</FieldLabel>
             <Select value={security} onValueChange={(v) => { if (v === "tls" || v === "starttls") { setSecurity(v); touched() } }}>
               <SelectTrigger id="security" aria-invalid={!!errors.smtpSecurity}>
                 <SelectValue>{security === "tls" ? "TLS" : "STARTTLS"}</SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="tls">{SECURITY_LABEL.tls}</SelectItem>
-                <SelectItem value="starttls">{SECURITY_LABEL.starttls}</SelectItem>
+                <SelectItem value="tls">{t(SECURITY_LABEL.tls)}</SelectItem>
+                <SelectItem value="starttls">{t(SECURITY_LABEL.starttls)}</SelectItem>
               </SelectContent>
             </Select>
             {errors.smtpSecurity && <FieldError>{errors.smtpSecurity}</FieldError>}
           </Field>
         </div>
         <FieldDescription className="text-xs leading-snug sm:text-sm">
-          Port 25 is blocked on Cloudflare Workers. Use 465 with TLS, or 587 with STARTTLS.
+          {t("smtp.portHelp")}
         </FieldDescription>
 
         <Field data-invalid={!!errors.smtpUsername}>
-          <FieldLabel htmlFor="username">SMTP Username</FieldLabel>
+          <FieldLabel htmlFor="username">{t("smtp.username")}</FieldLabel>
           <Input
             id="username"
             placeholder="user@example.com"
@@ -244,12 +246,12 @@ export function SmtpConfigForm({ editingId, initial, onSaved, onCancel }: Props)
           {errors.smtpUsername ? (
             <FieldError>{errors.smtpUsername}</FieldError>
           ) : (
-            <FieldDescription className="text-xs leading-snug sm:text-sm">Authentication username for the SMTP server.</FieldDescription>
+            <FieldDescription className="text-xs leading-snug sm:text-sm">{t("smtp.usernameHelp")}</FieldDescription>
           )}
         </Field>
 
         <Field data-invalid={!!errors.smtpPassword}>
-          <FieldLabel htmlFor="password">SMTP Password</FieldLabel>
+          <FieldLabel htmlFor="password">{t("smtp.password")}</FieldLabel>
           <Input
             id="password"
             type="password"
@@ -263,13 +265,13 @@ export function SmtpConfigForm({ editingId, initial, onSaved, onCancel }: Props)
             <FieldError>{errors.smtpPassword}</FieldError>
           ) : (
             <FieldDescription className="text-xs leading-snug sm:text-sm">
-              {editingId ? "Leave blank to keep current password." : "Authentication password for the SMTP server."}
+              {editingId ? t("smtp.passwordKeepHelp") : t("smtp.passwordHelp")}
             </FieldDescription>
           )}
         </Field>
 
         <Field data-invalid={!!errors.senderEmail}>
-          <FieldLabel htmlFor="senderEmail">Sender email</FieldLabel>
+          <FieldLabel htmlFor="senderEmail">{t("smtp.senderEmail")}</FieldLabel>
           <Input
             id="senderEmail"
             type="email"
@@ -282,7 +284,7 @@ export function SmtpConfigForm({ editingId, initial, onSaved, onCancel }: Props)
             <FieldError>{errors.senderEmail}</FieldError>
           ) : (
             <FieldDescription className="text-xs leading-snug sm:text-sm">
-              The email address emails will be sent from. Most providers only accept an address they know.
+              {t("smtp.senderEmailHelp")}
             </FieldDescription>
           )}
         </Field>
@@ -295,19 +297,19 @@ export function SmtpConfigForm({ editingId, initial, onSaved, onCancel }: Props)
           className={`flex items-start gap-2 rounded-xl border p-4 text-sm ${check.ok ? "border-success/40 text-success" : "border-destructive/40 text-destructive"}`}
         >
           {check.ok ? <CheckCircleIcon className="mt-0.5 size-4 shrink-0" /> : <XCircleIcon className="mt-0.5 size-4 shrink-0" />}
-          <span>{check.ok ? "Connected and signed in. No email was sent." : check.message}</span>
+          <span>{check.ok ? t("smtp.checkOk") : check.message}</span>
         </div>
       )}
       <DialogFooter className="flex-row justify-end">
         <Button variant="outline" onClick={onCancel}>
-          Cancel
+          {t("common.cancel")}
         </Button>
         <Button variant="outline" onClick={runCheck} disabled={!complete || checking || submitting}>
           {checking ? <LoaderIcon className="animate-spin" /> : <PlugZapIcon />}
-          {checking ? "Checking..." : "Test connection"}
+          {checking ? t("smtp.checking") : t("smtp.testConnection")}
         </Button>
         <Button onClick={save} disabled={!complete || submitting || checking}>
-          {submitting ? "Saving..." : editingId ? "Save changes" : "Create"}
+          {submitting ? t("smtp.saving") : editingId ? t("smtp.saveChanges") : t("smtp.create")}
         </Button>
       </DialogFooter>
     </>

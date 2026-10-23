@@ -12,11 +12,9 @@ import {
 } from "@/components/ui/dialog"
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { fetchApi } from "@/lib/api"
+import { useTranslation } from "@/i18n"
 import { isSendResult, type SendResult } from "@/lib/smtp-form"
-import { attachmentProblem, formatSize, MAX_ATTACHMENTS, toAttachmentPayload } from "@/lib/attachments"
-
-const DEFAULT_SUBJECT = "MakiSend test email"
-const DEFAULT_TEXT = "This is a test email sent from your MakiSend SMTP configuration."
+import { attachmentProblem, formatSize, MAX_ATTACHMENTS, toAttachmentPayload, type LocalizedMessage } from "@/lib/attachments"
 
 interface Props {
   /** The saved configuration to send with; null closes the dialog. */
@@ -41,9 +39,12 @@ export function SmtpTestSendDialog({ config, onClose }: Props) {
 }
 
 function TestSendForm({ config, onClose }: { config: NonNullable<Props["config"]>; onClose: () => void }) {
+  const { t, locale } = useTranslation()
+  const say = (message: LocalizedMessage) => t(message.key, message.params)
   const [to, setTo] = useState("")
-  const [subject, setSubject] = useState(DEFAULT_SUBJECT)
-  const [text, setText] = useState(DEFAULT_TEXT)
+  // Mounted on opening (after hydration): the defaults are in the person's language.
+  const [subject, setSubject] = useState(() => t("smtp.testDefaultSubject"))
+  const [text, setText] = useState(() => t("smtp.testDefaultText"))
   const [sending, setSending] = useState(false)
   const [result, setResult] = useState<SendResult | null>(null)
   const [errors, setErrors] = useState<{ to?: string; subject?: string; text?: string; attachments?: string }>({})
@@ -56,7 +57,7 @@ function TestSendForm({ config, onClose }: { config: NonNullable<Props["config"]
     for (const file of Array.from(picked)) {
       const problem = attachmentProblem(file, next.length)
       if (problem) {
-        setErrors((e) => ({ ...e, attachments: problem }))
+        setErrors((e) => ({ ...e, attachments: say(problem) }))
         continue
       }
       next.push(file)
@@ -87,7 +88,7 @@ function TestSendForm({ config, onClose }: { config: NonNullable<Props["config"]
       if (!res.ok || !isSendResult(data)) throw new Error("send failed")
       setResult(data)
     } catch {
-      setResult({ ok: false, reason: "unreachable", message: "The send itself could not run. Try again." })
+      setResult({ ok: false, reason: "unreachable", message: t("smtp.sendCouldNotRun") })
     } finally {
       setSending(false)
     }
@@ -96,21 +97,21 @@ function TestSendForm({ config, onClose }: { config: NonNullable<Props["config"]
   return (
     <>
       <DialogHeader>
-        <DialogTitle>Send a test email</DialogTitle>
+        <DialogTitle>{t("smtp.testTitle")}</DialogTitle>
         <DialogDescription>
-          Sends one real email through {config.smtpHostname}, to see it arrive.
+          {t("smtp.testDescription", { hostname: config.smtpHostname })}
         </DialogDescription>
       </DialogHeader>
       <FieldGroup className="max-h-[calc(85dvh-15rem)] overflow-y-auto py-1 pr-1 pb-3 gap-1.5 sm:gap-2">
         <Field>
-          <FieldLabel htmlFor="test-from">From</FieldLabel>
+          <FieldLabel htmlFor="test-from">{t("smtp.testFrom")}</FieldLabel>
           <Input id="test-from" value={config.senderEmail} readOnly disabled />
           <FieldDescription className="text-xs leading-snug sm:text-sm">
-            Always the configuration's sender address.
+            {t("smtp.testFromHelp")}
           </FieldDescription>
         </Field>
         <Field data-invalid={!!errors.to}>
-          <FieldLabel htmlFor="test-to">To</FieldLabel>
+          <FieldLabel htmlFor="test-to">{t("smtp.testTo")}</FieldLabel>
           <Input
             id="test-to"
             type="email"
@@ -123,7 +124,7 @@ function TestSendForm({ config, onClose }: { config: NonNullable<Props["config"]
           {errors.to && <FieldError>{errors.to}</FieldError>}
         </Field>
         <Field data-invalid={!!errors.subject}>
-          <FieldLabel htmlFor="test-subject">Subject</FieldLabel>
+          <FieldLabel htmlFor="test-subject">{t("smtp.testSubject")}</FieldLabel>
           <Input
             id="test-subject"
             value={subject}
@@ -133,7 +134,7 @@ function TestSendForm({ config, onClose }: { config: NonNullable<Props["config"]
           {errors.subject && <FieldError>{errors.subject}</FieldError>}
         </Field>
         <Field data-invalid={!!errors.text}>
-          <FieldLabel htmlFor="test-text">Message</FieldLabel>
+          <FieldLabel htmlFor="test-text">{t("smtp.testMessage")}</FieldLabel>
           <textarea
             id="test-text"
             rows={3}
@@ -145,7 +146,7 @@ function TestSendForm({ config, onClose }: { config: NonNullable<Props["config"]
           {errors.text && <FieldError>{errors.text}</FieldError>}
         </Field>
         <Field>
-          <FieldLabel htmlFor="test-attachments">Attachments</FieldLabel>
+          <FieldLabel htmlFor="test-attachments">{t("smtp.testAttachments")}</FieldLabel>
           {/* Under the label, not after the list: visible without scrolling the dialog. */}
           {errors.attachments && <FieldError>{errors.attachments}</FieldError>}
           <input
@@ -157,15 +158,15 @@ function TestSendForm({ config, onClose }: { config: NonNullable<Props["config"]
             onChange={(e) => { setErrors(({ attachments: _drop, ...rest }) => rest); addFiles(e.target.files) }}
           />
           {files.length > 0 && (
-            <ul className="flex flex-col gap-1" aria-label="Attached files">
+            <ul className="flex flex-col gap-1" aria-label={t("smtp.testAttachedFiles")}>
               {files.map((file, index) => (
                 <li key={`${file.name}-${index}`} className="flex items-center gap-2 rounded-md border px-2 py-1 text-sm">
                   <PaperclipIcon className="size-3.5 shrink-0 text-muted-foreground" />
                   <span className="min-w-0 flex-1 truncate">{file.name}</span>
-                  <span className="shrink-0 text-xs text-muted-foreground">{formatSize(file.size)}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">{say(formatSize(file.size, locale))}</span>
                   <button
                     type="button"
-                    aria-label={`Remove ${file.name}`}
+                    aria-label={t("smtp.testRemoveFile", { name: file.name })}
                     className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground"
                     onClick={() => { setFiles(files.filter((_, i) => i !== index)); setResult(null) }}
                   >
@@ -184,10 +185,10 @@ function TestSendForm({ config, onClose }: { config: NonNullable<Props["config"]
             onClick={() => picker.current?.click()}
           >
             <PaperclipIcon />
-            Attach a file
+            {t("smtp.testAttachFile")}
           </Button>
           <FieldDescription className="text-xs leading-snug sm:text-sm">
-            Optional. Up to {MAX_ATTACHMENTS} files, 512 KB each.
+            {t("smtp.testAttachmentsHelp", { max: MAX_ATTACHMENTS })}
           </FieldDescription>
         </Field>
       </FieldGroup>
@@ -200,7 +201,7 @@ function TestSendForm({ config, onClose }: { config: NonNullable<Props["config"]
           {result.ok ? <CheckCircleIcon className="mt-0.5 size-4 shrink-0" /> : <XCircleIcon className="mt-0.5 size-4 shrink-0" />}
           <span>
             {result.ok
-              ? "The server accepted the message. Check the inbox, and the spam folder if it is not there."
+              ? t("smtp.testAccepted")
               : result.message}
           </span>
         </div>
@@ -208,11 +209,11 @@ function TestSendForm({ config, onClose }: { config: NonNullable<Props["config"]
 
       <DialogFooter className="flex-row justify-end">
         <Button variant="outline" onClick={onClose}>
-          Close
+          {t("common.close")}
         </Button>
         <Button onClick={send} disabled={!to.trim() || !subject.trim() || !text.trim() || sending}>
           {sending ? <LoaderIcon className="animate-spin" /> : <SendIcon />}
-          {sending ? "Sending..." : "Send test email"}
+          {sending ? t("smtp.sending") : t("smtp.sendTestEmail")}
         </Button>
       </DialogFooter>
     </>

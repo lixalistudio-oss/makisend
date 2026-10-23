@@ -15,6 +15,7 @@ import {
 import { Inspector } from "@react-email/editor/ui";
 import "@react-email/editor/themes/default.css";
 import { Button } from "@/components/ui/button";
+import { useTranslation } from "@/i18n";
 
 export interface TemplateEditorSnapshot {
   html: string;
@@ -141,6 +142,7 @@ export const TemplateEditor = memo(forwardRef<
   TemplateEditorHandle,
   TemplateEditorProps
 >(function TemplateEditor({ initialContent, onChange }, ref) {
+  const { t } = useTranslation();
   const initial = useMemo(
     () => parseInitialContent(initialContent),
     [initialContent],
@@ -219,7 +221,7 @@ export const TemplateEditor = memo(forwardRef<
         <div
           className="template-builder-theme-group"
           role="group"
-          aria-label="Email theme"
+          aria-label={t("templates.theme")}
         >
           <button
             type="button"
@@ -227,7 +229,7 @@ export const TemplateEditor = memo(forwardRef<
             data-active={theme === "basic"}
             onClick={() => switchTheme("basic")}
           >
-            Basic theme
+            {t("templates.theme.basic")}
           </button>
           <button
             type="button"
@@ -235,7 +237,7 @@ export const TemplateEditor = memo(forwardRef<
             data-active={theme === "minimal"}
             onClick={() => switchTheme("minimal")}
           >
-            Minimal theme
+            {t("templates.theme.minimal")}
           </button>
         </div>
         <Button
@@ -245,7 +247,7 @@ export const TemplateEditor = memo(forwardRef<
           onClick={exportHtml}
           disabled={exporting}
         >
-          {exporting ? "Exporting..." : "Export HTML"}
+          {exporting ? t("templates.exporting") : t("templates.exportHtml")}
         </Button>
       </div>
 
@@ -254,7 +256,7 @@ export const TemplateEditor = memo(forwardRef<
           ref={editorRef}
           content={content}
           theme={theme}
-          placeholder="Write your email, or type / for blocks"
+          placeholder={t("templates.editorPlaceholder")}
           onReady={scheduleSnapshot}
           onUpdate={scheduleSnapshot}
           className="template-builder-canvas"

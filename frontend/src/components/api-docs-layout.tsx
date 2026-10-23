@@ -34,21 +34,22 @@ import {
   ShieldCheckIcon,
 } from "lucide-react"
 import { Toaster, toast } from "sonner"
-import { AttachmentsDoc } from "./api-docs-attachments"
+import { AttachmentsDoc, richText } from "./api-docs-attachments"
+import { useTranslation, type UiKey } from "@/i18n"
 
 type Method = "GET" | "POST" | "PUT" | "DELETE"
 
-const SECTIONS = [
-  { id: "overview", label: "Overview" },
-  { id: "quickstart", label: "Quickstart" },
-  { id: "authentication", label: "Authentication" },
-  { id: "sending", label: "Sending email" },
-  { id: "lifecycle", label: "Delivery lifecycle" },
-  { id: "smtp", label: "SMTP & deliverability" },
-  { id: "templates", label: "Templates" },
-  { id: "endpoints", label: "Endpoint reference" },
-  { id: "errors", label: "Errors & limits" },
-  { id: "security", label: "Security" },
+const SECTIONS: { id: string; labelKey: UiKey }[] = [
+  { id: "overview", labelKey: "apiDocs.section.overview" },
+  { id: "quickstart", labelKey: "apiDocs.section.quickstart" },
+  { id: "authentication", labelKey: "apiDocs.section.authentication" },
+  { id: "sending", labelKey: "apiDocs.section.sending" },
+  { id: "lifecycle", labelKey: "apiDocs.section.lifecycle" },
+  { id: "smtp", labelKey: "apiDocs.section.smtp" },
+  { id: "templates", labelKey: "apiDocs.section.templates" },
+  { id: "endpoints", labelKey: "apiDocs.section.endpoints" },
+  { id: "errors", labelKey: "apiDocs.section.errors" },
+  { id: "security", labelKey: "apiDocs.section.security" },
 ]
 
 const METHOD_STYLES: Record<Method, string> = {
@@ -67,172 +68,141 @@ const STATUS_STYLES: Record<string, string> = {
   failed: "border-transparent bg-surface-muted text-destructive",
 }
 
+type Endpoint = { method: Method; path: string; descriptionKey: UiKey }
+
 const ENDPOINT_GROUPS: {
-  title: string
-  auth: string
-  description: string
-  endpoints: { method: Method; path: string; description: string }[]
+  titleKey: UiKey
+  authKey: UiKey
+  descriptionKey: UiKey
+  endpoints: Endpoint[]
 }[] = [
   {
-    title: "Sending",
-    auth: "API key",
-    description: "The public API used by your backend.",
+    titleKey: "apiDocs.endpoints.sendingTitle",
+    authKey: "apiDocs.auth.apiKey",
+    descriptionKey: "apiDocs.endpoints.sendingDescription",
+    endpoints: [{ method: "POST", path: "/send-email", descriptionKey: "apiDocs.endpoints.sendEmail" }],
+  },
+  {
+    titleKey: "apiDocs.endpoints.smtpTitle",
+    authKey: "apiDocs.auth.session",
+    descriptionKey: "apiDocs.endpoints.smtpDescription",
     endpoints: [
-      {
-        method: "POST",
-        path: "/send-email",
-        description: "Queue an inline email or a stored template. Returns 202 with an emailId.",
-      },
+      { method: "GET", path: "/smtp-config", descriptionKey: "apiDocs.endpoints.smtpList" },
+      { method: "POST", path: "/smtp-config", descriptionKey: "apiDocs.endpoints.smtpCreate" },
+      { method: "POST", path: "/smtp-config/check", descriptionKey: "apiDocs.endpoints.smtpCheck" },
+      { method: "GET", path: "/smtp-config/{id}", descriptionKey: "apiDocs.endpoints.smtpRead" },
+      { method: "PUT", path: "/smtp-config/{id}", descriptionKey: "apiDocs.endpoints.smtpUpdate" },
+      { method: "DELETE", path: "/smtp-config/{id}", descriptionKey: "apiDocs.endpoints.smtpDelete" },
+      { method: "POST", path: "/smtp-config/{id}/check", descriptionKey: "apiDocs.endpoints.smtpCheckSaved" },
+      { method: "POST", path: "/smtp-config/{id}/test-send", descriptionKey: "apiDocs.endpoints.smtpTestSend" },
     ],
   },
   {
-    title: "SMTP configurations",
-    auth: "Dashboard session",
-    description: "Manage the SMTP accounts used to deliver email.",
+    titleKey: "apiDocs.endpoints.apiKeysTitle",
+    authKey: "apiDocs.auth.session",
+    descriptionKey: "apiDocs.endpoints.apiKeysDescription",
     endpoints: [
-      { method: "GET", path: "/smtp-config", description: "List the current user's SMTP configurations." },
-      { method: "POST", path: "/smtp-config", description: "Create a configuration. Secrets are encrypted at rest." },
-      { method: "POST", path: "/smtp-config/check", description: "Test credentials before saving them." },
-      { method: "GET", path: "/smtp-config/{id}", description: "Read one configuration. The password is never returned." },
-      { method: "PUT", path: "/smtp-config/{id}", description: "Update a configuration, including its active state." },
-      { method: "DELETE", path: "/smtp-config/{id}", description: "Delete a configuration and the API keys linked to it." },
-      { method: "POST", path: "/smtp-config/{id}/check", description: "Test a saved configuration." },
-      { method: "POST", path: "/smtp-config/{id}/test-send", description: "Send a test email, optionally with attachments (same shape as /send-email). It shows in the logs as a test, never in the dashboard totals." },
+      { method: "GET", path: "/api-keys", descriptionKey: "apiDocs.endpoints.apiKeysList" },
+      { method: "POST", path: "/api-keys", descriptionKey: "apiDocs.endpoints.apiKeysCreate" },
+      { method: "DELETE", path: "/api-keys/{id}", descriptionKey: "apiDocs.endpoints.apiKeysRevoke" },
     ],
   },
   {
-    title: "API keys",
-    auth: "Dashboard session",
-    description: "Each key is linked to exactly one SMTP configuration.",
+    titleKey: "apiDocs.endpoints.templatesTitle",
+    authKey: "apiDocs.auth.session",
+    descriptionKey: "apiDocs.endpoints.templatesDescription",
     endpoints: [
-      { method: "GET", path: "/api-keys", description: "List key metadata. Secrets are never listed." },
-      { method: "POST", path: "/api-keys", description: "Create a key linked to an SMTP configuration (several keys can share one). The full key is returned only once." },
-      { method: "DELETE", path: "/api-keys/{id}", description: "Revoke a key." },
+      { method: "GET", path: "/templates", descriptionKey: "apiDocs.endpoints.templatesList" },
+      { method: "POST", path: "/templates", descriptionKey: "apiDocs.endpoints.templatesCreate" },
+      { method: "GET", path: "/templates/{id}", descriptionKey: "apiDocs.endpoints.templatesRead" },
+      { method: "PUT", path: "/templates/{id}", descriptionKey: "apiDocs.endpoints.templatesUpdate" },
+      { method: "DELETE", path: "/templates/{id}", descriptionKey: "apiDocs.endpoints.templatesDelete" },
+      { method: "POST", path: "/templates/{id}/preview", descriptionKey: "apiDocs.endpoints.templatesPreview" },
     ],
   },
   {
-    title: "Templates",
-    auth: "Dashboard session",
-    description: "Reusable React Email content with {{variable}} placeholders.",
+    titleKey: "apiDocs.endpoints.logsTitle",
+    authKey: "apiDocs.auth.session",
+    descriptionKey: "apiDocs.endpoints.logsDescription",
     endpoints: [
-      { method: "GET", path: "/templates", description: "List templates." },
-      { method: "POST", path: "/templates", description: "Create a template." },
-      { method: "GET", path: "/templates/{id}", description: "Read one template." },
-      { method: "PUT", path: "/templates/{id}", description: "Update a template." },
-      { method: "DELETE", path: "/templates/{id}", description: "Delete a template." },
-      { method: "POST", path: "/templates/{id}/preview", description: "Render a template with sample variables." },
+      { method: "GET", path: "/email-logs", descriptionKey: "apiDocs.endpoints.logsList" },
+      { method: "GET", path: "/email-logs/{id}", descriptionKey: "apiDocs.endpoints.logsRead" },
     ],
   },
   {
-    title: "Email logs",
-    auth: "Dashboard session",
-    description: "Read the delivery history stored in D1.",
+    titleKey: "apiDocs.endpoints.metricsTitle",
+    authKey: "apiDocs.auth.session",
+    descriptionKey: "apiDocs.endpoints.metricsDescription",
     endpoints: [
-      {
-        method: "GET",
-        path: "/email-logs",
-        description: "Paginated logs. Filters: status, smtpConfigId, apiKeyId, to, limit, cursor.",
-      },
-      { method: "GET", path: "/email-logs/{id}", description: "One log with its complete attempt history." },
-    ],
-  },
-  {
-    title: "Dashboard metrics",
-    auth: "Dashboard session",
-    description: "Aggregated data used by the dashboard cards and charts.",
-    endpoints: [
-      { method: "GET", path: "/dashboard/stats", description: "Totals, failures and success rate of API sends. Query: days, apiKeyId (optional)." },
-      { method: "GET", path: "/dashboard/by-config", description: "Per-SMTP-config delivery breakdown. Query: days." },
-      { method: "GET", path: "/dashboard/by-api-key", description: "Sent, delivered, failed, average duration and last use for each API key. Query: days." },
-      { method: "GET", path: "/dashboard/recent", description: "Most recent sends. Query: limit." },
-      { method: "GET", path: "/dashboard/errors", description: "Frequent delivery errors. Query: days, limit, apiKeyId (optional)." },
+      { method: "GET", path: "/dashboard/stats", descriptionKey: "apiDocs.endpoints.metricsStats" },
+      { method: "GET", path: "/dashboard/by-config", descriptionKey: "apiDocs.endpoints.metricsByConfig" },
+      { method: "GET", path: "/dashboard/by-api-key", descriptionKey: "apiDocs.endpoints.metricsByApiKey" },
+      { method: "GET", path: "/dashboard/recent", descriptionKey: "apiDocs.endpoints.metricsRecent" },
+      { method: "GET", path: "/dashboard/errors", descriptionKey: "apiDocs.endpoints.metricsErrors" },
     ],
   },
 ]
 
-const LIFECYCLE = [
-  {
-    status: "received",
-    title: "Workflow started",
-    description: "The queue consumer created one durable Workflow instance for this email.",
-  },
-  {
-    status: "processing",
-    title: "Preparing the message",
-    description: "The workflow loaded the encrypted body from D1 and rebuilt the email.",
-  },
-  {
-    status: "cleaned",
-    title: "HTML sanitized",
-    description: "The HTML passed through the allowlist sanitizer before any SMTP attempt.",
-  },
-  {
-    status: "attempt_failed",
-    title: "An attempt failed",
-    description: "A transient SMTP failure was recorded. The next attempt is scheduled automatically.",
-  },
-  {
-    status: "sent",
-    title: "Accepted by SMTP",
-    description: "The provider accepted the message. This means sent, not necessarily delivered to the inbox.",
-  },
-  {
-    status: "failed",
-    title: "Delivery abandoned",
-    description: "The retry budget was exhausted or the error was permanent. The email is dead-lettered.",
-  },
+const LIFECYCLE: { status: string; titleKey: UiKey; descriptionKey: UiKey }[] = [
+  { status: "received", titleKey: "apiDocs.lifecycle.receivedTitle", descriptionKey: "apiDocs.lifecycle.receivedBody" },
+  { status: "processing", titleKey: "apiDocs.lifecycle.processingTitle", descriptionKey: "apiDocs.lifecycle.processingBody" },
+  { status: "cleaned", titleKey: "apiDocs.lifecycle.cleanedTitle", descriptionKey: "apiDocs.lifecycle.cleanedBody" },
+  { status: "attempt_failed", titleKey: "apiDocs.lifecycle.attemptFailedTitle", descriptionKey: "apiDocs.lifecycle.attemptFailedBody" },
+  { status: "sent", titleKey: "apiDocs.lifecycle.sentTitle", descriptionKey: "apiDocs.lifecycle.sentBody" },
+  { status: "failed", titleKey: "apiDocs.lifecycle.failedTitle", descriptionKey: "apiDocs.lifecycle.failedBody" },
 ]
 
-const ERROR_ROWS = [
-  {
-    status: "202",
-    meaning: "Accepted",
-    detail: "The email is queued. Use the returned emailId to follow it in Email Logs.",
-  },
-  {
-    status: "400",
-    meaning: "Validation failed",
-    detail: "Invalid body, unknown field, mixed inline/template payload, or invalid Idempotency-Key.",
-  },
-  {
-    status: "401",
-    meaning: "Missing API key",
-    detail: "Send x-api-key or Authorization: Bearer <key>.",
-  },
-  {
-    status: "403",
-    meaning: "Key rejected",
-    detail: "The key is invalid or disabled, or its SMTP configuration is inactive.",
-  },
-  {
-    status: "404",
-    meaning: "Resource not found",
-    detail: "Template, SMTP configuration, or email log not found or owned by another user.",
-  },
-  {
-    status: "409",
-    meaning: "Idempotency conflict",
-    detail: "The same Idempotency-Key is already in progress or was used with a different body.",
-  },
-  {
-    status: "500",
-    meaning: "Internal error",
-    detail: "The send request was not accepted. Retrying with the same Idempotency-Key is safe.",
-  },
+const ERROR_ROWS: { status: string; meaningKey: UiKey; detailKey: UiKey }[] = [
+  { status: "202", meaningKey: "apiDocs.errors.202Meaning", detailKey: "apiDocs.errors.202Detail" },
+  { status: "400", meaningKey: "apiDocs.errors.400Meaning", detailKey: "apiDocs.errors.400Detail" },
+  { status: "401", meaningKey: "apiDocs.errors.401Meaning", detailKey: "apiDocs.errors.401Detail" },
+  { status: "403", meaningKey: "apiDocs.errors.403Meaning", detailKey: "apiDocs.errors.403Detail" },
+  { status: "404", meaningKey: "apiDocs.errors.404Meaning", detailKey: "apiDocs.errors.404Detail" },
+  { status: "409", meaningKey: "apiDocs.errors.409Meaning", detailKey: "apiDocs.errors.409Detail" },
+  { status: "500", meaningKey: "apiDocs.errors.500Meaning", detailKey: "apiDocs.errors.500Detail" },
 ]
 
-const LIMITS: [string, string][] = [
-  ["Recipient", "Valid email address, up to 320 characters."],
-  ["Subject", "Inline sends: 3 to 500 characters. Templates: 1 to 500. No line breaks."],
-  ["Plain text", "10 to 20,000 characters for inline sends; 1 to 20,000 for templates."],
-  ["HTML", "1 to 100,000 characters. Sanitized before sending."],
-  ["Attachments", "Up to 5 files per email, 512 KB each once decoded, base64 in the JSON body."],
-  ["Template variables", "Up to 50 variables; names up to 64 chars, values up to 10,000 chars."],
-  ["TSX source", "1 to 100,000 characters for pasted React Email code."],
-  ["Idempotency-Key", "1 to 255 visible ASCII characters; replay window 24 hours."],
-  ["API key throughput", "No daily or monthly quota per key. The real ceiling is your SMTP provider's own limits."],
-  ["SMTP ports", "465, 587, 2465, 2525 or 2587. Port 25 is blocked on Workers."],
+/** Header names stay verbatim: `item` is code, `itemKey` is prose. */
+const LIMITS: { item?: string; itemKey?: UiKey; limitKey: UiKey }[] = [
+  { itemKey: "apiDocs.limits.recipient", limitKey: "apiDocs.limits.recipientLimit" },
+  { itemKey: "apiDocs.limits.subject", limitKey: "apiDocs.limits.subjectLimit" },
+  { itemKey: "apiDocs.limits.plainText", limitKey: "apiDocs.limits.plainTextLimit" },
+  { itemKey: "apiDocs.limits.html", limitKey: "apiDocs.limits.htmlLimit" },
+  { itemKey: "apiDocs.limits.attachments", limitKey: "apiDocs.limits.attachmentsLimit" },
+  { itemKey: "apiDocs.limits.templateVariables", limitKey: "apiDocs.limits.templateVariablesLimit" },
+  { itemKey: "apiDocs.limits.tsxSource", limitKey: "apiDocs.limits.tsxSourceLimit" },
+  { item: "Idempotency-Key", limitKey: "apiDocs.limits.idempotencyKeyLimit" },
+  { itemKey: "apiDocs.limits.throughput", limitKey: "apiDocs.limits.throughputLimit" },
+  { itemKey: "apiDocs.limits.smtpPorts", limitKey: "apiDocs.limits.smtpPortsLimit" },
 ]
+
+/** Field names and JSON types are code; only the rules are prose. */
+const INLINE_FIELDS: { field: string; type?: string; typeKey?: UiKey; ruleKey: UiKey }[] = [
+  { field: "to", type: "string", ruleKey: "apiDocs.sending.ruleTo" },
+  { field: "subject", type: "string", ruleKey: "apiDocs.sending.ruleSubject" },
+  { field: "text", type: "string", ruleKey: "apiDocs.sending.ruleText" },
+  { field: "html", type: "string", ruleKey: "apiDocs.sending.ruleHtml" },
+  { field: "attachments", typeKey: "apiDocs.sending.typeArrayOptional", ruleKey: "apiDocs.sending.ruleAttachments" },
+]
+
+const SECURITY_ITEMS: { titleKey: UiKey; bodyKey: UiKey }[] = [
+  { titleKey: "apiDocs.security.encryptedTitle", bodyKey: "apiDocs.security.encryptedBody" },
+  { titleKey: "apiDocs.security.passwordTitle", bodyKey: "apiDocs.security.passwordBody" },
+  { titleKey: "apiDocs.security.hashedTitle", bodyKey: "apiDocs.security.hashedBody" },
+  { titleKey: "apiDocs.security.tlsTitle", bodyKey: "apiDocs.security.tlsBody" },
+  { titleKey: "apiDocs.security.htmlTitle", bodyKey: "apiDocs.security.htmlBody" },
+  { titleKey: "apiDocs.security.sameOriginTitle", bodyKey: "apiDocs.security.sameOriginBody" },
+]
+
+/** Code tokens substituted into translated prose; never translated themselves. */
+const CODE_PARAMS = {
+  placeholder: "{{variable}}",
+  shape: "[{ filename, content (base64), content_type? }]",
+  apiKeyHeader: "x-api-key",
+  authorizationHeader: "Authorization: Bearer <key>",
+  prefix: "mk_",
+  secret: "AES_256_KEY",
+}
 
 function MethodBadge({ method }: { method: Method }) {
   return (
@@ -251,16 +221,17 @@ function InlineCode({ children }: { children: ReactNode }) {
 }
 
 function CodeBlock({ code, label }: { code: string; label: string }) {
+  const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
 
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(code)
       setCopied(true)
-      toast.success("Copied to clipboard")
+      toast.success(t("apiDocs.copied"))
       window.setTimeout(() => setCopied(false), 1500)
     } catch {
-      toast.error("Could not copy to the clipboard")
+      toast.error(t("apiDocs.copyFailed"))
     }
   }
 
@@ -272,7 +243,7 @@ function CodeBlock({ code, label }: { code: string; label: string }) {
           type="button"
           onClick={copy}
           className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
-          aria-label={`Copy ${label}`}
+          aria-label={t("apiDocs.copyLabel", { label })}
         >
           {copied ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
         </button>
@@ -285,6 +256,7 @@ function CodeBlock({ code, label }: { code: string; label: string }) {
 }
 
 function CodeTabs({ examples }: { examples: { id: string; label: string; code: string }[] }) {
+  const { t } = useTranslation()
   const [active, setActive] = useState(examples[0]?.id ?? "")
   const current = examples.find((example) => example.id === active) ?? examples[0]
 
@@ -307,7 +279,9 @@ function CodeTabs({ examples }: { examples: { id: string; label: string; code: s
           </button>
         ))}
       </div>
-      {current ? <CodeBlock code={current.code} label={`${current.label} example`} /> : null}
+      {current ? (
+        <CodeBlock code={current.code} label={t("apiDocs.exampleLabel", { label: current.label })} />
+      ) : null}
     </div>
   )
 }
@@ -318,7 +292,7 @@ function Callout({
   children,
 }: {
   tone?: "info" | "warning" | "success"
-  title: string
+  title: ReactNode
   children: ReactNode
 }) {
   const styles = {
@@ -361,19 +335,16 @@ function DocSection({
   )
 }
 
-function EndpointTable({
-  endpoints,
-}: {
-  endpoints: { method: Method; path: string; description: string }[]
-}) {
+function EndpointTable({ endpoints }: { endpoints: Endpoint[] }) {
+  const { t } = useTranslation()
   return (
     <div className="overflow-hidden rounded-xl bg-card ring-1 ring-foreground/10">
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="w-20">Method</TableHead>
-            <TableHead className="w-64">Path</TableHead>
-            <TableHead>Purpose</TableHead>
+            <TableHead className="w-20">{t("apiDocs.endpoints.method")}</TableHead>
+            <TableHead className="w-64">{t("apiDocs.endpoints.path")}</TableHead>
+            <TableHead>{t("apiDocs.endpoints.purpose")}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -385,7 +356,9 @@ function EndpointTable({
               <TableCell>
                 <code className="font-mono text-xs">{endpoint.path}</code>
               </TableCell>
-              <TableCell className="whitespace-normal text-muted-foreground">{endpoint.description}</TableCell>
+              <TableCell className="whitespace-normal text-muted-foreground">
+                {t(endpoint.descriptionKey, CODE_PARAMS)}
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>
@@ -427,6 +400,7 @@ function QuickstartStep({
 }
 
 export function ApiDocsLayout() {
+  const { t } = useTranslation()
   const [origin, setOrigin] = useState("https://your-worker.workers.dev")
   const [activeSection, setActiveSection] = useState("overview")
 
@@ -553,14 +527,12 @@ res.raise_for_status()  # 202 when queued`
                 <div className="max-w-2xl space-y-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant="outline" className="font-mono">OpenAPI 3.1</Badge>
-                    <Badge variant="secondary">Developer guide</Badge>
+                    <Badge variant="secondary">{t("apiDocs.developerGuide")}</Badge>
                   </div>
                   <div className="space-y-2">
-                    <h1 className="text-3xl font-medium tracking-tight">API reference</h1>
+                    <h1 className="text-3xl font-medium tracking-tight">{t("apiDocs.title")}</h1>
                     <p className="text-sm leading-relaxed text-muted-foreground sm:text-base">
-                      Send transactional email from your backend through your own SMTP account.
-                      This guide covers authentication, request shapes, the asynchronous delivery
-                      lifecycle, SMTP behavior, and the full endpoint surface.
+                      {t("apiDocs.intro")}
                     </p>
                   </div>
                 </div>
@@ -572,7 +544,7 @@ res.raise_for_status()  # 202 when queued`
                     className={buttonVariants({ variant: "outline", size: "sm" })}
                   >
                     <BookOpenIcon />
-                    Scalar reference
+                    {t("apiDocs.scalarReference")}
                     <ExternalLinkIcon />
                   </a>
                   <a
@@ -600,7 +572,7 @@ res.raise_for_status()  # 202 when queued`
                           : "text-muted-foreground hover:bg-muted hover:text-foreground"
                       }`}
                     >
-                      {section.label}
+                      {t(section.labelKey)}
                     </a>
                   ))}
                 </div>
@@ -610,7 +582,7 @@ res.raise_for_status()  # 202 when queued`
                 <aside className="hidden lg:block">
                   <nav className="sticky top-6 space-y-1 border-l pl-4">
                     <p className="mb-2 text-[11px] font-medium text-muted-foreground">
-                      On this page
+                      {t("apiDocs.onThisPage")}
                     </p>
                     {SECTIONS.map((section) => (
                       <a
@@ -623,7 +595,7 @@ res.raise_for_status()  # 202 when queued`
                             : "text-muted-foreground hover:text-foreground"
                         }`}
                       >
-                        {section.label}
+                        {t(section.labelKey)}
                       </a>
                     ))}
                   </nav>
@@ -632,182 +604,175 @@ res.raise_for_status()  # 202 when queued`
                 <div className="min-w-0 space-y-12">
                   <DocSection
                     id="overview"
-                    title="Overview"
-                    description="MakiSend is a transactional email API running on a single Cloudflare Worker. The Worker serves both this dashboard and the API on the same origin."
+                    title={t("apiDocs.section.overview")}
+                    description={t("apiDocs.overview.description")}
                   >
                     <div className="grid gap-4 sm:grid-cols-3">
                       <Card size="sm">
                         <CardHeader>
                           <MailIcon className="mb-1 size-4 text-muted-foreground" />
-                          <CardTitle>Your SMTP account</CardTitle>
-                          <CardDescription>Credentials stay encrypted in D1 and are never returned by the API.</CardDescription>
+                          <CardTitle>{t("apiDocs.overview.smtpTitle")}</CardTitle>
+                          <CardDescription>{t("apiDocs.overview.smtpBody")}</CardDescription>
                         </CardHeader>
                       </Card>
                       <Card size="sm">
                         <CardHeader>
                           <KeyRoundIcon className="mb-1 size-4 text-muted-foreground" />
-                          <CardTitle>One key per config</CardTitle>
-                          <CardDescription>An API key selects the SMTP configuration used for each send.</CardDescription>
+                          <CardTitle>{t("apiDocs.overview.keyTitle")}</CardTitle>
+                          <CardDescription>{t("apiDocs.overview.keyBody")}</CardDescription>
                         </CardHeader>
                       </Card>
                       <Card size="sm">
                         <CardHeader>
                           <SendIcon className="mb-1 size-4 text-muted-foreground" />
-                          <CardTitle>Async by design</CardTitle>
-                          <CardDescription>The API returns 202 immediately; delivery continues in a durable workflow.</CardDescription>
+                          <CardTitle>{t("apiDocs.overview.asyncTitle")}</CardTitle>
+                          <CardDescription>{t("apiDocs.overview.asyncBody")}</CardDescription>
                         </CardHeader>
                       </Card>
                     </div>
 
                     <div className="rounded-xl border bg-muted/25 p-4">
-                      <p className="mb-4 text-xs font-medium text-muted-foreground">Request flow</p>
+                      <p className="mb-4 text-xs font-medium text-muted-foreground">{t("apiDocs.overview.requestFlow")}</p>
                       <div className="flex flex-col gap-3 text-sm sm:flex-row sm:items-center">
-                        {["POST /send-email", "D1 pending log", "Cloudflare Queue", "Workflow", "SMTP provider"].map(
-                          (step, index, steps) => (
-                            <div key={step} className="flex items-center gap-3 sm:flex-1">
-                              <span className="flex size-6 shrink-0 items-center justify-center rounded-full border bg-background font-mono text-[10px]">
-                                {index + 1}
-                              </span>
-                              <span className="min-w-0 flex-1 font-medium">{step}</span>
-                              {index < steps.length - 1 ? (
-                                <ArrowRightIcon className="hidden size-3.5 shrink-0 text-muted-foreground sm:block" />
-                              ) : null}
-                            </div>
-                          ),
-                        )}
+                        {[
+                          "POST /send-email",
+                          t("apiDocs.overview.flowPendingLog"),
+                          "Cloudflare Queue",
+                          "Workflow",
+                          t("apiDocs.overview.flowSmtpProvider"),
+                        ].map((step, index, steps) => (
+                          <div key={index} className="flex items-center gap-3 sm:flex-1">
+                            <span className="flex size-6 shrink-0 items-center justify-center rounded-full border bg-background font-mono text-[10px]">
+                              {index + 1}
+                            </span>
+                            <span className="min-w-0 flex-1 font-medium">{step}</span>
+                            {index < steps.length - 1 ? (
+                              <ArrowRightIcon className="hidden size-3.5 shrink-0 text-muted-foreground sm:block" />
+                            ) : null}
+                          </div>
+                        ))}
                       </div>
                     </div>
 
-                    <Callout tone="info" title="The API does not wait for delivery">
-                      A <InlineCode>202</InlineCode> means the email is stored and queued. Open{" "}
-                      <a href="/dashboard/email-logs" className="font-medium text-foreground underline underline-offset-4">
-                        Email logs
-                      </a>{" "}
-                      to follow its status and failure history.
+                    <Callout tone="info" title={t("apiDocs.overview.noWaitTitle")}>
+                      {richText(t("apiDocs.overview.noWaitBody"), {
+                        status: <InlineCode>202</InlineCode>,
+                        link: (
+                          <a href="/dashboard/email-logs" className="font-medium text-foreground underline underline-offset-4">
+                            {t("apiDocs.overview.emailLogsLink")}
+                          </a>
+                        ),
+                      })}
                     </Callout>
                   </DocSection>
 
                   <DocSection
                     id="quickstart"
-                    title="Quickstart"
-                    description="Connect an SMTP account, create an API key for it, then send your first message."
+                    title={t("apiDocs.section.quickstart")}
+                    description={t("apiDocs.quickstart.description")}
                   >
                     <div className="grid gap-3 md:grid-cols-3">
                       <QuickstartStep
                         number="1"
-                        title="Connect SMTP"
-                        description="Add your provider hostname, port, TLS mode, credentials, and sender address."
+                        title={t("apiDocs.quickstart.step1Title")}
+                        description={t("apiDocs.quickstart.step1Body")}
                         href="/dashboard/smtp-config"
-                        action="Open SMTP configuration"
+                        action={t("apiDocs.quickstart.step1Action")}
                       />
                       <QuickstartStep
                         number="2"
-                        title="Create an API key"
-                        description="Link the key to the SMTP configuration. Copy it when it is shown; it cannot be recovered."
+                        title={t("apiDocs.quickstart.step2Title")}
+                        description={t("apiDocs.quickstart.step2Body")}
                         href="/dashboard/api-keys"
-                        action="Open API keys"
+                        action={t("apiDocs.quickstart.step2Action")}
                       />
                       <QuickstartStep
                         number="3"
-                        title="Send a request"
-                        description="POST to /send-email with your key and a JSON body. A 202 means it is queued."
+                        title={t("apiDocs.quickstart.step3Title")}
+                        description={t("apiDocs.quickstart.step3Body")}
                         href="#sending"
-                        action="See an example"
+                        action={t("apiDocs.quickstart.step3Action")}
                       />
                     </div>
 
                     <Card>
                       <CardHeader>
-                        <CardTitle>Base URL</CardTitle>
-                        <CardDescription>
-                          Every API request uses this origin. The dashboard and the API share it in production.
-                        </CardDescription>
+                        <CardTitle>{t("apiDocs.quickstart.baseUrlTitle")}</CardTitle>
+                        <CardDescription>{t("apiDocs.quickstart.baseUrlBody")}</CardDescription>
                       </CardHeader>
                       <CardContent>
-                        <CodeBlock code={origin} label="base URL" />
+                        <CodeBlock code={origin} label={t("apiDocs.quickstart.baseUrlLabel")} />
                       </CardContent>
                     </Card>
                   </DocSection>
 
                   <DocSection
                     id="authentication"
-                    title="Authentication"
-                    description="The public send endpoint accepts a per-user API key. Dashboard routes use a Better Auth session cookie instead."
+                    title={t("apiDocs.section.authentication")}
+                    description={t("apiDocs.auth.description")}
                   >
                     <div className="grid gap-4 md:grid-cols-2">
                       <Card>
                         <CardHeader>
-                          <CardTitle>API key</CardTitle>
-                          <CardDescription>For server-to-server requests to POST /send-email.</CardDescription>
+                          <CardTitle>{t("apiDocs.auth.apiKey")}</CardTitle>
+                          <CardDescription>{t("apiDocs.auth.apiKeyBody")}</CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-3">
-                          <CodeBlock code="x-api-key: mk_your_api_key" label="preferred header" />
-                          <CodeBlock code="Authorization: Bearer mk_your_api_key" label="alternative header" />
+                          <CodeBlock code="x-api-key: mk_your_api_key" label={t("apiDocs.auth.preferredHeader")} />
+                          <CodeBlock code="Authorization: Bearer mk_your_api_key" label={t("apiDocs.auth.alternativeHeader")} />
                         </CardContent>
                       </Card>
                       <Card>
                         <CardHeader>
-                          <CardTitle>Dashboard session</CardTitle>
-                          <CardDescription>For the configuration, template, log, and metrics routes.</CardDescription>
+                          <CardTitle>{t("apiDocs.auth.session")}</CardTitle>
+                          <CardDescription>{t("apiDocs.auth.sessionBody")}</CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-3 text-sm text-muted-foreground">
+                          <p>{t("apiDocs.auth.sessionCookie")}</p>
                           <p>
-                            Sign in through the dashboard and the browser sends the Better Auth session
-                            cookie automatically. Do not use dashboard routes from a server with an API key.
-                          </p>
-                          <p>
-                            Auth routes live under <InlineCode>/api/auth/*</InlineCode>.
+                            {richText(t("apiDocs.auth.authRoutes"), { path: <InlineCode>/api/auth/*</InlineCode> })}
                           </p>
                         </CardContent>
                       </Card>
                     </div>
 
-                    <Callout tone="warning" title="Keep the key on your server">
-                      The full key is shown once at creation. Store it in a secret manager or server-side
-                      environment variable. Never ship it in browser code, a mobile app, or a public repository.
+                    <Callout tone="warning" title={t("apiDocs.auth.keepKeyTitle")}>
+                      {t("apiDocs.auth.keepKeyBody")}
                     </Callout>
                   </DocSection>
 
                   <DocSection
                     id="sending"
-                    title="Sending email"
-                    description="POST /send-email accepts either inline content or a template reference, never both. Unknown fields are rejected."
+                    title={t("apiDocs.section.sending")}
+                    description={t("apiDocs.sending.description")}
                   >
                     <Card>
                       <CardHeader>
                         <div className="flex flex-wrap items-center gap-2">
                           <MethodBadge method="POST" />
                           <CardTitle className="font-mono text-sm">/send-email</CardTitle>
-                          <Badge variant="secondary">API key</Badge>
+                          <Badge variant="secondary">{t("apiDocs.auth.apiKey")}</Badge>
                         </div>
-                        <CardDescription>
-                          Queues the message and returns immediately. The response includes an emailId for tracking.
-                        </CardDescription>
+                        <CardDescription>{t("apiDocs.sending.endpointBody")}</CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-6">
                         <div className="space-y-2">
-                          <h3 className="text-sm font-medium">Inline body</h3>
+                          <h3 className="text-sm font-medium">{t("apiDocs.sending.inlineBody")}</h3>
                           <div className="overflow-hidden rounded-xl ring-1 ring-foreground/10">
                             <Table>
                               <TableHeader>
                                 <TableRow>
-                                  <TableHead>Field</TableHead>
-                                  <TableHead>Type</TableHead>
-                                  <TableHead>Rules</TableHead>
+                                  <TableHead>{t("apiDocs.sending.field")}</TableHead>
+                                  <TableHead>{t("apiDocs.sending.type")}</TableHead>
+                                  <TableHead>{t("apiDocs.sending.rules")}</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
-                                {[
-                                  ["to", "string", "Valid recipient email address, up to 320 characters."],
-                                  ["subject", "string", "3 to 500 characters; no line breaks."],
-                                  ["text", "string", "Plain-text body, 10 to 20,000 characters."],
-                                  ["html", "string", "HTML body, 1 to 100,000 characters; sanitized before sending."],
-                                  ["attachments", "array, optional", "Resend's shape: [{ filename, content (base64), content_type? }]. See Attachments below."],
-                                ].map(([field, type, rule]) => (
+                                {INLINE_FIELDS.map(({ field, type, typeKey, ruleKey }) => (
                                   <TableRow key={field}>
                                     <TableCell><InlineCode>{field}</InlineCode></TableCell>
-                                    <TableCell className="text-muted-foreground">{type}</TableCell>
-                                    <TableCell className="whitespace-normal text-muted-foreground">{rule}</TableCell>
+                                    <TableCell className="text-muted-foreground">{typeKey ? t(typeKey) : type}</TableCell>
+                                    <TableCell className="whitespace-normal text-muted-foreground">{t(ruleKey, CODE_PARAMS)}</TableCell>
                                   </TableRow>
                                 ))}
                               </TableBody>
@@ -825,12 +790,12 @@ res.raise_for_status()  # 202 when queued`
 
                         <div className="grid gap-4 sm:grid-cols-2">
                           <div className="space-y-2">
-                            <h3 className="text-sm font-medium">Success</h3>
-                            <CodeBlock code={successExample} label="202 response" />
+                            <h3 className="text-sm font-medium">{t("apiDocs.sending.success")}</h3>
+                            <CodeBlock code={successExample} label={t("apiDocs.sending.successLabel")} />
                           </div>
                           <div className="space-y-2">
-                            <h3 className="text-sm font-medium">Validation error</h3>
-                            <CodeBlock code={validationExample} label="400 response" />
+                            <h3 className="text-sm font-medium">{t("apiDocs.sending.validationError")}</h3>
+                            <CodeBlock code={validationExample} label={t("apiDocs.sending.validationLabel")} />
                           </div>
                         </div>
                       </CardContent>
@@ -840,33 +805,34 @@ res.raise_for_status()  # 202 when queued`
 
                     <Card>
                       <CardHeader>
-                        <CardTitle>Idempotency</CardTitle>
+                        <CardTitle>{t("apiDocs.idempotency.title")}</CardTitle>
                         <CardDescription>
-                          Add an <InlineCode>Idempotency-Key</InlineCode> header when a timeout could make
-                          your client retry the same send.
+                          {richText(t("apiDocs.idempotency.description"), {
+                            header: <InlineCode>Idempotency-Key</InlineCode>,
+                          })}
                         </CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-4">
                         <p className="text-sm text-muted-foreground">
-                          The same key and identical body replay the original response for 24 hours. Reusing
-                          the key with a different body, or while the first request is still running, returns{" "}
-                          <InlineCode>409</InlineCode>. Successful replays include{" "}
-                          <InlineCode>Idempotency-Replayed: true</InlineCode>.
+                          {richText(t("apiDocs.idempotency.body"), {
+                            conflict: <InlineCode>409</InlineCode>,
+                            replayed: <InlineCode>Idempotency-Replayed: true</InlineCode>,
+                          })}
                         </p>
-                        <CodeBlock code={idempotencyExample} label="idempotent request" />
+                        <CodeBlock code={idempotencyExample} label={t("apiDocs.idempotency.label")} />
                       </CardContent>
                     </Card>
                   </DocSection>
 
                   <DocSection
                     id="lifecycle"
-                    title="Delivery lifecycle"
-                    description="After the 202, the queue consumer starts a durable workflow. Every transition is appended to the email history."
+                    title={t("apiDocs.section.lifecycle")}
+                    description={t("apiDocs.lifecycle.description")}
                   >
                     <Card>
                       <CardHeader>
-                        <CardTitle>Status timeline</CardTitle>
-                        <CardDescription>A send can visit these states, in this order.</CardDescription>
+                        <CardTitle>{t("apiDocs.lifecycle.timelineTitle")}</CardTitle>
+                        <CardDescription>{t("apiDocs.lifecycle.timelineBody")}</CardDescription>
                       </CardHeader>
                       <CardContent>
                         <ol className="relative ml-2 space-y-5 border-l pl-6">
@@ -877,9 +843,9 @@ res.raise_for_status()  # 202 when queued`
                                 <Badge variant="outline" className={`font-mono text-[10px] ${STATUS_STYLES[item.status]}`}>
                                   {item.status}
                                 </Badge>
-                                <span className="text-sm font-medium">{item.title}</span>
+                                <span className="text-sm font-medium">{t(item.titleKey)}</span>
                               </div>
-                              <p className="mt-1 text-sm text-muted-foreground">{item.description}</p>
+                              <p className="mt-1 text-sm text-muted-foreground">{t(item.descriptionKey)}</p>
                             </li>
                           ))}
                         </ol>
@@ -889,134 +855,130 @@ res.raise_for_status()  # 202 when queued`
                     <div className="grid gap-4 md:grid-cols-2">
                       <Card>
                         <CardHeader>
-                          <CardTitle>Retries</CardTitle>
+                          <CardTitle>{t("apiDocs.lifecycle.retriesTitle")}</CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-3 text-sm text-muted-foreground">
                           <p>
-                            One initial SMTP attempt plus <strong className="text-foreground">3 retries</strong>,
-                            30 seconds apart. Transient failures stay inside the same workflow run.
+                            {richText(t("apiDocs.lifecycle.retriesBody"), {
+                              retries: <strong className="text-foreground">{t("apiDocs.lifecycle.retriesCount")}</strong>,
+                            })}
                           </p>
                           <p>
-                            Permanent failures (auth, TLS, DNS, configuration, 5xx SMTP status) stop immediately.
-                            When the budget is exhausted, the email becomes <InlineCode>failed</InlineCode> and
-                            is published to the dead-letter queue.
+                            {richText(t("apiDocs.lifecycle.permanentFailures"), {
+                              status: <InlineCode>failed</InlineCode>,
+                            })}
                           </p>
                         </CardContent>
                       </Card>
                       <Card>
                         <CardHeader>
-                          <CardTitle>Queue-level retries</CardTitle>
+                          <CardTitle>{t("apiDocs.lifecycle.queueRetriesTitle")}</CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-3 text-sm text-muted-foreground">
-                          <p>
-                            If the Queue consumer cannot start the workflow itself, Cloudflare retries with
-                            exponential backoff. After the queue retry budget, a failed history row is written
-                            and the message moves to the DLQ.
-                          </p>
-                          <p>
-                            The workflow instance id is the emailId, so a duplicate queue delivery cannot start
-                            a second run for the same email.
-                          </p>
+                          <p>{t("apiDocs.lifecycle.queueRetriesBody")}</p>
+                          <p>{t("apiDocs.lifecycle.instanceId")}</p>
                         </CardContent>
                       </Card>
                     </div>
 
-                    <Callout tone="success" title="At-least-once delivery">
-                      SMTP has no idempotency contract. If the provider accepts a message but MakiSend cannot
-                      record the receipt, a duplicate is possible. Use a stable <InlineCode>Idempotency-Key</InlineCode>{" "}
-                      on your HTTP request to prevent duplicate submissions.
+                    <Callout tone="success" title={t("apiDocs.lifecycle.atLeastOnceTitle")}>
+                      {richText(t("apiDocs.lifecycle.atLeastOnceBody"), {
+                        header: <InlineCode>Idempotency-Key</InlineCode>,
+                      })}
                     </Callout>
                   </DocSection>
 
                   <DocSection
                     id="smtp"
-                    title="SMTP & deliverability"
-                    description="MakiSend connects directly to the SMTP provider configured for the API key. There is no shared relay."
+                    title={t("apiDocs.section.smtp")}
+                    description={t("apiDocs.smtp.description")}
                   >
                     <div className="grid gap-4 md:grid-cols-2">
                       <Card>
                         <CardHeader>
-                          <CardTitle>Ports and TLS</CardTitle>
+                          <CardTitle>{t("apiDocs.smtp.portsTitle")}</CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-3 text-sm text-muted-foreground">
                           <p>
-                            Allowed ports: <InlineCode>465</InlineCode>, <InlineCode>587</InlineCode>,{" "}
-                            <InlineCode>2465</InlineCode>, <InlineCode>2525</InlineCode>,{" "}
-                            <InlineCode>2587</InlineCode>. Port 25 is blocked by Cloudflare Workers.
+                            {richText(t("apiDocs.smtp.allowedPorts"), {
+                              ports: (
+                                <>
+                                  <InlineCode>465</InlineCode>, <InlineCode>587</InlineCode>,{" "}
+                                  <InlineCode>2465</InlineCode>, <InlineCode>2525</InlineCode>,{" "}
+                                  <InlineCode>2587</InlineCode>
+                                </>
+                              ),
+                            })}
                           </p>
                           <p>
-                            Ports 465 and 2465 default to implicit <InlineCode>tls</InlineCode>; the other
-                            ports default to <InlineCode>starttls</InlineCode>. The mode can be chosen explicitly.
+                            {richText(t("apiDocs.smtp.tlsModes"), {
+                              tls: <InlineCode>tls</InlineCode>,
+                              starttls: <InlineCode>starttls</InlineCode>,
+                            })}
                           </p>
-                          <p>
-                            TLS certificates are verified. Hostnames are resolved and connected socket-by-socket;
-                            private and local IPv4 targets are rejected.
-                          </p>
+                          <p>{t("apiDocs.smtp.certificates")}</p>
                         </CardContent>
                       </Card>
                       <Card>
                         <CardHeader>
-                          <CardTitle>Checks and health</CardTitle>
+                          <CardTitle>{t("apiDocs.smtp.checksTitle")}</CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-3 text-sm text-muted-foreground">
                           <p>
-                            Use <InlineCode>/smtp-config/check</InlineCode> before saving credentials, or{" "}
-                            <InlineCode>/smtp-config/{"{id}"}/check</InlineCode> for a saved config.
+                            {richText(t("apiDocs.smtp.checks"), {
+                              check: <InlineCode>/smtp-config/check</InlineCode>,
+                              savedCheck: <InlineCode>/smtp-config/{"{id}"}/check</InlineCode>,
+                            })}
                           </p>
-                          <p>
-                            Test sends exercise the full SMTP path but are not written to Email Logs. A daily
-                            cron checks every saved configuration and stores the latest result.
-                          </p>
-                          <p>
-                            Deliverability still depends on your provider and domain: configure SPF, DKIM, and
-                            DMARC with your SMTP provider.
-                          </p>
+                          <p>{t("apiDocs.smtp.testSends")}</p>
+                          <p>{t("apiDocs.smtp.deliverability")}</p>
                         </CardContent>
                       </Card>
                     </div>
 
-                    <Callout tone="warning" title="Inactive configurations">
-                      An inactive SMTP configuration cannot send. A request whose key points to an inactive
-                      config is rejected with 403; a workflow resolving an explicitly inactive config gets 409.
-                      Health checks and test sends remain available so the configuration can be repaired.
+                    <Callout tone="warning" title={t("apiDocs.smtp.inactiveTitle")}>
+                      {t("apiDocs.smtp.inactiveBody")}
                     </Callout>
                   </DocSection>
 
                   <DocSection
                     id="templates"
-                    title="Templates"
-                    description="Templates keep content reusable while variables personalize each send. The dashboard supports the full React Email visual builder (inspector, themes, export) and pasted TSX code; both store the exported HTML/text, and content is rendered before the email enters the queue."
+                    title={t("apiDocs.section.templates")}
+                    description={t("apiDocs.templates.description")}
                   >
                     <Card>
                       <CardHeader>
-                        <CardTitle>Using a template</CardTitle>
+                        <CardTitle>{t("apiDocs.templates.usingTitle")}</CardTitle>
                         <CardDescription>
-                          Send <InlineCode>to</InlineCode>, <InlineCode>templateId</InlineCode>, and an optional{" "}
-                          <InlineCode>variables</InlineCode> object. Do not send <InlineCode>subject</InlineCode>,{" "}
-                          <InlineCode>text</InlineCode>, or <InlineCode>html</InlineCode> in the same request.
+                          {richText(t("apiDocs.templates.usingBody"), {
+                            to: <InlineCode>to</InlineCode>,
+                            templateId: <InlineCode>templateId</InlineCode>,
+                            variables: <InlineCode>variables</InlineCode>,
+                            subject: <InlineCode>subject</InlineCode>,
+                            text: <InlineCode>text</InlineCode>,
+                            html: <InlineCode>html</InlineCode>,
+                          })}
                         </CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-4">
-                        <CodeBlock code={templateExample} label="template request" />
+                        <CodeBlock code={templateExample} label={t("apiDocs.templates.requestLabel")} />
                         <div className="grid gap-3 text-sm text-muted-foreground sm:grid-cols-2">
                           <p>
-                            Compose visually with the inspector or paste a React Email component, then use{" "}
-                            <InlineCode>{"{{variableName}}"}</InlineCode> in the subject, HTML, and text.
-                            Values are inserted literally; HTML values are escaped.
+                            {richText(t("apiDocs.templates.compose"), {
+                              placeholder: <InlineCode>{"{{variableName}}"}</InlineCode>,
+                            })}
                           </p>
                           <p>
-                            Pasted TSX runs only in a sandboxed browser worker; the API stores the source
-                            and compiled output. Missing variables cause a 400 before enqueueing. Up to 50
-                            variables are allowed per send.{" "}
-                            <InlineCode>POST /templates/{"{id}"}/preview</InlineCode> renders the saved
-                            template with sample values and applies the same checks.
+                            {richText(t("apiDocs.templates.sandbox"), {
+                              preview: <InlineCode>POST /templates/{"{id}"}/preview</InlineCode>,
+                            })}
                           </p>
                         </div>
                         <a
                           href="/dashboard/templates"
                           className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
                         >
-                          Manage templates
+                          {t("apiDocs.templates.manage")}
                           <ArrowRightIcon className="size-3.5" />
                         </a>
                       </CardContent>
@@ -1025,17 +987,17 @@ res.raise_for_status()  # 202 when queued`
 
                   <DocSection
                     id="endpoints"
-                    title="Endpoint reference"
-                    description="The public API and the dashboard API share one origin but use different authentication."
+                    title={t("apiDocs.section.endpoints")}
+                    description={t("apiDocs.endpoints.description")}
                   >
                     <div className="space-y-6">
                       {ENDPOINT_GROUPS.map((group) => (
-                        <div key={group.title} className="space-y-3">
+                        <div key={group.titleKey} className="space-y-3">
                           <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="text-sm font-medium">{group.title}</h3>
-                            <Badge variant="secondary">{group.auth}</Badge>
+                            <h3 className="text-sm font-medium">{t(group.titleKey)}</h3>
+                            <Badge variant="secondary">{t(group.authKey)}</Badge>
                           </div>
-                          <p className="-mt-1 text-sm text-muted-foreground">{group.description}</p>
+                          <p className="-mt-1 text-sm text-muted-foreground">{t(group.descriptionKey, CODE_PARAMS)}</p>
                           <EndpointTable endpoints={group.endpoints} />
                         </div>
                       ))}
@@ -1043,12 +1005,12 @@ res.raise_for_status()  # 202 when queued`
 
                     <div className="flex flex-col gap-3 rounded-xl border bg-muted/25 p-4 sm:flex-row sm:items-center sm:justify-between">
                       <div className="text-sm">
-                        <p className="font-medium">Need request and response schemas?</p>
-                        <p className="text-muted-foreground">The generated OpenAPI document is the canonical contract.</p>
+                        <p className="font-medium">{t("apiDocs.endpoints.schemasTitle")}</p>
+                        <p className="text-muted-foreground">{t("apiDocs.endpoints.schemasBody")}</p>
                       </div>
                       <div className="flex gap-2">
                         <a href="/docs" target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline", size: "sm" })}>
-                          Open Scalar
+                          {t("apiDocs.endpoints.openScalar")}
                           <ExternalLinkIcon />
                         </a>
                         <a href="/openapi.json" target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline", size: "sm" })}>
@@ -1061,16 +1023,16 @@ res.raise_for_status()  # 202 when queued`
 
                   <DocSection
                     id="errors"
-                    title="Errors & limits"
-                    description="Validation errors return a field-level details object. The send endpoint never waits for SMTP delivery."
+                    title={t("apiDocs.section.errors")}
+                    description={t("apiDocs.errors.description")}
                   >
                     <div className="overflow-hidden rounded-xl bg-card ring-1 ring-foreground/10">
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead className="w-20">Status</TableHead>
-                            <TableHead className="w-48">Meaning</TableHead>
-                            <TableHead>What to do</TableHead>
+                            <TableHead className="w-20">{t("apiDocs.errors.status")}</TableHead>
+                            <TableHead className="w-48">{t("apiDocs.errors.meaning")}</TableHead>
+                            <TableHead>{t("apiDocs.errors.whatToDo")}</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -1079,8 +1041,8 @@ res.raise_for_status()  # 202 when queued`
                               <TableCell>
                                 <Badge variant="outline" className="font-mono">{row.status}</Badge>
                               </TableCell>
-                              <TableCell className="font-medium">{row.meaning}</TableCell>
-                              <TableCell className="whitespace-normal text-muted-foreground">{row.detail}</TableCell>
+                              <TableCell className="font-medium">{t(row.meaningKey)}</TableCell>
+                              <TableCell className="whitespace-normal text-muted-foreground">{t(row.detailKey, CODE_PARAMS)}</TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
@@ -1089,23 +1051,23 @@ res.raise_for_status()  # 202 when queued`
 
                     <Card>
                       <CardHeader>
-                        <CardTitle>Limits</CardTitle>
-                        <CardDescription>Limits are enforced by the API before queueing or by Better Auth.</CardDescription>
+                        <CardTitle>{t("apiDocs.limits.title")}</CardTitle>
+                        <CardDescription>{t("apiDocs.limits.description")}</CardDescription>
                       </CardHeader>
                       <CardContent>
                         <div className="overflow-hidden rounded-xl ring-1 ring-foreground/10">
                           <Table>
                             <TableHeader>
                               <TableRow>
-                                <TableHead className="w-48">Item</TableHead>
-                                <TableHead>Limit</TableHead>
+                                <TableHead className="w-48">{t("apiDocs.limits.item")}</TableHead>
+                                <TableHead>{t("apiDocs.limits.limit")}</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
-                              {LIMITS.map(([item, limit]) => (
-                                <TableRow key={item}>
-                                  <TableCell className="font-medium">{item}</TableCell>
-                                  <TableCell className="whitespace-normal text-muted-foreground">{limit}</TableCell>
+                              {LIMITS.map(({ item, itemKey, limitKey }) => (
+                                <TableRow key={limitKey}>
+                                  <TableCell className="font-medium">{itemKey ? t(itemKey) : item}</TableCell>
+                                  <TableCell className="whitespace-normal text-muted-foreground">{t(limitKey)}</TableCell>
                                 </TableRow>
                               ))}
                             </TableBody>
@@ -1116,60 +1078,34 @@ res.raise_for_status()  # 202 when queued`
 
                     <Card>
                       <CardHeader>
-                        <CardTitle>Send from a file</CardTitle>
-                        <CardDescription>Useful for large HTML bodies or when building requests in a script.</CardDescription>
+                        <CardTitle>{t("apiDocs.sendFile.title")}</CardTitle>
+                        <CardDescription>{t("apiDocs.sendFile.description")}</CardDescription>
                       </CardHeader>
                       <CardContent>
-                        <CodeBlock code={sendExample} label="upload a JSON body" />
+                        <CodeBlock code={sendExample} label={t("apiDocs.sendFile.label")} />
                       </CardContent>
                     </Card>
                   </DocSection>
 
                   <DocSection
                     id="security"
-                    title="Security"
-                    description="The POC keeps credentials and message content encrypted in D1 and limits the browser attack surface."
+                    title={t("apiDocs.section.security")}
+                    description={t("apiDocs.security.description")}
                   >
                     <div className="grid gap-3 sm:grid-cols-2">
-                      {[
-                        {
-                          title: "Encrypted at rest",
-                          body: "Recipient addresses, SMTP fields, and message bodies use AES-256-GCM. The AES key is a Worker secret, not a database value.",
-                        },
-                        {
-                          title: "SMTP password is write-only",
-                          body: "Create and update accept the password, but every read response omits it. The dashboard never needs to display it.",
-                        },
-                        {
-                          title: "API keys are hashed",
-                          body: "Better Auth stores a hash and prefix. The full mk_ key is returned once, at creation.",
-                        },
-                        {
-                          title: "Verified TLS",
-                          body: "SMTP sockets verify certificates and reject private/local IPv4 targets. Plain port 25 is not available on Workers.",
-                        },
-                        {
-                          title: "Sanitized HTML",
-                          body: "A restrictive allowlist removes scripts, frames, event handlers, forms, and unsafe URL schemes before sending.",
-                        },
-                        {
-                          title: "Same-origin dashboard",
-                          body: "The Worker serves the dashboard and API together. Dashboard routes require a Better Auth session and are restricted to the configured frontend origin.",
-                        },
-                      ].map((item) => (
-                        <div key={item.title} className="rounded-xl border bg-card p-4">
+                      {SECURITY_ITEMS.map((item) => (
+                        <div key={item.titleKey} className="rounded-xl border bg-card p-4">
                           <div className="flex items-center gap-2">
                             <ShieldCheckIcon className="size-4 text-muted-foreground" />
-                            <p className="text-sm font-medium">{item.title}</p>
+                            <p className="text-sm font-medium">{t(item.titleKey)}</p>
                           </div>
-                          <p className="mt-2 text-sm text-muted-foreground">{item.body}</p>
+                          <p className="mt-2 text-sm text-muted-foreground">{t(item.bodyKey, CODE_PARAMS)}</p>
                         </div>
                       ))}
                     </div>
 
-                    <Callout tone="warning" title="Rotating AES_256_KEY breaks existing data">
-                      Ciphertexts are not versioned. Changing the Worker secret makes every encrypted recipient,
-                      body, and SMTP credential unreadable. Plan a migration before rotating it.
+                    <Callout tone="warning" title={t("apiDocs.security.rotationTitle", CODE_PARAMS)}>
+                      {t("apiDocs.security.rotationBody")}
                     </Callout>
                   </DocSection>
                 </div>

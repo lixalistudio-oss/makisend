@@ -41,6 +41,7 @@ import {
 } from "@/components/ui/select"
 import { KeyIcon, PlusIcon, EllipsisVerticalIcon, TrashIcon, CheckCircleIcon, XCircleIcon, CopyIcon, LoaderIcon, AlertTriangleIcon, ScrollTextIcon } from "lucide-react"
 import { fetchApi } from "@/lib/api"
+import { useTranslation, type UiKey } from "@/i18n"
 
 interface SmtpConfig {
   id: string
@@ -66,15 +67,15 @@ interface KeyMetrics {
   lastUsedAt: string | null
 }
 
-const RANGE_OPTIONS = [
-  { value: "7", label: "Last 7 days" },
-  { value: "30", label: "Last 30 days" },
-  { value: "90", label: "Last 90 days" },
+const RANGE_OPTIONS: { value: string; labelKey: UiKey }[] = [
+  { value: "7", labelKey: "apiKeys.range.last7" },
+  { value: "30", labelKey: "apiKeys.range.last30" },
+  { value: "90", labelKey: "apiKeys.range.last90" },
 ]
 
-function formatLastUsed(value: string | null) {
-  if (!value) return "Never"
-  return new Date(value).toLocaleDateString("en-US", {
+function formatLastUsed(value: string | null, locale: string, never: string) {
+  if (!value) return never
+  return new Date(value).toLocaleDateString(locale, {
     month: "short",
     day: "numeric",
     hour: "2-digit",
@@ -92,6 +93,7 @@ function Metric({ label, value }: { label: string; value: string }) {
 }
 
 export function ApiKeysLayout() {
+  const { t, locale } = useTranslation()
   const [metrics, setMetrics] = useState<Record<string, KeyMetrics>>({})
   const [days, setDays] = useState("7")
   const [keys, setKeys] = useState<ApiKey[]>([])
@@ -114,7 +116,7 @@ export function ApiKeysLayout() {
       setKeys(keysData.keys ?? [])
       setConfigs(configsData.configs ?? [])
     } catch {
-      toast.error("Failed to load data")
+      toast.error(t("apiKeys.toast.loadFailed"))
     } finally {
       setLoading(false)
     }
@@ -161,13 +163,13 @@ export function ApiKeysLayout() {
       })
       if (!res.ok) {
         const err = await res.json()
-        throw new Error(err.error || "Failed to create")
+        throw new Error(err.error || t("apiKeys.toast.createFailed"))
       }
       const data = await res.json()
       setNewKeyValue(data.key)
       setKeys([...keys, data.record])
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to create API key")
+      toast.error(err instanceof Error ? err.message : t("apiKeys.toast.createFailed"))
     } finally {
       setSubmitting(false)
     }
@@ -178,16 +180,16 @@ export function ApiKeysLayout() {
       const res = await fetchApi(`/api-keys/${id}`, { method: "DELETE" })
       if (!res.ok) throw new Error("Failed to delete")
       setKeys(keys.filter((k) => k.id !== id))
-      toast.success("API key deleted")
+      toast.success(t("apiKeys.toast.deleted"))
     } catch {
-      toast.error("Failed to delete API key")
+      toast.error(t("apiKeys.toast.deleteFailed"))
     }
   }
 
   const copyKey = async (key: string) => {
     try {
       await navigator.clipboard.writeText(key)
-      toast.success("API key copied to clipboard")
+      toast.success(t("apiKeys.toast.copied"))
     } catch {
       const textarea = document.createElement("textarea")
       textarea.value = key
@@ -195,7 +197,7 @@ export function ApiKeysLayout() {
       textarea.select()
       document.execCommand("copy")
       document.body.removeChild(textarea)
-      toast.success("API key copied to clipboard")
+      toast.success(t("apiKeys.toast.copied"))
     }
   }
 
@@ -213,34 +215,34 @@ export function ApiKeysLayout() {
         <div className="flex flex-1 flex-col gap-8 p-4 sm:p-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="font-heading text-[1.75rem] leading-tight font-medium tracking-[-0.03em]">API keys</h2>
+              <h2 className="font-heading text-[1.75rem] leading-tight font-medium tracking-[-0.03em]">{t("apiKeys.title")}</h2>
               <p className="text-sm text-muted-foreground">
-                Manage API keys for sending emails through your SMTP configs.
+                {t("apiKeys.subtitle")}
               </p>
             </div>
             <div className="flex items-center gap-2">
             <Select value={days} onValueChange={(v) => v && setDays(v)}>
-              <SelectTrigger className="w-[140px]" aria-label="Metrics period">
-                <SelectValue>{RANGE_OPTIONS.find((o) => o.value === days)?.label}</SelectValue>
+              <SelectTrigger className="w-[140px]" aria-label={t("apiKeys.metricsPeriod")}>
+                <SelectValue>{(() => { const o = RANGE_OPTIONS.find((o) => o.value === days); return o ? t(o.labelKey) : null })()}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {RANGE_OPTIONS.map((o) => (
-                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                  <SelectItem key={o.value} value={o.value}>{t(o.labelKey)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
             <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm() }}>
               <DialogTrigger render={<Button onClick={openCreate} />}>
                 <PlusIcon />
-                Create API key
+                {t("apiKeys.create")}
               </DialogTrigger>
               <DialogContent className="max-h-[85dvh] overflow-y-auto gap-3 sm:max-w-[425px] sm:gap-4">
                 <DialogHeader>
-                  <DialogTitle>{newKeyValue ? "API Key Created" : "Create API key"}</DialogTitle>
+                  <DialogTitle>{newKeyValue ? t("apiKeys.created") : t("apiKeys.create")}</DialogTitle>
                   <DialogDescription>
                     {newKeyValue
-                      ? "Copy this key now. You won't be able to see it again."
-                      : "Generate a new API key linked to an SMTP config."}
+                      ? t("apiKeys.createdDescription")
+                      : t("apiKeys.createDescription")}
                   </DialogDescription>
                 </DialogHeader>
                 {newKeyValue ? (
@@ -249,36 +251,35 @@ export function ApiKeysLayout() {
                       <div className="flex items-start gap-2">
                         <AlertTriangleIcon className="mt-0.5 size-4 shrink-0" />
                         <span>
-                          <strong>Copy this key now.</strong> It will not be shown again after
-                          you close this dialog or refresh the page.
+                          <strong>{t("apiKeys.copyNowStrong")}</strong> {t("apiKeys.copyNowWarning")}
                         </span>
                       </div>
                     </div>
                     <Field>
-                      <FieldLabel>API Key</FieldLabel>
+                      <FieldLabel>{t("apiKeys.keyLabel")}</FieldLabel>
                       <div className="flex gap-2">
                         <Input readOnly value={newKeyValue} className="font-mono text-xs" />
-                        <Button variant="outline" size="icon" className="shrink-0" onClick={() => copyKey(newKeyValue)}>
+                        <Button variant="outline" size="icon" className="shrink-0" aria-label={t("apiKeys.copyKey")} title={t("apiKeys.copyKey")} onClick={() => copyKey(newKeyValue)}>
                           <CopyIcon />
                         </Button>
                       </div>
                     </Field>
                     <DialogFooter className="flex-row justify-end">
                       <Button onClick={() => { setOpen(false); resetForm() }}>
-                        I&apos;ve copied the key — Done
+                        {t("apiKeys.copiedDone")}
                       </Button>
                     </DialogFooter>
                   </FieldGroup>
                 ) : (
                   <FieldGroup className="py-1 gap-1.5 sm:gap-2">
                     <Field>
-                      <FieldLabel>SMTP configuration</FieldLabel>
+                      <FieldLabel>{t("apiKeys.smtpConfig")}</FieldLabel>
                       <Select
                         value={selectedConfigId}
                         onValueChange={(value) => setSelectedConfigId(value ?? "")}
                       >
                         <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Select an SMTP config">
+                          <SelectValue placeholder={t("apiKeys.selectSmtpConfig")}>
                             {selectedConfigId
                               ? configs.find((c) => c.id === selectedConfigId)
                                 ? `${configs.find((c) => c.id === selectedConfigId)!.smtpHostname} — ${configs.find((c) => c.id === selectedConfigId)!.senderEmail}`
@@ -295,19 +296,19 @@ export function ApiKeysLayout() {
                         </SelectContent>
                       </Select>
                       <FieldDescription className="text-xs leading-snug sm:text-sm">
-                        The SMTP config this key will send through. Several keys can share one config.
+                        {t("apiKeys.smtpConfigHelp")}
                       </FieldDescription>
                     </Field>
                     <Field>
-                      <FieldLabel htmlFor="keyName">Key name</FieldLabel>
+                      <FieldLabel htmlFor="keyName">{t("apiKeys.keyName")}</FieldLabel>
                       <Input
                         id="keyName"
-                        placeholder="e.g., Production Key"
+                        placeholder={t("apiKeys.keyNamePlaceholder")}
                         value={keyName}
                         onChange={(e) => setKeyName(e.target.value)}
                       />
                       <FieldDescription className="text-xs leading-snug sm:text-sm">
-                        Optional label to identify this key.
+                        {t("apiKeys.keyNameHelp")}
                       </FieldDescription>
                     </Field>
                   </FieldGroup>
@@ -315,10 +316,10 @@ export function ApiKeysLayout() {
                 {!newKeyValue && (
                   <DialogFooter className="flex-row justify-end">
                     <Button variant="outline" onClick={() => { setOpen(false); resetForm() }}>
-                      Cancel
+                      {t("common.cancel")}
                     </Button>
                     <Button onClick={handleSubmit} disabled={!selectedConfigId || submitting}>
-                      {submitting ? "Creating..." : "Create"}
+                      {submitting ? t("apiKeys.creating") : t("apiKeys.createButton")}
                     </Button>
                   </DialogFooter>
                 )}
@@ -336,7 +337,7 @@ export function ApiKeysLayout() {
           ) : keys.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <KeyIcon className="size-10 text-muted-foreground mb-3" />
-              <p className="text-muted-foreground">No API keys yet. Create one to start sending emails.</p>
+              <p className="text-muted-foreground">{t("apiKeys.empty")}</p>
             </div>
           ) : (
             <ItemGroup className="gap-5">
@@ -349,23 +350,23 @@ export function ApiKeysLayout() {
                       <KeyIcon className="size-5" />
                     </ItemMedia>
                     <ItemContent className="gap-1.5">
-                      <ItemTitle className="text-base">{key.name || "Unnamed key"}</ItemTitle>
+                      <ItemTitle className="text-base">{key.name || t("apiKeys.unnamed")}</ItemTitle>
                       <ItemDescription className="font-mono text-xs">
                         {maskedKeyDisplay(key)}
                       </ItemDescription>
-                      <ItemDescription>{config?.smtpHostname ?? "Unknown config"}</ItemDescription>
+                      <ItemDescription>{config?.smtpHostname ?? t("apiKeys.unknownConfig")}</ItemDescription>
                       <div className="grid grid-cols-2 gap-x-6 gap-y-2 pt-2 sm:grid-cols-5">
-                        <Metric label="Sent" value={m ? String(m.totalSent) : "—"} />
-                        <Metric label="Delivered" value={m && m.totalSent > 0 ? `${m.successRate}%` : "—"} />
-                        <Metric label="Failed" value={m ? String(m.failureCount) : "—"} />
-                        <Metric label="Avg. duration" value={m?.avgProcessingTimeMs != null ? `${m.avgProcessingTimeMs}ms` : "—"} />
-                        <Metric label="Last used" value={m ? formatLastUsed(m.lastUsedAt) : "—"} />
+                        <Metric label={t("apiKeys.metric.sent")} value={m ? String(m.totalSent) : "—"} />
+                        <Metric label={t("apiKeys.metric.delivered")} value={m && m.totalSent > 0 ? `${m.successRate}%` : "—"} />
+                        <Metric label={t("apiKeys.metric.failed")} value={m ? String(m.failureCount) : "—"} />
+                        <Metric label={t("apiKeys.metric.avgDuration")} value={m?.avgProcessingTimeMs != null ? t("apiKeys.durationMs", { ms: m.avgProcessingTimeMs }) : "—"} />
+                        <Metric label={t("apiKeys.metric.lastUsed")} value={m ? formatLastUsed(m.lastUsedAt, locale, t("common.never")) : "—"} />
                       </div>
                     </ItemContent>
                     <ItemActions>
                       <Badge variant="outline" className={key.enabled ? "text-success" : "text-muted-foreground"}>
                         {key.enabled ? <CheckCircleIcon /> : <XCircleIcon />}
-                        {key.enabled ? "Active" : "Disabled"}
+                        {key.enabled ? t("apiKeys.active") : t("apiKeys.disabled")}
                       </Badge>
                       <DropdownMenu>
                         <DropdownMenuTrigger
@@ -374,16 +375,16 @@ export function ApiKeysLayout() {
                           }
                         >
                           <EllipsisVerticalIcon />
-                          <span className="sr-only">Actions</span>
+                          <span className="sr-only">{t("apiKeys.actions")}</span>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-40">
                           <DropdownMenuItem onClick={() => { window.location.href = `/dashboard/email-logs?apiKey=${encodeURIComponent(key.id)}` }}>
                             <ScrollTextIcon />
-                            View logs
+                            {t("apiKeys.viewLogs")}
                           </DropdownMenuItem>
                           <DropdownMenuItem variant="destructive" onClick={() => handleDelete(key.id)}>
                             <TrashIcon />
-                            Delete
+                            {t("common.delete")}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
