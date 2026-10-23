@@ -8,6 +8,13 @@
       "when": 1791492271582,
       "tag": "0000_wakeful_virginia_dare",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1792048469213,
+      "tag": "0001_majestic_the_phantom",
+      "breakpoints": true
     }
   ]
 }

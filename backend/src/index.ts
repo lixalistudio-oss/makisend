@@ -15,6 +15,7 @@ import { createSmtpConfigController, SmtpConfigRepository, SmtpConfigService } f
 import { createApiKeysController, ApiKeyRepository, ApiKeyService } from "@/api-keys";
 import { createEmailLogsController, EmailLogRepository, EmailLogService } from "@/email-logs";
 import { createDashboardController, DashboardRepository, DashboardService } from "@/dashboard";
+import { createTemplatesController, TemplateRepository, TemplateService } from "@/templates";
 import { sendEmailQueueConsumer } from "@/queue/send-email.consumer";
 
 // --- Better Auth ---
@@ -32,6 +33,7 @@ import type { ISmtpConfigRepository } from "@/smtp-config/smtp-config.types";
 import type { IApiKeyRepository } from "@/api-keys/api-keys.types";
 import type { IEmailLogRepository } from "@/email-logs/email-logs.types";
 import type { IDashboardRepository } from "@/dashboard/dashboard.types";
+import type { ITemplateRepository } from "@/templates/templates.types";
 
 // --- Cloudflare Worker environment bindings ---
 export type Bindings = {
@@ -82,10 +84,12 @@ const deps = {
   apiKeyRepository: null as IApiKeyRepository | null,
   emailLogRepository: null as IEmailLogRepository | null,
   dashboardRepository: null as IDashboardRepository | null,
+  templateRepository: null as ITemplateRepository | null,
   smtpConfigService: null as SmtpConfigService | null,
   apiKeyService: null as ApiKeyService | null,
   emailLogService: null as EmailLogService | null,
   dashboardService: null as DashboardService | null,
+  templateService: null as TemplateService | null,
   aesKey: null as string | null,
   dbInitialized: false,
 
@@ -99,6 +103,7 @@ const deps = {
     this.apiKeyRepository = new ApiKeyRepository(db, auth);
     this.emailLogRepository = new EmailLogRepository(db);
     this.dashboardRepository = new DashboardRepository(db);
+    this.templateRepository = new TemplateRepository(db);
     this.aesKey = env.AES_256_KEY;
     this.dbInitialized = true;
   },
@@ -112,6 +117,7 @@ const deps = {
     this.apiKeyService = new ApiKeyService(this.apiKeyRepository!);
     this.emailLogService = new EmailLogService(this.emailLogRepository!, this.aesKey!);
     this.dashboardService = new DashboardService(this.dashboardRepository!, this.aesKey!);
+    this.templateService = new TemplateService(this.templateRepository!);
   },
 };
 
@@ -193,7 +199,10 @@ app.use("*", async (c, next) => {
 });
 
 // Mount send-email controller — produces to the Cloudflare Queue
-const sendEmailController = createSendEmailController(() => deps.emailRepository!);
+const sendEmailController = createSendEmailController(
+  () => deps.emailRepository!,
+  () => deps.templateRepository!,
+);
 app.route("/send-email", sendEmailController);
 
 // Mount SMTP config controller with session auth
@@ -235,6 +244,16 @@ app.use("/dashboard/*", async (c, next) => {
   return sessionMiddleware(auth)(c, next);
 });
 app.route("/dashboard", dashboardController);
+
+// Mount templates controller with session auth (dashboard CRUD)
+const templatesController = createTemplatesController(
+  () => deps.templateService!,
+);
+app.use("/templates*", async (c, next) => {
+  const auth = getAuthInstance(c.env);
+  return sessionMiddleware(auth)(c, next);
+});
+app.route("/templates", templatesController);
 
 // Worker entrypoint: HTTP requests via Hono, queue messages via the consumer.
 // The Hono app is also exported by name so tests can call `app.request(...)`.
