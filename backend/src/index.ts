@@ -113,6 +113,7 @@ const deps = {
       this.aesKey!,
       this.smtpConfigRepository!,
       (smtpConfigId) => resolveTransportFor(env, smtpConfigId),
+      env.SEND_EMAIL_QUEUE,
     );
   },
 
@@ -127,6 +128,7 @@ const deps = {
       this.aesKey!,
       this.smtpConfigRepository!,
       (smtpConfigId) => resolveTransportFor(env, smtpConfigId),
+      env.SEND_EMAIL_QUEUE,
     );
   },
 

@@ -21,6 +21,12 @@ export class SmtpEmailTransport implements IEmailTransport {
       tls: {
         rejectUnauthorized: true,
       },
+      // Keep a single attempt well inside the function's 30s execution budget
+      // (`timeouts.finish`), leaving room for a few Inngest retries. Nodemailer's
+      // defaults (2min / 30s / 10min) would blow the window on one slow dial.
+      connectionTimeout: 5_000,
+      greetingTimeout: 5_000,
+      socketTimeout: 10_000,
     } as any); // eslint-disable-line @typescript-eslint/no-explicit-any
   }
 

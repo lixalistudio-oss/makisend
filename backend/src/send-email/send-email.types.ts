@@ -56,6 +56,14 @@ export interface SendEmailQueueMessage {
     userId: string;
     apiKeyId?: string | null;
     smtpConfigId?: string | null;
+    /**
+     * Number of times this message has been bounced back onto the queue after
+     * an Inngest run died (retries exhausted or the 30s budget blown). The
+     * `onFailure` handler abandons the send once it reaches
+     * `MAX_QUEUE_CYCLES`, which is what keeps transient errors from looping
+     * forever.
+     */
+    queueCycles: number;
   };
 }
 

@@ -1,4 +1,4 @@
-import { getSendEmailFunction } from "./send-email";
+import { getSendEmailFunction, getSendEmailTimeoutFunction } from "./send-email";
 import {
   getCreateSmtpConfigFunction,
   getUpdateSmtpConfigFunction,
@@ -10,6 +10,7 @@ import {
 export function getFunctions() {
   return [
     getSendEmailFunction(),
+    getSendEmailTimeoutFunction(),
     getCreateSmtpConfigFunction(),
     getUpdateSmtpConfigFunction(),
     getDeleteSmtpConfigFunction(),
