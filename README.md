@@ -1,12 +1,19 @@
 # MakiSend
 
-MakiSend is a Proof of Concept (POC) for a serverless transactional email API, deployed on **Cloudflare Workers**.
+**Transactional email, one API call away. No mail server to run.**
 
-The POC sets out to answer three questions:
+MakiSend is a self-hosted, serverless email API on **Cloudflare Workers**. Your app sends one authenticated `POST /send-email`; MakiSend encrypts and queues the message, then delivers it through **your own SMTP provider** with automatic retries, and shows every delivery in a dashboard.
 
-1. Can a serverless backend that uses **nodemailer** and raw SMTP run on Cloudflare Workers?
-2. Can it work at scale?
-3. Can the emails land in the inbox rather than the spam folder?
+## Why MakiSend
+
+- **No server to run.** One Worker serves the API and the dashboard; Queues and Workflows handle delivery.
+- **Bring your own SMTP.** Zoho, Gmail, Microsoft 365, Resend, SendGrid, Mailgun or Cloudflare Email Service. You keep your sender domain and reputation.
+- **Reliable delivery.** `202` right away, then a durable Workflow with bounded retries and a dead-letter queue.
+- **Private by default.** Recipients, bodies, attachments and SMTP credentials are encrypted with AES-256-GCM before they reach D1.
+- **Built for teams of one.** Per-user API keys, optional per-key send quota, idempotency keys, 2FA, and a dashboard with logs, metrics and templates.
+- **Resend-shaped API.** Same `attachments` format, so a client written for Resend sends the same JSON.
+
+> **Status: early.** The sending pipeline, dashboard and security basics work end to end. Webhooks, bounce tracking and multi-provider failover are not built yet (see [Roadmap](#roadmap) and [Known limitations](#known-limitations-and-constraints)).
 
 For the full technical context (architecture, conventions, development workflow and limitations), see [`AGENTS.md`](./AGENTS.md) and [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
 
@@ -363,8 +370,9 @@ Secrets to define in the GitHub repository: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_
 - **Cold start**: the first invocation may see extra latency.
 - **Cost**: large volumes or long executions can become expensive.
 - **Long-lived connections are inefficient**: opening an SMTP connection for every send is not optimal.
+- **No fixed outbound IP**: Workers connect from shared, changing Cloudflare IPs, so an SMTP provider that requires IP allow-listing will refuse or destabilize sends. Disable allow-listing at the provider and rely on the SMTP credentials, or run the service on a server with a fixed IP and allow-list that IP.
 
-### POC-related
+### Current scope
 
 - **Asynchronous** sending: `POST /send-email` answers `202 Accepted` as soon as the email is queued; delivery (Cloudflare Queues → Workflow → SMTP) happens afterwards and is only visible in the D1 logs.
 - **One SMTP provider per configuration**: credentials are stored per user in D1 (encrypted), with no multi-provider routing or failover. Port and TLS mode are configurable per configuration.
@@ -377,7 +385,7 @@ Secrets to define in the GitHub repository: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_
 
 ## Roadmap
 
-### POC (current)
+### Available today
 
 - `POST /send-email` endpoint with per-user API key authentication
 - Asynchronous pipeline: Cloudflare Queues → durable Workflow → SMTP, with bounded retries and a DLQ
