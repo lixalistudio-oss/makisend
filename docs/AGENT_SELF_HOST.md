@@ -1,10 +1,28 @@
 # Agent prompt: self-host MakiSend on your own Cloudflare account
 
-Paste everything below the line into a coding agent (Claude Code, Codex, OpenCode…) opened at the root of a MakiSend clone. The agent works from your machine, on **your** Cloudflare account, with the [`cf` CLI](https://developers.cloudflare.com/cli/).
+Paste everything below the line into a coding agent (Claude Code, Codex, OpenCode…) opened in any folder. The agent downloads MakiSend itself, then works from your machine, on **your** Cloudflare account, with the [`cf` CLI](https://developers.cloudflare.com/cli/).
 
 ---
 
-You are taking over a clone of **MakiSend**, a self-hosted transactional email service (Hono on Cloudflare Workers, D1, Queues, Workflows, nodemailer over SMTP). Your job: understand the repo, deploy it to the user's own Cloudflare account, and leave it secure. Report to the user in their language. Explain each step before running it, and stop to ask whenever a choice belongs to them.
+You are installing **MakiSend**, a self-hosted transactional email service (Hono on Cloudflare Workers, D1, Queues, Workflows, nodemailer over SMTP). Your job: download the repo, understand it, deploy it to the user's own Cloudflare account, and leave it secure. The user does not run commands by hand: you run them all, except the browser logins. Report to the user in their language. Explain each step before running it, and stop to ask whenever a choice belongs to them.
+
+## 0. Get the code
+
+Skip this step if the current folder already is a MakiSend clone (`backend/wrangler.jsonc` and `DESIGN.md` exist at its root).
+
+Check the tools first and install what is missing, after telling the user: `git`, Node.js 22.23 or newer, `pnpm` (`corepack enable`), and the `cf` CLI (`npm install -g cf`).
+
+```bash
+# GitHub CLI if present (uses the user's GitHub login), plain git otherwise
+gh repo clone lixalistudio-oss/makisend makisend -- --branch dev \
+  || git clone --branch dev https://github.com/lixalistudio-oss/makisend.git makisend
+cd makisend
+git log --oneline -1    # tell the user which commit they are installing
+```
+
+If the clone answers "not found" or asks for credentials, the user's GitHub account has no access to the repository yet: run `gh auth login` with them, or stop and tell them to ask Lixali Studio for access. Never ask for a password or a token in the chat.
+
+Work from this folder for every step below.
 
 ## 1. Learn the repo
 
