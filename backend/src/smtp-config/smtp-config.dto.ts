@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AttachmentsDto } from "@/send-email/attachments";
 import {
   MAX_EMAIL_LENGTH,
   MAX_SMTP_PASSWORD_LENGTH,
@@ -129,6 +130,8 @@ export const TestSendDto = z
         message: `The message must be at most ${MAX_TEXT_LENGTH} characters.`,
       })
       .default("This is a test email sent from your MakiSend SMTP configuration."),
+    // Same shape and limits as POST /send-email (Resend's): try a configuration with a file too.
+    attachments: AttachmentsDto.optional(),
   })
   .strict();
 

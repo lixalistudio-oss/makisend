@@ -267,6 +267,7 @@ Tests: `test/unit/auth/auth-routes.test.ts` (single account, races, 2FA, passwor
 - Migrations: managed in the `drizzle/` folder
 - Wrangler binding: `makisend_db`
 - Email bodies live in `email_contents` (encrypted, keyed by `email_logs.internalId`); attachments live in `email_attachments`, one encrypted row per file (base64 then AES-GCM), never in the queue; templates store visual-builder JSON (theme + TipTap content) or pasted TSX source alongside exported HTML/text;
+- **Attachments, end to end**: the same Resend-shaped `attachments` are accepted by `POST /send-email` and by the dashboard's test send (`POST /smtp-config/:id/test-send`, "Attach a file" in `smtp-test-send-dialog.tsx`); both validate through `send-email/attachments.ts` (`AttachmentsDto`) and both senders carry them (SMTP and the Cloudflare `send_email` binding). The frontend repeats the limits in `frontend/src/lib/attachments.ts` (keep them equal). `pnpm test:e2e:attachments` (`test/e2e/run-attachments.sh` + `attachments.ts`) runs the real Worker under `wrangler dev`, sends files through both doors to a Cloudflare Email Service configuration and compares, byte for byte, the files Miniflare's local binding writes; it leaves `test/e2e/reports/attachments.json` to diff.
   queue/workflow payloads carry only `emailId`
 - HTTP idempotency reservations/responses live in `idempotency_keys` (24h TTL)
 

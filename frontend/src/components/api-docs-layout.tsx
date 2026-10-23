@@ -34,6 +34,7 @@ import {
   ShieldCheckIcon,
 } from "lucide-react"
 import { Toaster, toast } from "sonner"
+import { AttachmentsDoc } from "./api-docs-attachments"
 
 type Method = "GET" | "POST" | "PUT" | "DELETE"
 
@@ -225,6 +226,7 @@ const LIMITS: [string, string][] = [
   ["Subject", "Inline sends: 3 to 500 characters. Templates: 1 to 500. No line breaks."],
   ["Plain text", "10 to 20,000 characters for inline sends; 1 to 20,000 for templates."],
   ["HTML", "1 to 100,000 characters. Sanitized before sending."],
+  ["Attachments", "Up to 5 files per email, 512 KB each once decoded, base64 in the JSON body."],
   ["Template variables", "Up to 50 variables; names up to 64 chars, values up to 10,000 chars."],
   ["TSX source", "1 to 100,000 characters for pasted React Email code."],
   ["Idempotency-Key", "1 to 255 visible ASCII characters; replay window 24 hours."],
@@ -800,6 +802,7 @@ res.raise_for_status()  # 202 when queued`
                                   ["subject", "string", "3 to 500 characters; no line breaks."],
                                   ["text", "string", "Plain-text body, 10 to 20,000 characters."],
                                   ["html", "string", "HTML body, 1 to 100,000 characters; sanitized before sending."],
+                                  ["attachments", "array, optional", "Resend's shape: [{ filename, content (base64), content_type? }]. See Attachments below."],
                                 ].map(([field, type, rule]) => (
                                   <TableRow key={field}>
                                     <TableCell><InlineCode>{field}</InlineCode></TableCell>
@@ -832,6 +835,8 @@ res.raise_for_status()  # 202 when queued`
                         </div>
                       </CardContent>
                     </Card>
+
+                    <AttachmentsDoc origin={origin} CodeBlock={CodeBlock} />
 
                     <Card>
                       <CardHeader>

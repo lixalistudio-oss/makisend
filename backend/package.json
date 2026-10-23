@@ -14,7 +14,8 @@
     "d1:exec": "wrangler d1 execute makisend_db --local --file",
     "d1:exec:remote": "wrangler d1 execute makisend_db --remote --file",
     "user:create": "pnpm tsx src/core/create-user.ts",
-    "db:generate": "drizzle-kit generate --config=drizzle.config.ts"
+    "db:generate": "drizzle-kit generate --config=drizzle.config.ts",
+    "test:e2e:attachments": "bash test/e2e/run-attachments.sh"
   },
   "dependencies": {
     "@better-auth/api-key": "^1.6.25",
