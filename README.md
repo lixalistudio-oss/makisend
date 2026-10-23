@@ -75,7 +75,7 @@ The journey of an email:
 5. The Workflow sends over SMTP. Every step appends a row to `email_histories`, visible in the dashboard.
 6. Transient error: 3 more attempts, 30 s apart. Permanent error (auth, TLS, DNS, 5xx) or exhausted budget: status `failed` and DLQ.
 
-The detailed diagram (with the POC design notes) is in [`makisend-design.excalidraw`](./makisend-design.excalidraw); open it on [excalidraw.com](https://excalidraw.com) or with the Excalidraw plugin for Obsidian / VS Code.
+The full architecture board (overview, workflow steps, data model, delivery and limits) is in [`makisend-design.excalidraw`](./makisend-design.excalidraw); open it on [excalidraw.com](https://excalidraw.com) or with the Excalidraw plugin for Obsidian / VS Code.
 
 ### Repository layout
 

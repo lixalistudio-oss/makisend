@@ -11,7 +11,7 @@ Related docs:
 
 - [`../README.md`](../README.md) — project overview, architecture diagrams, API endpoints
 - [`../AGENTS.md`](../AGENTS.md) — condensed architecture and conventions for coding agents
-- [`../makisend-design.excalidraw`](../makisend-design.excalidraw) — design board (POC notes and the current technical architecture)
+- [`../makisend-design.excalidraw`](../makisend-design.excalidraw) — architecture board: overview, SendEmailWorkflow steps, data model, delivery and known limits
 
 ## Reading order
 
