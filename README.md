@@ -292,6 +292,19 @@ The same shape as Resend's API, so a client written for Resend sends the same JS
 - `filename`: at most 200 characters, no control characters, no `/` or `\`.
 - Resend's `path` field (a URL to fetch) is refused: MakiSend fetches no URL on a caller's behalf.
 - Files are stored AES-GCM encrypted in D1, one row per file (`email_attachments`), never travel through the queue, are re-encrypted by the key rotation and are deleted with the email.
+- Both senders carry them: SMTP (nodemailer) and Cloudflare Email Service (the `send_email` binding).
+
+#### Try an attachment from the dashboard
+
+**SMTP Config → Send test email** takes files too (**Attach a file**), with the same limits as the API: 5 files, 512 KB each. The dialog checks size and count before sending; the backend validates them exactly like `/send-email` (`POST /smtp-config/:id/test-send`, same `attachments` field). A test send is logged like any other email, tagged `test`.
+
+#### End-to-end test
+
+```bash
+cd backend && pnpm test:e2e:attachments
+```
+
+Starts the Worker under `wrangler dev` (local D1, Queues and Workflows, nothing deployed) and sends two files through both doors: the dashboard's test send and `POST /send-email` (queue, then workflow). The configuration targets Cloudflare Email Service; locally Miniflare writes every attachment the `send_email` binding receives to a file, which the test reads back and compares byte for byte. It also checks that a message without attachments carries none, and that both doors refuse the same invalid files. Report: `backend/test/e2e/reports/attachments.json` (deterministic, to diff between runs). `backend/test/e2e/send-email-attachments.e2e.test.ts` covers the SMTP path with a real TLS server.
 
 
 ## Deployment

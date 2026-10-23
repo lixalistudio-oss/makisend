@@ -4,7 +4,7 @@
  * to Cloudflare. The binding is a small typed implementation of `SendEmail`, not a mock of a library.
  *
  *  C1  Only that exact host (any case, any padding) takes the binding path; other hosts stay on SMTP.
- *  C2  A send hands the binding the sender, recipient, subject and both bodies, and returns its message id.
+ *  C2  A send hands the binding the sender, recipient, subject, both bodies and the attachments, and returns its message id.
  *  C3  A missing binding is a named failure, not a crash; a binding that refuses is reported without a secret.
  */
 import { describe, expect, it } from "vitest";
@@ -53,32 +53,25 @@ describe("CloudflareEmailTransport", () => {
     ]);
   });
 
-  it("C4 hands the attachments to the binding, as attachments, in order", async () => {
+  it("C2 a message with attachments hands the binding each file as an attachment, in order", async () => {
     const binding = new RecordingBinding();
-    const pdf = new Uint8Array([37, 80, 68, 70, 0, 255]);
-    await new CloudflareEmailTransport(binding, "noreply@getitaja.com").send({
+    const transport = new CloudflareEmailTransport(binding, "noreply@getitaja.com");
+    const pdf = Uint8Array.from([0x25, 0x50, 0x44, 0x46, 0x00, 0xff]);
+
+    await transport.send({
       to: "dest@example.com",
-      subject: "Hi",
+      subject: "Reçu",
       text: "plain",
       html: "<p>rich</p>",
       attachments: [
-        { filename: "a.pdf", contentType: "application/pdf", content: pdf },
-        { filename: "b.csv", contentType: "application/octet-stream", content: new Uint8Array([1]) },
+        { filename: "recu.pdf", contentType: "application/pdf", content: pdf },
+        { filename: "detail.csv", contentType: "text/csv", content: new Uint8Array([0x61]) },
       ],
     });
 
-    expect(binding.sent[0]?.attachments).toEqual([
-      { disposition: "attachment", filename: "a.pdf", type: "application/pdf", content: pdf },
-      { disposition: "attachment", filename: "b.csv", type: "application/octet-stream", content: new Uint8Array([1]) },
-    ]);
-  });
-
-  it("C4 a test send through the binding keeps its attachments", async () => {
-    const binding = new RecordingBinding();
-    const file = { filename: "a.pdf", contentType: "application/pdf", content: new Uint8Array([1, 2, 3]) };
-    await sendTestViaCloudflare(binding, "noreply@getitaja.com", { to: "dest@example.com", subject: "Probe", text: "x", attachments: [file] });
-    expect(binding.sent[0]?.attachments).toEqual([
-      { disposition: "attachment", filename: "a.pdf", type: "application/pdf", content: file.content },
+    expect(binding.sent[0].attachments).toEqual([
+      { disposition: "attachment", filename: "recu.pdf", type: "application/pdf", content: pdf },
+      { disposition: "attachment", filename: "detail.csv", type: "text/csv", content: new Uint8Array([0x61]) },
     ]);
   });
 
@@ -101,6 +94,15 @@ describe("check and test send", () => {
     const result = await sendTestViaCloudflare(binding, "noreply@getitaja.com", { to: "dest@example.com", subject: "Probe", text: "x" });
     expect(result).toEqual({ ok: true, messageId: "<cf-message-id@example.com>" });
     expect(binding.sent[0]?.from).toBe("noreply@getitaja.com");
+  });
+
+  it("C2 a test send through the binding keeps its attachments", async () => {
+    const binding = new RecordingBinding();
+    const file = { filename: "a.pdf", contentType: "application/pdf", content: new Uint8Array([1, 2, 3]) };
+    await sendTestViaCloudflare(binding, "noreply@getitaja.com", { to: "dest@example.com", subject: "Probe", text: "x", attachments: [file] });
+    expect(binding.sent[0]?.attachments).toEqual([
+      { disposition: "attachment", filename: "a.pdf", type: "application/pdf", content: file.content },
+    ]);
   });
 
   it("C3 a refusal is a value with the reason, not a throw", async () => {

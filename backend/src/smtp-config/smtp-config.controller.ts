@@ -4,9 +4,10 @@ import { z } from "zod";
 import { pinoLogger } from "@/core/logger";
 import { MAX_ID_LENGTH } from "@/core/validation";
 import type { Bindings, UserInfoVariables } from "@/index";
-import { CreateSmtpConfigDto, TestSendDto, UpdateSmtpConfigDto, toTestEmail } from "./smtp-config.dto";
+import { CreateSmtpConfigDto, TestSendDto, UpdateSmtpConfigDto } from "./smtp-config.dto";
 import { toPublicSmtpConfig } from "./smtp-config.types";
 import type { SmtpConfigService } from "./smtp-config.service";
+import { toEmailAttachment } from "@/send-email/attachments";
 
 export function createSmtpConfigController(
   getService: () => SmtpConfigService,
@@ -112,7 +113,16 @@ export function createSmtpConfigController(
     async (c) => {
       const userId = c.get("userId");
       const { id } = c.req.valid("param");
-      const email = toTestEmail(c.req.valid("json"));
+      const body = c.req.valid("json");
+      // Decoded once, for whichever path sends it (SMTP or the Cloudflare binding).
+      const email = {
+        to: body.to,
+        subject: body.subject,
+        text: body.text,
+        ...(body.attachments && body.attachments.length > 0
+          ? { attachments: body.attachments.map(toEmailAttachment) }
+          : {}),
+      };
       pinoLogger.info({ userId, id, attachments: email.attachments?.length ?? 0 }, "POST /smtp-config/:id/test-send");
       const result = await getService().sendTest(id, userId, email);
       return c.json(result, 200);

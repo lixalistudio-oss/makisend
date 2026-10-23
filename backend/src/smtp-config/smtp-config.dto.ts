@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AttachmentsDto } from "@/send-email/attachments";
 import {
   MAX_EMAIL_LENGTH,
   MAX_SMTP_PASSWORD_LENGTH,
@@ -6,8 +7,6 @@ import {
   MAX_SUBJECT_LENGTH,
   MAX_TEXT_LENGTH,
 } from "@/core/validation";
-import { AttachmentsDto, DEFAULT_ATTACHMENT_CONTENT_TYPE, decodeBase64 } from "@/send-email/attachments";
-import type { TestEmail } from "./smtp-connection";
 import {
   DEFAULT_SMTP_PORT,
   SMTP_PORTS,
@@ -131,23 +130,9 @@ export const TestSendDto = z
         message: `The message must be at most ${MAX_TEXT_LENGTH} characters.`,
       })
       .default("This is a test email sent from your MakiSend SMTP configuration."),
-    // Same shape and limits as POST /send-email, so the dashboard can try attachments too.
+    // Same shape and limits as POST /send-email (Resend's): try a configuration with a file too.
     attachments: AttachmentsDto.optional(),
   })
   .strict();
 
 export type TestSendDto = z.infer<typeof TestSendDto>;
-
-/** The validated request as the senders take it: files decoded, default type applied. */
-export function toTestEmail(dto: TestSendDto): TestEmail {
-  const { attachments, ...email } = dto;
-  if (!attachments || attachments.length === 0) return email;
-  return {
-    ...email,
-    attachments: attachments.map((file) => ({
-      filename: file.filename,
-      contentType: file.content_type ?? DEFAULT_ATTACHMENT_CONTENT_TYPE,
-      content: decodeBase64(file.content),
-    })),
-  };
-}

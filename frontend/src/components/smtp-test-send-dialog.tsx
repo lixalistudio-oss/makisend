@@ -13,14 +13,7 @@ import {
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { fetchApi } from "@/lib/api"
 import { isSendResult, type SendResult } from "@/lib/smtp-form"
-import {
-  MAX_ATTACHMENTS,
-  MAX_ATTACHMENT_BYTES,
-  addAttachments,
-  formatBytes,
-  toPayload,
-  type PickedAttachment,
-} from "@/lib/attachments"
+import { attachmentProblem, formatSize, MAX_ATTACHMENTS, toAttachmentPayload } from "@/lib/attachments"
 
 const DEFAULT_SUBJECT = "MakiSend test email"
 const DEFAULT_TEXT = "This is a test email sent from your MakiSend SMTP configuration."
@@ -54,31 +47,24 @@ function TestSendForm({ config, onClose }: { config: NonNullable<Props["config"]
   const [sending, setSending] = useState(false)
   const [result, setResult] = useState<SendResult | null>(null)
   const [errors, setErrors] = useState<{ to?: string; subject?: string; text?: string; attachments?: string }>({})
-  const [attachments, setAttachments] = useState<PickedAttachment[]>([])
-  const [reading, setReading] = useState(false)
-  const fileInput = useRef<HTMLInputElement>(null)
+  const [files, setFiles] = useState<File[]>([])
+  const picker = useRef<HTMLInputElement>(null)
 
-  const pickFiles = async (list: FileList | null) => {
-    const files = Array.from(list ?? [])
-    if (fileInput.current) fileInput.current.value = ""
-    if (files.length === 0) return
-    setReading(true)
-    setResult(null)
-    try {
-      const added = await addAttachments(attachments, files)
-      setAttachments(added.attachments)
-      setErrors((prev) => ({ ...prev, attachments: added.error ?? undefined }))
-    } catch {
-      setErrors((prev) => ({ ...prev, attachments: "A file could not be read." }))
-    } finally {
-      setReading(false)
+  const addFiles = (picked: FileList | null) => {
+    if (!picked) return
+    const next = [...files]
+    for (const file of Array.from(picked)) {
+      const problem = attachmentProblem(file, next.length)
+      if (problem) {
+        setErrors((e) => ({ ...e, attachments: problem }))
+        continue
+      }
+      next.push(file)
     }
-  }
-
-  const removeAttachment = (index: number) => {
-    setAttachments((prev) => prev.filter((_, i) => i !== index))
-    setErrors((prev) => ({ ...prev, attachments: undefined }))
+    setFiles(next)
     setResult(null)
+    // The same file can be picked again after being removed.
+    if (picker.current) picker.current.value = ""
   }
 
   const send = async () => {
@@ -86,15 +72,11 @@ function TestSendForm({ config, onClose }: { config: NonNullable<Props["config"]
     setResult(null)
     setErrors({})
     try {
+      const attachments = await Promise.all(files.map(toAttachmentPayload))
       const res = await fetchApi(`/smtp-config/${config.id}/test-send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          to: to.trim(),
-          subject,
-          text,
-          ...(attachments.length > 0 ? { attachments: toPayload(attachments) } : {}),
-        }),
+        body: JSON.stringify({ to: to.trim(), subject, text, ...(attachments.length > 0 ? { attachments } : {}) }),
       })
       const data: unknown = await res.json().catch(() => null)
       if (res.status === 400) {
@@ -119,7 +101,7 @@ function TestSendForm({ config, onClose }: { config: NonNullable<Props["config"]
           Sends one real email through {config.smtpHostname}, to see it arrive.
         </DialogDescription>
       </DialogHeader>
-      <FieldGroup className="max-h-[calc(85dvh-16rem)] overflow-y-auto py-1 pr-1 gap-1.5 sm:gap-2">
+      <FieldGroup className="max-h-[calc(85dvh-15rem)] overflow-y-auto py-1 pr-1 pb-3 gap-1.5 sm:gap-2">
         <Field>
           <FieldLabel htmlFor="test-from">From</FieldLabel>
           <Input id="test-from" value={config.senderEmail} readOnly disabled />
@@ -162,55 +144,51 @@ function TestSendForm({ config, onClose }: { config: NonNullable<Props["config"]
           />
           {errors.text && <FieldError>{errors.text}</FieldError>}
         </Field>
-        <Field data-invalid={!!errors.attachments}>
-          <div className="flex items-center justify-between gap-2">
-            <FieldLabel htmlFor="test-attachments">Attachments</FieldLabel>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={reading || attachments.length >= MAX_ATTACHMENTS}
-              onClick={() => fileInput.current?.click()}
-            >
-              {reading ? <LoaderIcon className="animate-spin" /> : <PaperclipIcon />}
-              {reading ? "Reading..." : "Add files"}
-            </Button>
-          </div>
+        <Field>
+          <FieldLabel htmlFor="test-attachments">Attachments</FieldLabel>
+          {/* Under the label, not after the list: visible without scrolling the dialog. */}
+          {errors.attachments && <FieldError>{errors.attachments}</FieldError>}
           <input
-            ref={fileInput}
+            ref={picker}
             id="test-attachments"
             type="file"
             multiple
             className="sr-only"
-            onChange={(e) => void pickFiles(e.target.files)}
+            onChange={(e) => { setErrors(({ attachments: _drop, ...rest }) => rest); addFiles(e.target.files) }}
           />
-          <FieldDescription className="text-xs leading-snug sm:text-sm">
-            Optional. Up to {MAX_ATTACHMENTS} files, {formatBytes(MAX_ATTACHMENT_BYTES)} each.
-          </FieldDescription>
-          {errors.attachments && <FieldError>{errors.attachments}</FieldError>}
-          {attachments.length > 0 && (
-            <ul className="flex flex-col gap-1">
-              {attachments.map((file, index) => (
-                <li
-                  key={`${file.filename}-${index}`}
-                  className="flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm"
-                >
-                  <PaperclipIcon className="size-4 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1 truncate">{file.filename}</span>
-                  <span className="shrink-0 text-xs text-muted-foreground">{formatBytes(file.size)}</span>
-                  <Button
+          {files.length > 0 && (
+            <ul className="flex flex-col gap-1" aria-label="Attached files">
+              {files.map((file, index) => (
+                <li key={`${file.name}-${index}`} className="flex items-center gap-2 rounded-md border px-2 py-1 text-sm">
+                  <PaperclipIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 truncate">{file.name}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">{formatSize(file.size)}</span>
+                  <button
                     type="button"
-                    variant="ghost"
-                    size="icon-xs"
-                    aria-label={`Remove ${file.filename}`}
-                    onClick={() => removeAttachment(index)}
+                    aria-label={`Remove ${file.name}`}
+                    className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                    onClick={() => { setFiles(files.filter((_, i) => i !== index)); setResult(null) }}
                   >
-                    <XIcon />
-                  </Button>
+                    <XIcon className="size-3.5" />
+                  </button>
                 </li>
               ))}
             </ul>
           )}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="self-start"
+            disabled={files.length >= MAX_ATTACHMENTS || sending}
+            onClick={() => picker.current?.click()}
+          >
+            <PaperclipIcon />
+            Attach a file
+          </Button>
+          <FieldDescription className="text-xs leading-snug sm:text-sm">
+            Optional. Up to {MAX_ATTACHMENTS} files, 512 KB each.
+          </FieldDescription>
         </Field>
       </FieldGroup>
 
@@ -232,7 +210,7 @@ function TestSendForm({ config, onClose }: { config: NonNullable<Props["config"]
         <Button variant="outline" onClick={onClose}>
           Close
         </Button>
-        <Button onClick={send} disabled={!to.trim() || !subject.trim() || !text.trim() || sending || reading}>
+        <Button onClick={send} disabled={!to.trim() || !subject.trim() || !text.trim() || sending}>
           {sending ? <LoaderIcon className="animate-spin" /> : <SendIcon />}
           {sending ? "Sending..." : "Send test email"}
         </Button>

@@ -20,6 +20,7 @@ export class CloudflareEmailTransport implements IEmailTransport {
       subject: input.subject,
       text: input.text,
       html: input.html,
+      // Present only when there is a file: a message without one keeps its exact shape.
       ...(input.attachments && input.attachments.length > 0
         ? {
             attachments: input.attachments.map((file) => ({

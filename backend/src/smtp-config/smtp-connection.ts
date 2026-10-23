@@ -3,8 +3,8 @@ import * as tls from "node:tls";
 import * as nodemailer from "nodemailer";
 import type { Transporter } from "nodemailer";
 import type { SmtpConfig } from "@/config/config";
-import { pinoLogger } from "@/core/logger";
 import type { EmailAttachment } from "@/send-email/attachments";
+import { pinoLogger } from "@/core/logger";
 import { DEFAULT_SMTP_PORT, type SmtpSecurity } from "./smtp-host";
 
 export const SMTP_CONNECTION_TIMEOUT_MS = 10_000;
@@ -245,7 +245,7 @@ export interface TestEmail {
   to: string;
   subject: string;
   text: string;
-  /** Decoded files, in order. Absent: a message without attachments. */
+  /** Decoded files; absent or empty sends a message without attachments. */
   attachments?: EmailAttachment[];
 }
 
