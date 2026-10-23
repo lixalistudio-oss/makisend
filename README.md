@@ -148,6 +148,7 @@ The following variables are set in `backend/.env` and mapped in `backend/src/ind
 | `BETTER_AUTH_SECRET` | Better Auth signing secret; also encrypts the TOTP secrets (changing it breaks existing 2FA set-ups) |
 | `BETTER_AUTH_URL` | Base URL of the Worker (e.g. `http://localhost:8787`) |
 | `FRONTEND_URL` | Allowed frontend origin (CORS / redirects) |
+| `SEND_RATE_LIMIT` | Optional per-API-key send quota on `POST /send-email`, e.g. `100/min` or `5000/day` (units `s`, `min`, `hour`, `day`). Unset: no quota. Over it: `429` with `Retry-After` |
 
 These are **no longer** environment variables:
 
@@ -322,6 +323,10 @@ Secrets to define in the GitHub repository: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_
 
 > SMTP credentials are not Worker secrets: they are encrypted in D1 and managed per user (`smtp-config` module).
 
+### Self-hosting with an agent
+
+[`docs/AGENT_SELF_HOST.md`](docs/AGENT_SELF_HOST.md) is a prompt to paste into a coding agent: it reads the repo, creates the resources on your own Cloudflare account with the `cf` CLI, sets the secrets, deploys, and applies the security practices (instance claimed at once, 2FA, `SEND_RATE_LIMIT`, key rotation, SPF/DKIM/DMARC).
+
 ---
 
 ## Security
@@ -338,7 +343,7 @@ Secrets to define in the GitHub repository: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_
 
 ### Current security limitations
 
-- **No send quota on API keys**: sign-in attempts are rate limited per IP, but a leaked API key can send until it is deleted (SMTP quotas are the real limit).
+- **Send quota is opt-in**: sign-in attempts are always rate limited per IP, but API keys have no send quota unless `SEND_RATE_LIMIT` is set (e.g. `100/min`). Without it, a leaked key can send until it is deleted (SMTP quotas are the real limit). Set it on any instance whose API is reachable from the internet: `cf workers secrets update SEND_RATE_LIMIT --worker <worker> --type secret_text --text "100/min"`.
 - Per-user API keys, but no scopes and no automatic rotation.
 - No password reset by email.
 - No webhook or origin-verification signature.

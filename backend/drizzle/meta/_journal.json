@@ -36,6 +36,13 @@
       "when": 1792748692839,
       "tag": "0003_email_attachments",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1792762394718,
+      "tag": "0005_send_rate_limit",
+      "breakpoints": true
     }
   ]
 }
