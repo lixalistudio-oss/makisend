@@ -68,6 +68,7 @@ src/
 │   ├── error-classifier.ts     # Permanent/transient verdicts + human-readable messages
 │   └── send-email.types.ts     # Interfaces / contracts
 ├── idempotency/                # HTTP Idempotency-Key for POST /send-email
+├── send-rate-limit/            # Optional per-API-key send quota (SEND_RATE_LIMIT)
 ├── openapi/                    # OpenAPI 3.1 document (request schemas generated from Zod DTOs)
 ├── smtp-config/                # SMTP configs, TLS/port validation, connection checks
 │   ├── smtp-host.ts            # Hostname/port/security parsing and defaults
@@ -141,6 +142,7 @@ Copy `.env.example` to `.env` and fill in:
 | `BETTER_AUTH_SECRET` | Signs sessions and encrypts the TOTP secrets and backup codes. Changing it signs everyone out and breaks existing two-factor set-ups (see "Accounts and authentication") |
 | `BETTER_AUTH_URL` | Backend URL of the Worker (e.g. `http://localhost:8787`) |
 | `FRONTEND_URL` | Frontend origin allowed for CORS / redirects |
+| `SEND_RATE_LIMIT` | Optional per-API-key send quota (`100/min`, `5000/day`). Unset: no quota |
 
 Not environment variables anymore:
 
@@ -217,7 +219,7 @@ Tests: `test/unit/auth/auth-routes.test.ts` (single account, races, 2FA, passwor
 
 ### Current security limitations
 
-- **No send quota on API keys**: the per-key daily quota was removed on purpose (`apiKeyOptions.rateLimit.enabled = false` in `src/lib/auth.ts`, which also overrides the quota stamped on existing keys). Queues and Workflows absorb bursts; SMTP quotas are the real limit. A leaked key can send until it is deleted.
+- **Send quota is opt-in (`SEND_RATE_LIMIT`)**: Better Auth's per-key quota stays off (`apiKeyOptions.rateLimit.enabled = false` in `src/lib/auth.ts`, which also overrides the quota stamped on existing keys). The instance owner can set `SEND_RATE_LIMIT=<count>/<s|min|hour|day>`: `src/send-rate-limit/` counts sends per API key in a fixed window (`send_rate_limit` table, one atomic UPSERT per send) and answers `429` + `Retry-After` past it. It runs after API-key auth and **before** idempotency, so a 429 is never stored as a key's replayable response. Unset: no quota and no table write; a malformed value is a 500, never unlimited.
 - **No webhook / signature**: no request origin verification beyond the API key.
 - **No dedicated audit logs**: only Pino application logs are present.
 

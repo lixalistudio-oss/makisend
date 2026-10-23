@@ -349,6 +349,17 @@ export const apikey = sqliteTable(
   ],
 );
 
+// Optional per-key send quota (SEND_RATE_LIMIT, off by default). One row per API key:
+// a fixed window that restarts once `window_start + window` has passed. Deleting the key
+// deletes its counter.
+export const sendRateLimit = sqliteTable("send_rate_limit", {
+  apiKeyId: text("api_key_id")
+    .primaryKey()
+    .references(() => apikey.id, { onDelete: "cascade" }),
+  windowStart: integer("window_start").notNull(),
+  count: integer("count").notNull(),
+});
+
 export const userRelations = relations(user, ({ many }) => ({
   sessions: many(session),
   accounts: many(account),

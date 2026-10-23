@@ -23,6 +23,13 @@ import {
   IdempotencyService,
   idempotencyMiddleware,
 } from "@/idempotency";
+import {
+  parseSendRateLimit,
+  SendRateLimitRepository,
+  sendRateLimitMiddleware,
+  type ISendRateLimitRepository,
+  type SendRateLimit,
+} from "@/send-rate-limit";
 import { sendEmailQueueConsumer } from "@/queue/send-email.consumer";
 import { runSmtpHealthChecks } from "@/smtp-config/smtp-health";
 import { openApiDocument } from "@/openapi";
@@ -63,6 +70,9 @@ export type Bindings = {
   // "off" disables the auth rate limiter (local dev and tests only). Anything else, or
   // unset, keeps it on: production and preview never set it.
   RATE_LIMIT?: string;
+  // Optional per-API-key send quota on POST /send-email, e.g. "100/min" or "5000/day".
+  // Unset (the default): no quota. Over the limit: 429 + Retry-After.
+  SEND_RATE_LIMIT?: string;
   SEND_EMAIL_QUEUE: Queue<SendEmailQueueMessage>;
   SEND_EMAIL_DLQ: Queue<SendEmailQueueMessage>;
   SEND_EMAIL_WORKFLOW: Workflow;
@@ -110,6 +120,8 @@ const deps = {
   dashboardRepository: null as IDashboardRepository | null,
   templateRepository: null as ITemplateRepository | null,
   idempotencyRepository: null as IIdempotencyRepository | null,
+  sendRateLimitRepository: null as ISendRateLimitRepository | null,
+  sendRateLimit: null as SendRateLimit | null,
   smtpConfigService: null as SmtpConfigService | null,
   apiKeyService: null as ApiKeyService | null,
   emailLogService: null as EmailLogService | null,
@@ -132,6 +144,8 @@ const deps = {
     this.dashboardRepository = new DashboardRepository(db);
     this.templateRepository = new TemplateRepository(db);
     this.idempotencyRepository = new IdempotencyRepository(db);
+    this.sendRateLimitRepository = new SendRateLimitRepository(db);
+    this.sendRateLimit = parseSendRateLimit(env.SEND_RATE_LIMIT);
     this.aesKey = resolveEncryptionKeys(env);
     this.emailBinding = env.EMAIL;
     this.dbInitialized = true;
@@ -274,6 +288,13 @@ app.use("*", async (c, next) => {
   }
   await next();
 });
+
+// Optional per-key send quota (SEND_RATE_LIMIT). Before idempotency on purpose: a 429
+// must not be stored as the key's response, or a retry after the window would replay it.
+app.use(
+  "/send-email/*",
+  sendRateLimitMiddleware(() => deps.sendRateLimit, () => deps.sendRateLimitRepository!),
+);
 
 // HTTP-level idempotency for POST /send-email. Runs after API-key auth, so the
 // key is scoped to the caller, and after DB deps are initialized.

@@ -205,6 +205,14 @@ export const openApiDocument = {
             },
           },
           409: responseRef("Conflict"),
+          429: {
+            description:
+              "Only when the instance sets `SEND_RATE_LIMIT`: this API key reached its send quota. `Retry-After` gives the seconds until the window restarts.",
+            headers: {
+              "Retry-After": { description: "Seconds until the quota window restarts.", schema: { type: "integer" } },
+            },
+            content: { "application/json": { schema: schemaRef("Error") } },
+          },
           500: responseRef("ServerError"),
         },
       },
