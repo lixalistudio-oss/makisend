@@ -405,7 +405,7 @@ Secrets to define in the GitHub repository: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_
 
 ### Public beta MVP
 
-- Message queues and jobs: already in place (see POC); scale and throughput tuning remains
+- Message queues and jobs: already in place (see Available today); scale and throughput tuning remains
 - Scale and throughput management
 - Deliverability improvements (anti-spam, SPF/DKIM/DMARC)
 
