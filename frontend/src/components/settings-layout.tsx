@@ -28,6 +28,7 @@ import { KeyIcon } from "lucide-react"
 import { fetchApi } from "@/lib/api"
 import { TwoFactorCard } from "@/components/two-factor-card"
 import { VersionCard } from "@/components/update-banner"
+import { useTranslation } from "@/i18n"
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -37,6 +38,7 @@ async function readErrorMessage(res: Response, fallback: string): Promise<string
 }
 
 export function SettingsLayout() {
+  const { t } = useTranslation()
   const [email, setEmail] = useState("")
   const [currentPassword, setCurrentPassword] = useState("")
   const [newPassword, setNewPassword] = useState("")
@@ -61,7 +63,7 @@ export function SettingsLayout() {
     const target = email.trim()
 
     if (!EMAIL_RE.test(target)) {
-      toast.error("Enter a valid email address, e.g. name@example.com")
+      toast.error(t("settings.errorInvalidEmail"))
       return
     }
 
@@ -74,14 +76,14 @@ export function SettingsLayout() {
       })
 
       if (!res.ok) {
-        toast.error(await readErrorMessage(res, "Could not update the email address"))
+        toast.error(await readErrorMessage(res, t("settings.errorUpdateEmail")))
         return
       }
 
       setEmail(target)
-      toast.success("Email address updated")
+      toast.success(t("settings.emailUpdated"))
     } catch {
-      toast.error("Network error. Please try again.")
+      toast.error(t("settings.networkError"))
     } finally {
       setSavingProfile(false)
     }
@@ -89,15 +91,15 @@ export function SettingsLayout() {
 
   const handleChangePassword = async () => {
     if (!currentPassword) {
-      toast.error("Enter your current password")
+      toast.error(t("settings.errorCurrentPasswordRequired"))
       return
     }
     if (newPassword !== confirmPassword) {
-      toast.error("Passwords do not match")
+      toast.error(t("settings.errorPasswordsMismatch"))
       return
     }
     if (newPassword.length < 8) {
-      toast.error("Password must be at least 8 characters")
+      toast.error(t("settings.errorPasswordTooShort"))
       return
     }
 
@@ -110,16 +112,16 @@ export function SettingsLayout() {
       })
 
       if (!res.ok) {
-        toast.error(await readErrorMessage(res, "Could not change the password"))
+        toast.error(await readErrorMessage(res, t("settings.errorChangePassword")))
         return
       }
 
-      toast.success("Password changed successfully")
+      toast.success(t("settings.passwordChanged"))
       setCurrentPassword("")
       setNewPassword("")
       setConfirmPassword("")
     } catch {
-      toast.error("Network error. Please try again.")
+      toast.error(t("settings.networkError"))
     } finally {
       setSavingPassword(false)
     }
@@ -127,7 +129,7 @@ export function SettingsLayout() {
 
   const handleDeleteAccount = async () => {
     if (!deletePassword) {
-      toast.error("Enter your current password to confirm deletion")
+      toast.error(t("settings.errorDeletePasswordRequired"))
       return
     }
 
@@ -140,15 +142,15 @@ export function SettingsLayout() {
       })
 
       if (!res.ok) {
-        toast.error(await readErrorMessage(res, "Could not delete the account"))
+        toast.error(await readErrorMessage(res, t("settings.errorDeleteAccount")))
         return
       }
 
       setDeleteOpen(false)
-      toast.success("Account deleted")
+      toast.success(t("settings.accountDeleted"))
       window.location.href = "/login"
     } catch {
-      toast.error("Network error. Please try again.")
+      toast.error(t("settings.networkError"))
     } finally {
       setDeleting(false)
     }
@@ -159,29 +161,29 @@ export function SettingsLayout() {
       <AppSidebar />
       <Toaster position="top-right" />
       <SidebarInset>
-        <SiteHeader title="Settings" />
+        <SiteHeader titleKey="nav.settings" />
         <SessionGuard>
         <div className="flex flex-1 flex-col gap-8 p-4 sm:p-6 max-w-2xl">
           <div>
-            <h2 className="font-heading text-[1.75rem] leading-tight font-medium tracking-[-0.03em]">Settings</h2>
+            <h2 className="font-heading text-[1.75rem] leading-tight font-medium tracking-[-0.03em]">{t("settings.title")}</h2>
             <p className="text-sm text-muted-foreground">
-              Manage your account settings and preferences.
+              {t("settings.subtitle")}
             </p>
           </div>
 
           <Card>
             <CardHeader>
               <div>
-                <CardTitle>Email</CardTitle>
+                <CardTitle>{t("settings.emailTitle")}</CardTitle>
                 <CardDescription>
-                  The email address you sign in with. Expects an email address.
+                  {t("settings.emailDescription")}
                 </CardDescription>
               </div>
             </CardHeader>
             <CardContent>
               <FieldGroup className="gap-4">
                 <Field>
-                  <FieldLabel htmlFor="email">Email address</FieldLabel>
+                  <FieldLabel htmlFor="email">{t("settings.emailLabel")}</FieldLabel>
                   <Input
                     id="email"
                     type="email"
@@ -192,12 +194,12 @@ export function SettingsLayout() {
                     onChange={(e) => setEmail(e.target.value)}
                   />
                   <FieldDescription>
-                    Must be a valid email address, e.g. name@example.com.
+                    {t("settings.emailHint")}
                   </FieldDescription>
                 </Field>
                 <div>
                   <Button onClick={handleSaveProfile} disabled={savingProfile}>
-                    {savingProfile ? "Saving..." : "Save changes"}
+                    {savingProfile ? t("settings.saving") : t("settings.saveChanges")}
                   </Button>
                 </div>
               </FieldGroup>
@@ -209,9 +211,9 @@ export function SettingsLayout() {
               <div className="flex items-center gap-2">
                 <KeyIcon className="size-5 text-muted-foreground" />
                 <div>
-                  <CardTitle>Password</CardTitle>
+                  <CardTitle>{t("settings.passwordTitle")}</CardTitle>
                   <CardDescription>
-                    Change your account password. Every field below expects a password.
+                    {t("settings.passwordDescription")}
                   </CardDescription>
                 </div>
               </div>
@@ -219,53 +221,53 @@ export function SettingsLayout() {
             <CardContent>
               <FieldGroup className="gap-4">
                 <Field>
-                  <FieldLabel htmlFor="currentPassword">Current password</FieldLabel>
+                  <FieldLabel htmlFor="currentPassword">{t("settings.currentPassword")}</FieldLabel>
                   <Input
                     id="currentPassword"
                     type="password"
                     autoComplete="current-password"
-                    placeholder="Your current password"
+                    placeholder={t("settings.currentPasswordPlaceholder")}
                     required
                     value={currentPassword}
                     onChange={(e) => setCurrentPassword(e.target.value)}
                   />
                   <FieldDescription>
-                    The password you use to sign in right now.
+                    {t("settings.currentPasswordHint")}
                   </FieldDescription>
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="newPassword">New password</FieldLabel>
+                  <FieldLabel htmlFor="newPassword">{t("settings.newPassword")}</FieldLabel>
                   <Input
                     id="newPassword"
                     type="password"
                     autoComplete="new-password"
-                    placeholder="Your new password"
+                    placeholder={t("settings.newPasswordPlaceholder")}
                     required
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                   />
                   <FieldDescription>
-                    Must be at least 8 characters long.
+                    {t("settings.newPasswordHint")}
                   </FieldDescription>
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="confirmPassword">Confirm new password</FieldLabel>
+                  <FieldLabel htmlFor="confirmPassword">{t("settings.confirmNewPassword")}</FieldLabel>
                   <Input
                     id="confirmPassword"
                     type="password"
                     autoComplete="new-password"
-                    placeholder="Repeat the new password"
+                    placeholder={t("settings.confirmNewPasswordPlaceholder")}
                     required
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                   />
                   <FieldDescription>
-                    Type the new password again to confirm it.
+                    {t("settings.confirmNewPasswordHint")}
                   </FieldDescription>
                 </Field>
                 <div>
                   <Button onClick={handleChangePassword} disabled={savingPassword}>
-                    {savingPassword ? "Changing..." : "Change password"}
+                    {savingPassword ? t("settings.changing") : t("settings.changePassword")}
                   </Button>
                 </div>
               </FieldGroup>
@@ -276,9 +278,9 @@ export function SettingsLayout() {
 
           <Card>
             <CardHeader>
-              <CardTitle>MakiSend version</CardTitle>
+              <CardTitle>{t("settings.versionTitle")}</CardTitle>
               <CardDescription>
-                Checked once a day against the latest release on GitHub. Set UPDATE_CHECK=off to never contact GitHub.
+                {t("settings.versionDescription")}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -288,48 +290,48 @@ export function SettingsLayout() {
 
           <Card className="ring-destructive/40">
             <CardHeader>
-              <CardTitle>Delete account</CardTitle>
+              <CardTitle>{t("settings.deleteAccount")}</CardTitle>
               <CardDescription>
-                This action is irreversible. All your SMTP configs, API keys, and email logs will be permanently deleted.
+                {t("settings.deleteDescription")}
               </CardDescription>
             </CardHeader>
             <CardContent>
               <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
                 <DialogTrigger render={<Button variant="destructive" />}>
-                  Delete account
+                  {t("settings.deleteAccount")}
                 </DialogTrigger>
                 <DialogContent className="sm:max-w-[425px]">
                   <DialogHeader>
-                    <DialogTitle>Are you absolutely sure?</DialogTitle>
+                    <DialogTitle>{t("settings.deleteConfirmTitle")}</DialogTitle>
                     <DialogDescription>
-                      This action cannot be undone. This will permanently delete your account and remove all your data from our servers.
+                      {t("settings.deleteConfirmDescription")}
                     </DialogDescription>
                   </DialogHeader>
                   <Field>
-                    <FieldLabel htmlFor="deletePassword">Current password</FieldLabel>
+                    <FieldLabel htmlFor="deletePassword">{t("settings.currentPassword")}</FieldLabel>
                     <Input
                       id="deletePassword"
                       type="password"
                       autoComplete="current-password"
-                      placeholder="Your current password"
+                      placeholder={t("settings.currentPasswordPlaceholder")}
                       required
                       value={deletePassword}
                       onChange={(e) => setDeletePassword(e.target.value)}
                     />
                     <FieldDescription>
-                      Enter your current password to confirm. This expects a password, not an email.
+                      {t("settings.deletePasswordHint")}
                     </FieldDescription>
                   </Field>
                   <DialogFooter>
                     <Button variant="outline" onClick={() => setDeleteOpen(false)}>
-                      Cancel
+                      {t("common.cancel")}
                     </Button>
                     <Button
                       variant="destructive"
                       onClick={handleDeleteAccount}
                       disabled={deleting}
                     >
-                      {deleting ? "Deleting..." : "Yes, delete my account"}
+                      {deleting ? t("settings.deleting") : t("settings.deleteConfirmButton")}
                     </Button>
                   </DialogFooter>
                 </DialogContent>

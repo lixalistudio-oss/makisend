@@ -19,19 +19,21 @@ import {
 } from "@/components/ui/select"
 import { CircleXIcon, InboxIcon } from "lucide-react"
 import { fetchApi } from "@/lib/api"
+import { useTranslation, type UiKey } from "@/i18n"
 
 interface ErrorSummary {
   error: string
   count: number
 }
 
-const RANGE_OPTIONS = [
-  { value: "7", label: "Last 7 days" },
-  { value: "30", label: "Last 30 days" },
-  { value: "90", label: "Last 90 days" },
+const RANGE_OPTIONS: { value: string; labelKey: UiKey }[] = [
+  { value: "7", labelKey: "dashboard.errors.last7Days" },
+  { value: "30", labelKey: "dashboard.errors.last30Days" },
+  { value: "90", labelKey: "dashboard.errors.last90Days" },
 ]
 
 export function ErrorsCard() {
+  const { t, locale } = useTranslation()
   const [errors, setErrors] = useState<ErrorSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [days, setDays] = useState("7")
@@ -48,19 +50,24 @@ export function ErrorsCard() {
   return (
     <Card className="@container/card">
       <CardHeader>
-        <CardDescription>Delivery errors</CardDescription>
+        <CardDescription>{t("dashboard.errors.description")}</CardDescription>
         <CardTitle className="text-xl font-medium">
-          Top errors across all sends
+          {t("dashboard.errors.title")}
         </CardTitle>
         <CardAction>
           <Select value={days} onValueChange={(v) => v && setDays(v)}>
             <SelectTrigger className="w-[140px]" size="sm">
-              <SelectValue />
+              <SelectValue>
+                {(value: string) => {
+                  const option = RANGE_OPTIONS.find((opt) => opt.value === value)
+                  return option ? t(option.labelKey) : value
+                }}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {RANGE_OPTIONS.map((opt) => (
                 <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
+                  {t(opt.labelKey)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -69,11 +76,11 @@ export function ErrorsCard() {
       </CardHeader>
       <CardContent>
         {loading ? (
-          <p className="text-sm text-muted-foreground">Loading errors...</p>
+          <p className="text-sm text-muted-foreground">{t("dashboard.errors.loading")}</p>
         ) : errors.length === 0 ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <InboxIcon className="size-4" />
-            No delivery errors in this period.
+            {t("dashboard.errors.empty")}
           </div>
         ) : (
           <ul className="flex flex-col gap-2">
@@ -89,7 +96,7 @@ export function ErrorsCard() {
                   </span>
                 </div>
                 <Badge variant="outline" className="shrink-0 tabular-nums">
-                  {entry.count}
+                  {entry.count.toLocaleString(locale)}
                 </Badge>
               </li>
             ))}

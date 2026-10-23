@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { useTranslation } from "@/i18n"
 
 type SessionUser = { twoFactorEnabled?: boolean | null; totpPasswordless?: boolean | null }
 
@@ -27,6 +28,7 @@ const errorOf = (data: Record<string, unknown> | null, fallback: string) =>
   (data?.message as string) || (data?.error as string) || fallback
 
 function BackupCodes({ codes }: { codes: string[] }) {
+  const { t } = useTranslation()
   return (
     <div className="flex flex-col gap-2">
       <div className="grid grid-cols-2 gap-1 rounded-md bg-muted p-3 font-mono text-sm">
@@ -35,15 +37,15 @@ function BackupCodes({ codes }: { codes: string[] }) {
         ))}
       </div>
       <p className="text-xs text-muted-foreground">
-        Each code works once, if you lose your authenticator. Store them now: they are not shown again.
+        {t("settings.backupCodesHint")}
       </p>
       <div>
         <Button
           variant="outline"
           size="sm"
-          onClick={() => navigator.clipboard.writeText(codes.join("\n")).then(() => toast.success("Backup codes copied"))}
+          onClick={() => navigator.clipboard.writeText(codes.join("\n")).then(() => toast.success(t("settings.backupCodesCopied")))}
         >
-          Copy codes
+          {t("settings.copyCodes")}
         </Button>
       </div>
     </div>
@@ -56,6 +58,7 @@ function BackupCodes({ codes }: { codes: string[] }) {
  * Every change asks for the password.
  */
 export function TwoFactorCard() {
+  const { t } = useTranslation()
   const [user, setUser] = useState<SessionUser | null>(null)
   const [password, setPassword] = useState("")
   const [code, setCode] = useState("")
@@ -78,7 +81,7 @@ export function TwoFactorCard() {
     try {
       await action()
     } catch {
-      toast.error("Network error. Please try again.")
+      toast.error(t("settings.networkError"))
     } finally {
       setBusy(false)
     }
@@ -86,7 +89,7 @@ export function TwoFactorCard() {
 
   const requirePassword = () => {
     if (password) return true
-    toast.error("Enter your current password")
+    toast.error(t("settings.errorCurrentPasswordRequired"))
     return false
   }
 
@@ -94,7 +97,7 @@ export function TwoFactorCard() {
     requirePassword() &&
     run(async () => {
       const { ok, data } = await post("/api/auth/two-factor/enable", { password })
-      if (!ok) return void toast.error(errorOf(data, "Could not start two-factor set-up"))
+      if (!ok) return void toast.error(errorOf(data, t("settings.errorStartTwoFactor")))
       const uri = String(data!.totpURI)
       setPending({
         qr: await QRCode.toDataURL(uri, { margin: 1, width: 192 }),
@@ -108,11 +111,11 @@ export function TwoFactorCard() {
   const confirmEnable = () =>
     run(async () => {
       const { ok, data } = await post("/api/auth/two-factor/verify-totp", { code: code.trim() })
-      if (!ok) return void toast.error(errorOf(data, "Invalid code"))
+      if (!ok) return void toast.error(errorOf(data, t("settings.errorInvalidCode")))
       setFreshCodes(pending?.backupCodes ?? null)
       setPending(null)
       setCode("")
-      toast.success("Two-factor authentication is on")
+      toast.success(t("settings.twoFactorEnabled"))
       await refresh()
     })
 
@@ -120,10 +123,10 @@ export function TwoFactorCard() {
     requirePassword() &&
     run(async () => {
       const { ok, data } = await post("/api/auth/two-factor/disable", { password })
-      if (!ok) return void toast.error(errorOf(data, "Could not turn two-factor authentication off"))
+      if (!ok) return void toast.error(errorOf(data, t("settings.errorDisableTwoFactor")))
       setPassword("")
       setFreshCodes(null)
-      toast.success("Two-factor authentication is off")
+      toast.success(t("settings.twoFactorDisabled"))
       await refresh()
     })
 
@@ -131,19 +134,19 @@ export function TwoFactorCard() {
     requirePassword() &&
     run(async () => {
       const { ok, data } = await post("/api/auth/two-factor/generate-backup-codes", { password })
-      if (!ok) return void toast.error(errorOf(data, "Could not generate new backup codes"))
+      if (!ok) return void toast.error(errorOf(data, t("settings.errorGenerateBackupCodes")))
       setFreshCodes((data!.backupCodes as string[]) ?? [])
       setPassword("")
-      toast.success("New backup codes generated. The old ones no longer work.")
+      toast.success(t("settings.backupCodesRegenerated"))
     })
 
   const setPasswordless = (enabled: boolean) =>
     requirePassword() &&
     run(async () => {
       const { ok, data } = await post("/api/auth/two-factor/passwordless", { enabled, password })
-      if (!ok) return void toast.error(errorOf(data, "Could not change the sign-in method"))
+      if (!ok) return void toast.error(errorOf(data, t("settings.errorSignInMethod")))
       setPassword("")
-      toast.success(enabled ? "You can now sign in with an authenticator code only" : "Password required again to sign in")
+      toast.success(enabled ? t("settings.passwordlessEnabled") : t("settings.passwordlessDisabled"))
       await refresh()
     })
 
@@ -156,12 +159,11 @@ export function TwoFactorCard() {
           <ShieldCheckIcon className="size-5 text-muted-foreground" />
           <div>
             <CardTitle className="flex items-center gap-2">
-              Two-factor authentication
-              <Badge variant={enabled ? "default" : "outline"}>{enabled ? "On" : "Off"}</Badge>
+              {t("settings.twoFactorTitle")}
+              <Badge variant={enabled ? "default" : "outline"}>{enabled ? t("settings.twoFactorOn") : t("settings.twoFactorOff")}</Badge>
             </CardTitle>
             <CardDescription>
-              Asks for a 6-digit code from an authenticator app (Google Authenticator, 1Password, Authy...)
-              after your password.
+              {t("settings.twoFactorDescription")}
             </CardDescription>
           </div>
         </div>
@@ -171,15 +173,15 @@ export function TwoFactorCard() {
           {pending ? (
             <>
               <div className="flex flex-col items-start gap-3">
-                <img src={pending.qr} alt="QR code to scan with your authenticator app" className="rounded-md border" />
+                <img src={pending.qr} alt={t("settings.qrAlt")} className="rounded-md border" />
                 <FieldDescription>
-                  Scan this QR code with your authenticator app, or enter this key by hand:{" "}
+                  {t("settings.qrInstructions")}{" "}
                   <code className="break-all font-mono text-xs">{pending.secret}</code>
                 </FieldDescription>
               </div>
               <BackupCodes codes={pending.backupCodes} />
               <Field>
-                <FieldLabel htmlFor="totp-confirm">Code from the app</FieldLabel>
+                <FieldLabel htmlFor="totp-confirm">{t("settings.codeFromApp")}</FieldLabel>
                 <Input
                   id="totp-confirm"
                   inputMode="numeric"
@@ -189,14 +191,14 @@ export function TwoFactorCard() {
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
                 />
-                <FieldDescription>Two-factor authentication turns on once this code is accepted.</FieldDescription>
+                <FieldDescription>{t("settings.codeFromAppHint")}</FieldDescription>
               </Field>
               <div className="flex gap-2">
                 <Button onClick={confirmEnable} disabled={busy || code.trim().length !== 6}>
-                  {busy ? "Checking..." : "Confirm and turn on"}
+                  {busy ? t("settings.checking") : t("settings.confirmAndTurnOn")}
                 </Button>
                 <Button variant="outline" onClick={() => setPending(null)} disabled={busy}>
-                  Cancel
+                  {t("common.cancel")}
                 </Button>
               </div>
             </>
@@ -214,40 +216,39 @@ export function TwoFactorCard() {
                       onChange={(e) => setPasswordless(e.target.checked)}
                     />
                     <span>
-                      Sign in without a password
+                      {t("settings.passwordlessLabel")}
                       <span className="block text-muted-foreground">
-                        Your email and a code from the authenticator app are enough. The code becomes your
-                        only factor: keep the app's device locked.
+                        {t("settings.passwordlessHint")}
                       </span>
                     </span>
                   </label>
                 </Field>
               )}
               <Field>
-                <FieldLabel htmlFor="totp-password">Current password</FieldLabel>
+                <FieldLabel htmlFor="totp-password">{t("settings.currentPassword")}</FieldLabel>
                 <Input
                   id="totp-password"
                   type="password"
                   autoComplete="current-password"
-                  placeholder="Your current password"
+                  placeholder={t("settings.currentPasswordPlaceholder")}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                 />
-                <FieldDescription>Required to change any two-factor setting.</FieldDescription>
+                <FieldDescription>{t("settings.twoFactorPasswordHint")}</FieldDescription>
               </Field>
               <div className="flex flex-wrap gap-2">
                 {enabled ? (
                   <>
                     <Button variant="outline" onClick={regenerateCodes} disabled={busy}>
-                      New backup codes
+                      {t("settings.newBackupCodes")}
                     </Button>
                     <Button variant="destructive" onClick={disable} disabled={busy}>
-                      Turn off
+                      {t("settings.turnOff")}
                     </Button>
                   </>
                 ) : (
                   <Button onClick={startEnable} disabled={busy}>
-                    {busy ? "Preparing..." : "Set up two-factor authentication"}
+                    {busy ? t("settings.preparing") : t("settings.setUpTwoFactor")}
                   </Button>
                 )}
               </div>

@@ -36,6 +36,7 @@ import { fetchApi } from "@/lib/api"
 import { TemplateEditorDialog } from "@/components/template-editor-dialog"
 import { TemplatePreviewDialog } from "@/components/template-preview-dialog"
 import { extractVariables, type Template } from "@/lib/templates"
+import { useTranslation } from "@/i18n"
 
 interface EditorSession {
   key: number
@@ -43,6 +44,7 @@ interface EditorSession {
 }
 
 export function TemplatesLayout() {
+  const { t } = useTranslation()
   const [templates, setTemplates] = useState<Template[]>([])
   const [loading, setLoading] = useState(true)
   const [editorSession, setEditorSession] = useState<EditorSession | null>(null)
@@ -58,7 +60,7 @@ export function TemplatesLayout() {
       const data = await res.json()
       setTemplates(data.templates ?? [])
     } catch {
-      toast.error("Failed to load templates")
+      toast.error(t("templates.toast.loadFailed"))
     } finally {
       setLoading(false)
     }
@@ -90,19 +92,19 @@ export function TemplatesLayout() {
     try {
       const res = await fetchApi(`/templates/${id}`, { method: "DELETE" })
       if (!res.ok) throw new Error("Failed to delete")
-      setTemplates(templates.filter((t) => t.id !== id))
-      toast.success("Template deleted")
+      setTemplates(templates.filter((tpl) => tpl.id !== id))
+      toast.success(t("templates.toast.deleted"))
     } catch {
-      toast.error("Failed to delete template")
+      toast.error(t("templates.toast.deleteFailed"))
     }
   }
 
   const copyId = async (id: string) => {
     try {
       await navigator.clipboard.writeText(id)
-      toast.success("Template ID copied")
+      toast.success(t("templates.toast.idCopied"))
     } catch {
-      toast.error("Failed to copy template ID")
+      toast.error(t("templates.toast.idCopyFailed"))
     }
   }
 
@@ -110,20 +112,19 @@ export function TemplatesLayout() {
     <SidebarProvider>
       <AppSidebar />
       <SidebarInset>
-        <SiteHeader title="Templates" />
+        <SiteHeader titleKey="nav.templates" />
         <SessionGuard>
         <div className="flex flex-1 flex-col gap-8 p-4 sm:p-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="font-heading text-[1.75rem] leading-tight font-medium tracking-[-0.03em]">Email templates</h2>
+              <h2 className="font-heading text-[1.75rem] leading-tight font-medium tracking-[-0.03em]">{t("templates.title")}</h2>
               <p className="text-sm text-muted-foreground">
-                Build reusable React Email templates with {"{{variable}}"} placeholders, sent
-                through the API with templateId and variables.
+                {t("templates.subtitle")}
               </p>
             </div>
             <Button onClick={() => openEditor(null)}>
               <PlusIcon />
-              New Template
+              {t("templates.new")}
             </Button>
           </div>
 
@@ -137,7 +138,7 @@ export function TemplatesLayout() {
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <LayoutTemplateIcon className="size-10 text-muted-foreground mb-3" />
               <p className="text-muted-foreground">
-                No templates yet. Create one to reuse email content across sends.
+                {t("templates.empty")}
               </p>
             </div>
           ) : (
@@ -153,44 +154,43 @@ export function TemplatesLayout() {
                   </ItemContent>
                   <ItemActions>
                     <Badge variant="outline">
-                      {template.format === "react-email-code" ? "Code" : "Visual"}
+                      {template.format === "react-email-code" ? t("templates.format.code") : t("templates.format.visual")}
                     </Badge>
                     <Badge variant="outline">
-                      {extractVariables(template.subject, template.html, template.text).length}{" "}
-                      vars
+                      {t("templates.varsCount", { count: extractVariables(template.subject, template.html, template.text).length })}
                     </Badge>
                     <Button
                       variant="ghost"
                       size="icon"
                       className="size-8"
                       onClick={() => openPreview(template)}
-                      title="Preview template"
+                      title={t("templates.preview")}
                     >
                       <EyeIcon />
-                      <span className="sr-only">Preview template</span>
+                      <span className="sr-only">{t("templates.preview")}</span>
                     </Button>
                     <Button
                       variant="ghost"
                       size="icon"
                       className="size-8"
                       onClick={() => copyId(template.id)}
-                      title="Copy template ID"
+                      title={t("templates.copyId")}
                     >
                       <CopyIcon />
-                      <span className="sr-only">Copy template ID</span>
+                      <span className="sr-only">{t("templates.copyId")}</span>
                     </Button>
                     <DropdownMenu>
                       <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="size-8" />}>
                         <EllipsisVerticalIcon />
-                        <span className="sr-only">Actions</span>
+                        <span className="sr-only">{t("templates.actions")}</span>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-32">
                         <DropdownMenuItem onClick={() => openEditor(template)}>
-                          <PencilIcon />Edit
+                          <PencilIcon />{t("templates.edit")}
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem variant="destructive" onClick={() => handleDelete(template.id)}>
-                          <TrashIcon />Delete
+                          <TrashIcon />{t("common.delete")}
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
