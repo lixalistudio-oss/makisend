@@ -7,6 +7,8 @@
  *  T3  Wrong credentials, a dead port and a wrong TLS mode keep the names the connection check gives them.
  *  T4  A secret never leaves: not in the answer, whatever the server replies.
  *  T5  The DTO: only a valid recipient is required, the rest has defaults, unknown fields are refused.
+ *  T6  A file attached in the dashboard reaches the server as a MIME attachment, with its name, its
+ *      type and its exact bytes; the DTO takes the same `attachments` as POST /send-email.
  */
 import { SMTPServer } from "smtp-server";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -94,6 +96,28 @@ describe("manual test send, against a real SMTP server", () => {
     expect(running.received.at(-1)).toMatchObject({ from: SENDER, to: ["dest@example.com"], authUser: USER, secure: true });
     expect(running.received.at(-1)?.body).toContain("Hello from the test");
     expect(running.received.at(-1)?.body).toContain("A test message body.");
+  });
+
+  it("T6 an attached file arrives as a MIME part: name, type and exact bytes", async () => {
+    const bytes = Uint8Array.from({ length: 600 }, (_, i) => i % 256);
+    const r = await sendTestEmail(
+      cfg(),
+      { ...mail, attachments: [{ filename: "recu.pdf", contentType: "application/pdf", content: bytes }] },
+      { rejectUnauthorized: false },
+    );
+    expect(r.ok).toBe(true);
+    const raw = running.received.at(-1)?.body ?? "";
+    const part = raw.split(/--[^\r\n]+/).find((p) => /content-disposition:\s*attachment/i.test(p)) ?? "";
+    expect(part).toMatch(/content-type:\s*application\/pdf/i);
+    expect(part).toMatch(/filename="?recu\.pdf"?/i);
+    const body = part.slice(part.search(/\r?\n\r?\n/)).replace(/\s+/g, "");
+    expect(new Uint8Array(Buffer.from(body, "base64"))).toEqual(bytes);
+  });
+
+  it("T6 without attachments, the message has no attachment part", async () => {
+    const r = await sendTestEmail(cfg(), mail, { rejectUnauthorized: false });
+    expect(r.ok).toBe(true);
+    expect(running.received.at(-1)?.body).not.toMatch(/content-disposition:\s*attachment/i);
   });
 
   it("T2 a refused sender is named `rejected`, with the server's words and the fix", async () => {
@@ -184,5 +208,13 @@ describe("T5 the DTO", () => {
     expect(TestSendDto.safeParse({ to: "a@b.co", subject: "x".repeat(MAX_SUBJECT_LENGTH + 1) }).success).toBe(false);
     expect(TestSendDto.safeParse({ to: "a@b.co", from: "someone@else.com" }).success).toBe(false);
     expect(TestSendDto.safeParse({ to: "a@b.co", html: "<b>x</b>" }).success).toBe(false);
+  });
+
+  it("T6 takes the same attachments as POST /send-email, and refuses the same bad ones", () => {
+    const ok = { filename: "a.pdf", content: Buffer.from("%PDF-1.4").toString("base64"), content_type: "application/pdf" };
+    expect(TestSendDto.safeParse({ to: "a@b.co", attachments: [ok] }).success).toBe(true);
+    expect(TestSendDto.safeParse({ to: "a@b.co", attachments: [{ ...ok, content: "not base64!!" }] }).success).toBe(false);
+    expect(TestSendDto.safeParse({ to: "a@b.co", attachments: [{ ...ok, filename: "a.pdf\r\nBcc: x@y.z" }] }).success).toBe(false);
+    expect(TestSendDto.safeParse({ to: "a@b.co", attachments: Array.from({ length: 6 }, () => ok) }).success).toBe(false);
   });
 });

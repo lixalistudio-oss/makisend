@@ -3,6 +3,7 @@ import * as tls from "node:tls";
 import * as nodemailer from "nodemailer";
 import type { Transporter } from "nodemailer";
 import type { SmtpConfig } from "@/config/config";
+import type { EmailAttachment } from "@/send-email/attachments";
 import { pinoLogger } from "@/core/logger";
 import { DEFAULT_SMTP_PORT, type SmtpSecurity } from "./smtp-host";
 
@@ -244,6 +245,8 @@ export interface TestEmail {
   to: string;
   subject: string;
   text: string;
+  /** Decoded files; absent or empty sends a message without attachments. */
+  attachments?: EmailAttachment[];
 }
 
 export type SmtpSendResult = { ok: true; messageId: string } | Extract<SmtpCheckResult, { ok: false }>;
@@ -261,6 +264,15 @@ export async function sendTestEmail(
       to: email.to,
       subject: email.subject,
       text: email.text,
+      ...(email.attachments && email.attachments.length > 0
+        ? {
+            attachments: email.attachments.map((file) => ({
+              filename: file.filename,
+              contentType: file.contentType,
+              content: Buffer.from(file.content),
+            })),
+          }
+        : {}),
     });
     return { ok: true, messageId: info.messageId };
   } catch (err) {

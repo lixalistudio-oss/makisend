@@ -80,3 +80,12 @@ export function decodeBase64(base64: string): Uint8Array {
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes;
 }
+
+/** A validated DTO entry → the transports' shape (bytes, a content type always set). */
+export function toEmailAttachment(dto: AttachmentDto): EmailAttachment {
+  return {
+    filename: dto.filename,
+    contentType: dto.content_type ?? DEFAULT_ATTACHMENT_CONTENT_TYPE,
+    content: decodeBase64(dto.content),
+  };
+}

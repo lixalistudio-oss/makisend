@@ -1,0 +1,89 @@
+{
+  "sent": [
+    {
+      "filename": "recu-REC-1.pdf",
+      "sha": "d2d217122534356a",
+      "size": 4105
+    },
+    {
+      "filename": "detail.csv",
+      "sha": "1c72ae601c9a3fb0",
+      "size": 22
+    }
+  ],
+  "E1:test-send": {
+    "status": 200,
+    "ok": true,
+    "received": [
+      {
+        "filename": "recu-REC-1.pdf",
+        "sha": "d2d217122534356a",
+        "size": 4105
+      },
+      {
+        "filename": "detail.csv",
+        "sha": "1c72ae601c9a3fb0",
+        "size": 22
+      }
+    ]
+  },
+  "E5:no-attachment": {
+    "status": 200,
+    "files": 0
+  },
+  "E2:send-email": {
+    "status": 202,
+    "received": [
+      {
+        "filename": "recu-REC-1.pdf",
+        "sha": "d2d217122534356a",
+        "size": 4105
+      },
+      {
+        "filename": "detail.csv",
+        "sha": "1c72ae601c9a3fb0",
+        "size": 22
+      }
+    ]
+  },
+  "E4:refusals": {
+    "not base64": {
+      "testSend": 400,
+      "sendEmail": 400
+    },
+    "CRLF in the name": {
+      "testSend": 400,
+      "sendEmail": 400
+    },
+    "a URL to fetch": {
+      "testSend": 400,
+      "sendEmail": 400
+    }
+  },
+  "checks": [
+    {
+      "name": "E1 test send answers ok",
+      "ok": true
+    },
+    {
+      "name": "E1/E3 test send: the binding received both files, byte for byte, in order",
+      "ok": true
+    },
+    {
+      "name": "E5 a test send without files carries none",
+      "ok": true
+    },
+    {
+      "name": "E2 /send-email answers 202",
+      "ok": true
+    },
+    {
+      "name": "E2/E3 /send-email: the workflow handed both files to the binding, byte for byte, in order",
+      "ok": true
+    },
+    {
+      "name": "E4 both doors refuse the same files with 400",
+      "ok": true
+    }
+  ]
+}
