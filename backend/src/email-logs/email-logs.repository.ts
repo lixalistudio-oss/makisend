@@ -1,48 +1,101 @@
 import { emailLogs, emailHistories, apikey } from "@/db/schema";
 import type { Database } from "@/db/connection";
-import type { IEmailLogRepository, EmailLogRecord, EmailHistoryRecord, EmailLogWithHistory, EmailLogFilters } from "./email-logs.types";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import type {
+  EmailLogRecord,
+  EmailHistoryRecord,
+  EmailLogWithHistory,
+  EmailLogPageFilters,
+  EmailLogPage,
+  IEmailLogRepository,
+} from "./email-logs.types";
+import { eq, and, or, lt, desc, inArray, sql, type SQL } from "drizzle-orm";
+
+// D1 allows at most 100 bound parameters per query. The history lookup below
+// binds one parameter per log id, so a page can never exceed 100 logs — this is
+// what broke the endpoint once a user crossed 100 total logs ("too many SQL
+// variables"): the old code loaded EVERY log, then built one giant IN (...).
+export const MAX_PAGE_SIZE = 100;
+const DEFAULT_PAGE_SIZE = 50;
+
+interface LogCursor {
+  createdAt: string;
+  internalId: string;
+}
+
+function encodeCursor(cursor: LogCursor): string {
+  return `${cursor.createdAt}:${cursor.internalId}`;
+}
+
+// createdAt is always a full ISO string (same length, ":" only inside the
+// time part), internalId never contains ":", so splitting on the first ":" is safe.
+function decodeCursor(raw: string): LogCursor | null {
+  const separatorIndex = raw.indexOf(":");
+  if (separatorIndex <= 0 || separatorIndex === raw.length - 1) return null;
+  return {
+    createdAt: raw.slice(0, separatorIndex),
+    internalId: raw.slice(separatorIndex + 1),
+  };
+}
 
 export class EmailLogRepository implements IEmailLogRepository {
   constructor(private readonly db: Database) {}
 
-  async findByUserId(userId: string, filters?: EmailLogFilters): Promise<EmailLogWithHistory[]> {
-    // If filtering by smtpConfigId, we need to join with apikey
+  async findPageByUserId(userId: string, filters?: EmailLogPageFilters): Promise<EmailLogPage> {
+    const pageSize = Math.min(Math.max(filters?.limit ?? DEFAULT_PAGE_SIZE, 1), MAX_PAGE_SIZE);
+
+    const conditions: SQL[] = [eq(emailLogs.userId, userId)];
+
     if (filters?.smtpConfigId) {
-      const apiKeyRecords = await this.db
-        .select({ id: apikey.id })
-        .from(apikey)
-        .where(eq(apikey.smtpConfigId, filters.smtpConfigId));
-
-      const apiKeyIds = apiKeyRecords.map((r) => r.id);
-
-      if (apiKeyIds.length === 0) {
-        return [];
-      }
-
-      const logs = await this.db
-        .select()
-        .from(emailLogs)
-        .where(
-          and(
-            eq(emailLogs.userId, userId),
-            // Filtered in SQL instead of fetching every log and dropping most
-            // of them in JS.
-            inArray(emailLogs.apiKeyId, apiKeyIds),
-          ),
-        )
-        .orderBy(desc(emailLogs.createdAt));
-
-      return this.attachHistory(logs, filters);
+      // Subquery instead of inArray(apiKeyIds): same 100-param trap if the user
+      // ever owns more than 100 API keys.
+      conditions.push(
+        sql`${emailLogs.apiKeyId} in (
+          select ${apikey.id} from ${apikey} where ${apikey.smtpConfigId} = ${filters.smtpConfigId}
+        )`,
+      );
     }
 
-    const logs = await this.db
+    if (filters?.status) {
+      // EXISTS instead of filtering in JS after loading every history row.
+      conditions.push(
+        sql`exists (
+          select 1 from ${emailHistories}
+          where ${emailHistories.emailId} = ${emailLogs.internalId}
+            and ${emailHistories.status} = ${filters.status}
+        )`,
+      );
+    }
+
+    const cursor = filters?.cursor ? decodeCursor(filters.cursor) : null;
+    if (cursor) {
+      // Keyset pagination on (createdAt, internalId) DESC — createdAt is an ISO
+      // string, so lexicographic order is chronological order.
+      conditions.push(
+        or(
+          lt(emailLogs.createdAt, cursor.createdAt),
+          and(eq(emailLogs.createdAt, cursor.createdAt), lt(emailLogs.internalId, cursor.internalId)),
+        ) as SQL,
+      );
+    }
+
+    // Fetch one extra row to know whether another page exists without a COUNT.
+    const rows = await this.db
       .select()
       .from(emailLogs)
-      .where(eq(emailLogs.userId, userId))
-      .orderBy(desc(emailLogs.createdAt));
+      .where(and(...conditions))
+      .orderBy(desc(emailLogs.createdAt), desc(emailLogs.internalId))
+      .limit(pageSize + 1);
 
-    return this.attachHistory(logs, filters);
+    const hasMore = rows.length > pageSize;
+    const page = hasMore ? rows.slice(0, pageSize) : rows;
+    const last = page[page.length - 1];
+
+    const logsWithHistory = await this.attachHistory(page);
+
+    return {
+      logs: logsWithHistory,
+      nextCursor: hasMore && last ? encodeCursor({ createdAt: last.createdAt, internalId: last.internalId }) : null,
+    };
   }
 
   async findById(internalId: string): Promise<EmailLogWithHistory | null> {
@@ -69,12 +122,12 @@ export class EmailLogRepository implements IEmailLogRepository {
   private async attachHistory(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     logs: any[],
-    filters?: EmailLogFilters,
   ): Promise<EmailLogWithHistory[]> {
     if (logs.length === 0) return [];
 
-    // One query for every history row instead of one query per log (N+1):
-    // 1000 logs used to mean 1000 round-trips to D1.
+    // One query for every history row instead of one query per log (N+1).
+    // logs.length <= MAX_PAGE_SIZE, so the IN (...) stays under D1's
+    // 100-bound-parameter limit.
     const ids = logs.map((log) => log.internalId);
     const allHistory = await this.db
       .select()
@@ -90,23 +143,10 @@ export class EmailLogRepository implements IEmailLogRepository {
       else byEmail.set(record.emailId, [record]);
     }
 
-    const results: EmailLogWithHistory[] = [];
-
-    for (const log of logs) {
-      const history = byEmail.get(log.internalId) ?? [];
-
-      // Filter by status if specified
-      if (filters?.status && !history.some((h) => h.status === filters.status)) {
-        continue;
-      }
-
-      results.push({
-        ...this.toLogRecord(log),
-        history,
-      });
-    }
-
-    return results;
+    return logs.map((log) => ({
+      ...this.toLogRecord(log),
+      history: byEmail.get(log.internalId) ?? [],
+    }));
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

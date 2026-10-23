@@ -6,6 +6,14 @@
 	"compatibility_flags": [
 		"nodejs_compat"
 	],
+	// The Worker also serves the Astro frontend: matching static files are served
+	// from this directory first, everything else falls through to the Hono API.
+	// One deployment = one URL, no Cloudflare Pages. Inherited by env.preview.
+	// Build the frontend BEFORE deploying: pnpm --filter frontend build
+	"assets": {
+		"directory": "../frontend/dist",
+		"binding": "ASSETS"
+	},
 	// `vars` are NOT inherited by environments, so preview declares its own below.
 	// PORT is used by nodemailer (SmtpEmailTransport); without it the port silently
 	// falls back to 465.
@@ -30,10 +38,9 @@
 			"migrations_pattern": "drizzle/*.sql"
 		}
 	],
-	// HTTP -> Queue -> Inngest. The queue buffers bursts at the edge; the consumer
-	// forwards events to Inngest (retrying with backoff up to max_retries, then the
-	// DLQ). Inngest runs send-email with retries: 0 so onFailure classifies each
-	// failure within ~1s; the queue cycles own the retry ladder (1min→1h backoff).
+	// HTTP -> Queue -> Workflow. The queue buffers bursts at the edge; the consumer
+	// creates a SendEmailWorkflow instance per message (instance id = emailId-queueCycles
+	// for idempotency; only [a-zA-Z0-9-_] allowed). The workflow's steps own the SMTP delivery attempt.
 	"queues": {
 		"producers": [
 			{
@@ -52,6 +59,13 @@
 			}
 		]
 	},
+	"workflows": [
+		{
+			"name": "makisend-send-email",
+			"binding": "SEND_EMAIL_WORKFLOW",
+			"class_name": "SendEmailWorkflow"
+		}
+	],
 	"env": {
 		"preview": {
 			"name": "makisend-poc-preview",
@@ -86,7 +100,16 @@
 						"dead_letter_queue": "makisend-send-email-dlq-preview"
 					}
 				]
-			}
+			},
+			// Separate workflow name so preview instances are never confused with
+			// production ones.
+			"workflows": [
+				{
+					"name": "makisend-send-email-preview",
+					"binding": "SEND_EMAIL_WORKFLOW",
+					"class_name": "SendEmailWorkflow"
+				}
+			]
 		}
 	}
 }

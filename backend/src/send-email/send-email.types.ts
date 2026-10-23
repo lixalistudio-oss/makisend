@@ -41,9 +41,9 @@ export interface IEmailTransport {
 }
 
 /**
- * Payload buffered in the Cloudflare Queue before being forwarded to Inngest.
- * Mirrors the `app/send-email` event body exactly so the consumer can pass it
- * straight to `inngest.send()`.
+ * Payload buffered in the Cloudflare Queue before being handed to the
+ * SendEmailWorkflow. The envelope mirrors the original `app/send-email` event
+ * body so the consumer can start a workflow with it unchanged.
  */
 export interface SendEmailQueueMessage {
   name: "app/send-email";
@@ -58,10 +58,9 @@ export interface SendEmailQueueMessage {
     smtpConfigId?: string | null;
     /**
      * Number of times this message has been bounced back onto the queue after
-     * an Inngest run died (retries exhausted or the 30s budget blown). The
-     * `onFailure` handler abandons the send once it reaches
-     * `MAX_QUEUE_CYCLES`, which is what keeps transient errors from looping
-     * forever.
+     * a workflow run failed (attempt failed or the run was abandoned). The
+     * workflow abandons the send once it reaches `MAX_QUEUE_CYCLES`, which is
+     * what keeps transient errors from looping forever.
      */
     queueCycles: number;
   };

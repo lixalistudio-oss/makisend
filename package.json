@@ -1,4 +1,12 @@
 {
   "name": "makisend",
-  "private": true
+  "private": true,
+  "scripts": {
+    "docker:build": "docker compose build",
+    "docker:up": "docker compose up",
+    "docker:down": "docker compose down",
+    "docker:test": "docker compose run --rm backend pnpm test:run",
+    "docker:lint": "docker compose run --rm backend pnpm lint",
+    "docker:migrate": "docker compose run --rm backend pnpm exec wrangler d1 migrations apply makisend_db --local"
+  }
 }

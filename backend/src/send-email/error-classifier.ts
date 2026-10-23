@@ -1,13 +1,12 @@
 /**
- * Classifies a failed send-email run AFTER it dies (retries exhausted or the
- * 30s execution budget blown). The verdict decides whether `onFailure` gives
- * up permanently or bounces the message back onto the Cloudflare Queue.
+ * Classifies a failed send attempt. The verdict decides whether the workflow
+ * gives up permanently (dead per the user) or bounces the message back onto
+ * the Cloudflare Queue for another cycle.
  *
- * Only fields that survive Inngest's error serialization are read: `name`,
- * `message`, `stack`, `code` and `cause`. Nodemailer's `responseCode` and
- * `command` are stripped during transport, so the SMTP status a server
- * actually replied with (e.g. "535 5.7.8 ...") is recovered from the end of
- * `message` — nodemailer always appends the raw response as ": <response>".
+ * `responseCode` is read when the error carries it, but nodemailer does not
+ * always attach it — so the SMTP status a server actually replied with
+ * (e.g. "535 5.7.8 ...") is also recovered from the end of `message`;
+ * nodemailer appends the raw response as ": <response>".
  */
 export type FailureVerdict = "permanent" | "transient";
 
@@ -79,10 +78,9 @@ function rawMessage(err: ClassifiableError): string {
 
 /**
  * Node's DNS resolver embeds the error code inside the message text
- * ("queryA ENOTFOUND badhostname", "getaddrinfo EAI_AGAIN host") — and
- * Inngest's `StepError` wrapper drops the enumerable `code` property, so the
- * failure handler often receives a codeless message only. Tokenizing the
- * message recovers the code in that case.
+ * ("queryA ENOTFOUND badhostname", "getaddrinfo EAI_AGAIN host") — and some
+ * error wrappers drop the enumerable `code` property, so a codeless message
+ * is common. Tokenizing the message recovers the code in that case.
  */
 function codeFromMessage(message: string): string | undefined {
   const tokens = message.match(/\bE[A-Z][A-Z_]*\b/g);
@@ -155,6 +153,17 @@ export function friendlyErrorMessage(err: ClassifiableError): string {
       return "TLS negotiation failed — check that the port matches the encryption mode (465 = implicit TLS, 587 = STARTTLS).";
     case "EPROTOCOL":
       return "The server did not speak SMTP — check the host and port in your configuration.";
+    case "ECONNECTION":
+    case "ESOCKET":
+      // Cloudflare Workers block outbound port 25, so a 25 config lands here
+      // with the platform's own "port 25 is blocked" text — call it out.
+      return /port 25 is blocked/i.test(message)
+        ? "Outbound port 25 is blocked on Cloudflare Workers — use port 465 (TLS) or 587 (STARTTLS) instead."
+        : "Could not connect to the SMTP server — check that the host and port are correct, that the port matches the encryption mode (465 = TLS, 587 = STARTTLS), and that the provider allows connections from Cloudflare Workers.";
+    case "ETIMEDOUT":
+      return "The SMTP server did not respond in time — check the host and port, and whether a firewall allows outbound connections on that port.";
+    case "ESTREAM":
+      return "The email content could not be streamed to the SMTP provider — try sending the email again.";
     case "EENVELOPE":
       return status !== undefined && status < 500
         ? `The SMTP provider temporarily rejected the sender or recipient (status ${status}).`
@@ -173,8 +182,10 @@ export function friendlyErrorMessage(err: ClassifiableError): string {
   }
 
   if (status !== undefined && status >= 500) {
-    return `Your SMTP provider permanently rejected this email: ${message}`;
+    // The raw provider response is intentionally not forwarded to the user:
+    // it can contain internal hostnames and server details.
+    return `Your SMTP provider permanently rejected this email (status ${status}).`;
   }
 
-  return `Email delivery failed: ${message}`;
+  return "Email delivery failed unexpectedly — please try again, and contact support if the problem persists.";
 }

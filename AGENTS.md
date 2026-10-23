@@ -47,11 +47,6 @@ src/
 │   ├── schema.ts               # Drizzle schema (users, apikeys, smtp_config, email_logs, ...)
 │   └── connection.ts           # drizzle(db) factory
 ├── email-logs/                 # Email log listing with filters
-├── inngest/                    # Async delivery pipeline
-│   ├── client.ts               # Inngest client + DI middleware (configureDeps)
-│   ├── functions.ts            # Function registry
-│   ├── send-email.ts           # send-email fn (30s window, onFailure) + timeout companion
-│   └── error-classifier.ts     # Permanent/transient verdicts + human-readable messages
 ├── lib/
 │   └── auth.ts                 # Better Auth setup (API keys)
 ├── middleware/
@@ -61,15 +56,19 @@ src/
 │   ├── request-logger.middleware.ts # Request logging
 │   └── session.middleware.ts   # Session/auth middleware
 ├── queue/
-│   └── send-email.consumer.ts  # Cloudflare Queue consumer → Inngest events
+│   └── send-email.consumer.ts  # Cloudflare Queue consumer → SendEmailWorkflow runs
 ├── send-email/                 # Business module (barrel export via index.ts)
 │   ├── index.ts
 │   ├── send-email.controller.ts
 │   ├── send-email.dto.ts       # Zod schemas + types
-│   ├── send-email.service.ts   # Business logic
 │   ├── send-email.repository.ts # Drizzle/D1 persistence
+│   ├── transport-resolver.ts   # Per-event SMTP transport factory
+│   ├── error-classifier.ts     # Permanent/transient verdicts + human-readable messages
 │   └── send-email.types.ts     # Interfaces / contracts
-└── smtp-config/                # Per-user SMTP credentials (encrypted in D1)
+├── smtp-config/                # Per-user SMTP credentials (encrypted in D1)
+└── workflows/                  # Cloudflare Workflows (durable async orchestration)
+    ├── index.ts                # Barrel export
+    └── send-email.workflow.ts  # SendEmailWorkflow (5 durable steps + queue-cycle retry)
 
 test/
 ├── setup.ts
@@ -77,7 +76,8 @@ test/
 ├── integration/full-flow.test.ts
 └── unit/
     ├── api-keys/ auth/ config/ dashboard/ email-logs/
-    ├── inngest/               # send-email fn, error classifier, timeout companion
+    ├── send-email/             # error classifier, transport resolver, controller
+    ├── workflows/              # send-email workflow + run-end resolver
     ├── middleware/ queue/ send-emails/ settings/ smtp-config/
 ```
 
@@ -119,7 +119,6 @@ Copy `.env.example` to `.env` and fill in:
 | `BETTER_AUTH_SECRET` | Better Auth signing secret |
 | `BETTER_AUTH_URL` | Backend URL of the Worker (e.g. `http://localhost:8787`) |
 | `FRONTEND_URL` | Frontend origin allowed for CORS / redirects |
-| `INNGEST_DEV` | `1` to use the local Inngest dev server |
 | `PORT` | SMTP port for nodemailer (`465`, `587`, ...; also a `wrangler.jsonc` var) |
 
 Not environment variables anymore:
@@ -189,7 +188,7 @@ Even though the runtime remains **Hono** (not NestJS), the code organization is 
 - Current coverage:
   - `POST /send-email` route (validation + 202 response)
   - Email service (mock transport, repository, encryption)
-  - Retry pipeline: error classifier, `onFailure` re-queue / abandonment, 30s timeout companion, queue consumer dedup
+  - Retry pipeline: error classifier, workflow re-queue / abandonment, queue consumer dedup
   - API key middleware (401/403 + context wiring)
 - Mocks are reset in `beforeEach`
 - Run `pnpm test:run` before committing
@@ -208,7 +207,8 @@ Even though the runtime remains **Hono** (not NestJS), the code organization is 
 Deployment is done via Wrangler:
 
 ```bash
-pnpm deploy
+pnpm --filter frontend build   # required first: the Worker serves frontend/dist
+pnpm deploy                    # backend/ — uploads Worker + static assets
 ```
 
 Config: `wrangler.jsonc`
@@ -218,6 +218,9 @@ Config: `wrangler.jsonc`
 - Compatibility: `2026-07-10` with `nodejs_compat` flag
 - Observability: logs enabled
 - D1 binding: `makisend_db`
+- Static assets: `../frontend/dist` (Astro build output) — the Worker serves the
+  frontend and the API on the **same origin**, so there is no Cloudflare Pages
+  project and no CORS between UI and API
 
 ## CI / GitHub Actions
 
@@ -236,9 +239,9 @@ Steps run:
 ### POC (current)
 
 - `POST /send-email` endpoint with per-user API key auth (Better Auth)
-- Async delivery pipeline: Cloudflare Queues → Inngest → SMTP
+- Async delivery pipeline: Cloudflare Queues → SendEmailWorkflow → SMTP
 - Delivery via nodemailer + raw SMTP
-- Retry loop: one attempt per run (`retries: 0`, so `onFailure` classifies within ~1s — Inngest's 15s+ backoff can never fit the 30s window), 30s window (`timeouts.finish`) as hang safety net, and automatic bounce-back onto the queue (5 cycles, 1min→1h backoff) for transient errors, with permanent/transient classification
+- Retry loop: one attempt per workflow run, transient failures bounce back onto the queue (5 cycles, 1min→1h backoff), permanent failures (auth, TLS, DNS, config, 5xx) fail immediately with a human-readable reason in D1
 - Encrypted logs stored in D1
 - Unit tests for route / service / middleware
 - GitHub Actions CI (lint + tests) on PRs to `main` and `dev`
@@ -252,7 +255,7 @@ Steps run:
 
 ### Public Beta MVP
 
-- **Message and job queues**: Cloudflare Queues + Inngest are already in place (see POC); remaining work is scale/throughput tuning
+- **Message and job queues**: Cloudflare Queues + Workflows are already in place (see POC); remaining work is scale/throughput tuning
 - Scale and throughput management
 - Deliverability improvements (anti-spam, SPF/DKIM/DMARC)
 
@@ -267,10 +270,10 @@ Steps run:
 
 ### POC-related
 
-- **Asynchronous sending only**: the caller gets `202 Accepted` when the email is queued; the actual delivery happens later (Queues → Inngest → SMTP) and is only visible through the D1 logs.
+- **Asynchronous sending only**: the caller gets `202 Accepted` when the email is queued; the actual delivery happens later (Queues → SendEmailWorkflow → SMTP) and is only visible through the D1 logs.
 - **Single SMTP provider**: credentials are stored per user in D1 (encrypted), but there is no multi-provider routing or failover.
 - **No rate limiting**: see Security section.
-- **Bounded retry, not unlimited**: each run makes **one attempt** (`retries: 0`) — a failed attempt fails the run in ~1s so `onFailure` always gets to classify the nodemailer error before the 30s window. Transient failures bounce back onto the queue (5 cycles, backoff 1min→1h), permanent failures (auth, TLS, DNS, config, 5xx) fail immediately with a human-readable reason in D1. The 30s window (`timeouts.finish`) only catches hung runs.
+- **Bounded retry, not unlimited**: each run makes **one attempt** — a failed attempt fails the run quickly so the workflow can classify the nodemailer error in-process. Transient failures bounce back onto the queue (5 cycles, backoff 1min→1h), permanent failures (auth, TLS, DNS, config, 5xx) fail immediately with a human-readable reason in D1. A hung run is caught by the Workflows execution timeout.
 - **No bounce / open / click tracking**: only send logs are stored.
 - **D1 is a serverless SQLite database**: possible latency, not ideal for very high volumes without caching.
 - **Deliverability**: SPF, DKIM, DMARC and IP reputation are not handled by the code; they depend on the SMTP provider and sender domain.

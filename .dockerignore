@@ -1,0 +1,28 @@
+# dependencies & build output (installed inside the image / mounted as volumes)
+node_modules
+**/node_modules
+dist
+**/dist
+
+# local wrangler runtime state (bind-mounted at run time, never baked into the image)
+.wrangler
+**/.wrangler
+
+# secrets — never copy into the image (still available at runtime via the bind mount)
+.env
+**/.env
+.dev.vars
+**/.dev.vars
+
+# vcs / ci / tooling
+.git
+.github
+.vscode
+.idea
+
+# misc
+**/*.db
+**/*.log
+local-logs.txt
+local-errors.txt
+node_modules/.cache

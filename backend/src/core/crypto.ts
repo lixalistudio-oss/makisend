@@ -6,6 +6,22 @@ function hexToUint8Array(hex: string): Uint8Array {
   return bytes;
 }
 
+const AES_256_KEY_HEX = /^[0-9a-fA-F]{64}$/;
+
+async function importAesKey(secretKeyHex: string): Promise<CryptoKey> {
+  if (!AES_256_KEY_HEX.test(secretKeyHex)) {
+    throw new Error("Invalid AES-256 key: expected 64 hexadecimal characters");
+  }
+  const keyData = hexToUint8Array(secretKeyHex);
+  return crypto.subtle.importKey(
+    "raw",
+    keyData,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"],
+  );
+}
+
 function uint8ArrayToHex(bytes: Uint8Array): string {
   return Array.from(bytes)
     .map((b) => b.toString(16).padStart(2, "0"))
@@ -19,14 +35,7 @@ export async function encrypt(
   if (!plainText) return "";
 
   const encodedText = new TextEncoder().encode(plainText);
-  const keyData = hexToUint8Array(secretKeyHex);
-  const cryptoKey = await crypto.subtle.importKey(
-    "raw",
-    keyData,
-    { name: "AES-GCM", length: 256 },
-    false,
-    ["encrypt", "decrypt"],
-  );
+  const cryptoKey = await importAesKey(secretKeyHex);
 
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const encryptedBuffer = await crypto.subtle.encrypt(
@@ -50,15 +59,7 @@ export async function decrypt(
   const { iv, data } = JSON.parse(encryptedJson);
   const ivBuffer = hexToUint8Array(iv);
   const dataBuffer = hexToUint8Array(data);
-  const keyData = hexToUint8Array(secretKeyHex);
-
-  const cryptoKey = await crypto.subtle.importKey(
-    "raw",
-    keyData,
-    { name: "AES-GCM", length: 256 },
-    false,
-    ["encrypt", "decrypt"],
-  );
+  const cryptoKey = await importAesKey(secretKeyHex);
 
   const decryptedBuffer = await crypto.subtle.decrypt(
     { name: "AES-GCM", iv: ivBuffer },

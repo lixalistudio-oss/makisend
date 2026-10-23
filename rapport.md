@@ -153,7 +153,7 @@ Des problèmes de CORS et de gestion des cookies de session sont apparus lors de
 | Validation | Zod + @hono/zod-validator |
 | Envoi d'emails | Nodemailer (SMTP brut) |
 | Authentification | Better Auth (sessions + API keys) |
-| Traitement asynchrone | Inngest (jobs, queues) |
+| Traitement asynchrone | Cloudflare Queues + Workflows |
 | Chiffrement | Web Crypto API (AES-256-GCM) |
 | Logs / observabilité | Pino |
 | Frontend | Astro + React + Tailwind + shadcn/ui |

@@ -2,12 +2,12 @@ import { describe, it, expect } from "vitest";
 import {
   classifyEmailError,
   friendlyErrorMessage,
-} from "@/inngest/error-classifier";
+} from "@/send-email/error-classifier";
 
 describe("classifyEmailError", () => {
   it("treats a 5xx SMTP status embedded in the message as permanent", () => {
-    // What onFailure actually sees: `responseCode` is stripped by Inngest's
-    // serialization, but nodemailer appended the raw response to the message.
+    // nodemailer sometimes omits `responseCode` but always appended the raw
+    // SMTP response to the message, so the status must be recovered from text.
     expect(
       classifyEmailError({ code: "EAUTH", message: "Invalid login: 535 5.7.8 Authentication failed" }),
     ).toBe("permanent");
@@ -85,9 +85,9 @@ describe("classifyEmailError", () => {
     expect(classifyEmailError({})).toBe("transient");
   });
 
-  it("recovers the code from the message when StepError dropped err.code", () => {
-    // What onFailure actually receives: StepError keeps only name/message/stack/cause,
-    // so the failure object is codeless — the code only survives inside the text.
+  it("recovers the code from the message when err.code is missing", () => {
+    // DNS errors often carry no enumerable `code` — the code only survives
+    // inside the message text.
     expect(classifyEmailError({ message: "queryA ENOTFOUND badhostname" })).toBe("permanent");
     expect(classifyEmailError({ message: "getaddrinfo ENOTFOUND smtp.example.com" })).toBe("permanent");
     expect(classifyEmailError({ message: "queryA EAI_AGAIN smtp.example.com" })).toBe("transient");
@@ -131,14 +131,54 @@ describe("friendlyErrorMessage", () => {
     expect(friendlyErrorMessage({ code: "ETLS", message: "self signed certificate" })).toContain("port");
   });
 
-  it("falls back to the raw provider text for unknown 5xx rejections", () => {
-    const message = "Message size larger than allowed: 550 5.3.4 Message too big";
-    expect(friendlyErrorMessage({ code: "EMAXRECIPIENTS", message })).toBe(
-      `Your SMTP provider permanently rejected this email: ${message}`,
+  it("explains connection failures for the dashboard", () => {
+    expect(
+      friendlyErrorMessage({ code: "ECONNECTION", message: "Connection closed unexpectedly" }),
+    ).toContain("Could not connect to the SMTP server");
+  });
+
+  it("calls out the Cloudflare port 25 block explicitly", () => {
+    expect(
+      friendlyErrorMessage({
+        code: "ECONNECTION",
+        message:
+          "The worker could not open a connection to that address and port. Check the hostname and the port. Outbound port 25 is blocked on Cloudflare Workers",
+      }),
+    ).toBe(
+      "Outbound port 25 is blocked on Cloudflare Workers — use port 465 (TLS) or 587 (STARTTLS) instead.",
     );
   });
 
-  it("falls back to the raw message when nothing matches", () => {
-    expect(friendlyErrorMessage({ message: "SMTP down" })).toBe("Email delivery failed: SMTP down");
+  it("explains socket failures for the dashboard", () => {
+    expect(friendlyErrorMessage({ code: "ESOCKET", message: "socket hang up" })).toContain(
+      "Could not connect to the SMTP server",
+    );
+  });
+
+  it("explains timeouts for the dashboard", () => {
+    expect(friendlyErrorMessage({ code: "ETIMEDOUT", message: "Greeting never received" })).toContain(
+      "did not respond in time",
+    );
+  });
+
+  it("explains message stream failures for the dashboard", () => {
+    expect(friendlyErrorMessage({ code: "ESTREAM", message: "stream error" })).toContain(
+      "could not be streamed",
+    );
+  });
+
+  it("hides the raw provider response for unknown 5xx rejections", () => {
+    const message = "Message size larger than allowed: 550 5.3.4 Message too big";
+    const friendly = friendlyErrorMessage({ code: "EMAXRECIPIENTS", message });
+    expect(friendly).toContain("permanently rejected");
+    expect(friendly).not.toContain(message);
+  });
+
+  it("falls back to a generic message without leaking raw text", () => {
+    const friendly = friendlyErrorMessage({ message: "SMTP down at internal-host-01.corp.local" });
+    expect(friendly).toBe(
+      "Email delivery failed unexpectedly — please try again, and contact support if the problem persists.",
+    );
+    expect(friendly).not.toContain("internal-host-01");
   });
 });

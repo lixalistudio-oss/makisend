@@ -126,12 +126,19 @@ export function EmailLogsLayout() {
         fetchApi(`/email-logs${qs ? `?${qs}` : ""}`),
         fetchApi("/smtp-config"),
       ])
+      if (!logsRes.ok) {
+        throw new Error(`Failed to load email logs (HTTP ${logsRes.status})`)
+      }
+      if (!configsRes.ok) {
+        throw new Error(`Failed to load SMTP configs (HTTP ${configsRes.status})`)
+      }
       const logsData = await logsRes.json()
       const configsData = await configsRes.json()
       setLogs(logsData.logs ?? [])
       setConfigs(configsData.configs ?? [])
-    } catch {
-      toast.error("Failed to load email logs")
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to load email logs"
+      toast.error(message)
     } finally {
       setLoading(false)
     }
