@@ -19,10 +19,19 @@
 			"enabled": true,
 			"invocation_logs": true
 		},
+		// Workers Traces: one span tree per request (fetch, D1, queue, Workflow), in the
+		// Cloudflare dashboard (Workers > makisend-poc > Observability). Inherited by
+		// env.preview. 1 = every request is traced: fine at POC volume, lower it (e.g. 0.1)
+		// before real traffic, as traces are billed by event.
 		"traces": {
-			"enabled": false
+			"enabled": true,
+			"head_sampling_rate": 1
 		}
 	},
+	// Cloudflare Email Service: used for SMTP configurations pointing at smtp.mx.cloudflare.net
+	// (a Worker cannot open an SMTP socket to Cloudflare). The sender domain must be onboarded
+	// in Cloudflare Email Service. Bindings are not inherited: env.preview declares it again.
+	"send_email": [{ "name": "EMAIL" }],
 	"d1_databases": [
 		{
 			"binding": "makisend_db",
@@ -76,6 +85,7 @@
 	"env": {
 		"preview": {
 			"name": "makisend-poc-preview",
+			"send_email": [{ "name": "EMAIL" }],
 			"d1_databases": [
 				{
 					"binding": "makisend_db",

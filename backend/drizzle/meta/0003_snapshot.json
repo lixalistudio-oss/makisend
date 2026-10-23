@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "5622564b-ea9d-4adc-971a-3b6776c9e225",
+  "id": "5390ae65-b359-4c63-bc6e-68c179e8bd42",
   "prevId": "e6e999c6-1863-4b66-bdef-3a341254a751",
   "tables": {
     "account": {
@@ -307,12 +307,12 @@
         }
       },
       "indexes": {
-        "apikey_smtp_config_id_unique": {
-          "name": "apikey_smtp_config_id_unique",
+        "apikey_smtpConfigId_idx": {
+          "name": "apikey_smtpConfigId_idx",
           "columns": [
             "smtp_config_id"
           ],
-          "isUnique": true
+          "isUnique": false
         },
         "apikey_configId_idx": {
           "name": "apikey_configId_idx",
@@ -346,88 +346,6 @@
           ],
           "columnsTo": [
             "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "email_attachments": {
-      "name": "email_attachments",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "email_id": {
-          "name": "email_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "position": {
-          "name": "position",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "filename": {
-          "name": "filename",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "content_type": {
-          "name": "content_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "content": {
-          "name": "content",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "emailAttachments_emailId_position_unique": {
-          "name": "emailAttachments_emailId_position_unique",
-          "columns": [
-            "email_id",
-            "position"
-          ],
-          "isUnique": true
-        }
-      },
-      "foreignKeys": {
-        "email_attachments_email_id_email_logs_internalId_fk": {
-          "name": "email_attachments_email_id_email_logs_internalId_fk",
-          "tableFrom": "email_attachments",
-          "tableTo": "email_logs",
-          "columnsFrom": [
-            "email_id"
-          ],
-          "columnsTo": [
-            "internalId"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
@@ -612,6 +530,21 @@
         "email_processing_time": {
           "name": "email_processing_time",
           "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'api'"
+        },
+        "smtp_config_id": {
+          "name": "smtp_config_id",
+          "type": "text",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false

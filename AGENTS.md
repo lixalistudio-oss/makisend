@@ -224,6 +224,11 @@ Tests: `test/unit/auth/auth-routes.test.ts` (single account, races, 2FA, passwor
 ## Technical notes
 
 - **Per-config SMTP port/security**: `smtpPort` and `smtpSecurity` (`tls` or `starttls`) live on the SMTP config; port 465/2465 means implicit TLS, the other allowed ports require STARTTLS
+- **SMTP provider presets** live in the frontend (`frontend/src/lib/smtp-form.ts`, with the hostname cleaning); `SMTP_PORTS` there must match `backend/src/smtp-config/smtp-host.ts`.
+- **Cloudflare Email Service**: a config on `smtp.mx.cloudflare.net` is sent through the `send_email` binding (`EMAIL`, `src/send-email/cloudflare-email.transport.ts`), never a socket (workerd refuses it). The transport resolver, `SmtpConfigService` (check, test send) and the daily health check all branch on `isCloudflareEmailHost`. Bindings are not inherited by `env.preview`: declare `send_email` in both.
+- **Test sends are logged**: `email_logs.source` is `"api"` or `"test"`; a test carries `smtp_config_id` (no API key). The `smtpConfigId` log filter returns the config's keys' sends plus its tests; dashboard totals count `source = "api"` only.
+- **Several API keys per SMTP config** (`apikey.smtp_config_id` is indexed, not unique). Per-key metrics: `GET /dashboard/by-api-key`; logs filter `apiKeyId`.
+- **Unhandled errors answer a generic 500** (`src/middleware/error.handler.ts`): their message can carry SQL or binding names, so it is only logged. `AppError` messages are written for the caller and are sent.
 - **SMTP connection by hostname**: nodemailer receives a `getSocket` callback that opens the socket by hostname, working around workerd's implicit-TLS/IP limitation; the same options power sends and health checks
 - **Forced IPv4** in nodemailer (`family: 4`) to avoid `workerd` network warnings
 - **Workflow steps return primitives**: a `step.do` callback must never return an object — the Workflows runtime then emits a false "code had hung" cancellation right after the run (workerd#6925 / workers-sdk#14959); multi-value steps return a `JSON.stringify` string that the run parses back

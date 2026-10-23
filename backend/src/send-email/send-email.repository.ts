@@ -2,6 +2,7 @@ import { emailLogs, emailHistories, emailContents, emailAttachments } from "@/db
 import type { Database } from "@/db/connection";
 import type {
   IEmailRepository,
+  PendingEmailLogOptions,
   StoredEmail,
   StoredEmailContent,
   StoredEmailAttachment,
@@ -17,6 +18,7 @@ export class SendEmailRepository implements IEmailRepository {
     to: string,
     subject: string,
     apiKeyId?: string | null,
+    options: PendingEmailLogOptions = {},
   ): Promise<void> {
     await this.db.insert(emailLogs).values({
       internalId,
@@ -24,6 +26,8 @@ export class SendEmailRepository implements IEmailRepository {
       apiKeyId: apiKeyId || null,
       to,
       subject,
+      source: options.source ?? "api",
+      smtpConfigId: options.smtpConfigId ?? null,
       // smtp_id / sent_at remain NULL until completeEmailLog() runs
     });
   }

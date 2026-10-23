@@ -1,0 +1,22 @@
+{
+  "hostnameRefused": [
+    "https://smtp.zoho.com",
+    "ssl://smtp.zoho.com",
+    "smtp.zoho.com:465",
+    "smtp zoho.com",
+    "smtp_zoho.com",
+    "smtp.zoho.com/mail",
+    "user@smtp.zoho.com",
+    "smtp",
+    "127.0.0.1",
+    "10.0.0.5",
+    "192.168.1.10",
+    "169.254.169.254",
+    "999.1.1.1",
+    "-bad.example.com",
+    "a..example.com",
+    ""
+  ],
+  "starttlsCheck": "ok, authenticated over TLS, nothing sent",
+  "blackHoleAbandonedUnderMs": 15000
+}

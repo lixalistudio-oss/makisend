@@ -209,6 +209,12 @@ A devcontainer (`.devcontainer/`) reuses the same compose file to open the proje
 
 ---
 
+## SMTP providers
+
+The SMTP form offers presets that fill the hostname, port and security: Zoho Mail, Gmail / Google Workspace, Microsoft 365, Resend, SendGrid, Mailgun and Cloudflare Email Service, each with what the form cannot guess (app password, `apikey` user name...). A pasted URL (`https://smtp.zoho.com:587/`) is cleaned into a hostname and a port. The credentials can be checked before saving, and a saved configuration can send a test email from the dashboard.
+
+**Cloudflare Email Service** (`smtp.mx.cloudflare.net`): a Worker cannot open an SMTP socket to it, so a configuration on that host is sent through the Worker's `send_email` binding (`EMAIL`, declared in `wrangler.jsonc`) instead; the user name and password are not used. The sender address must use a domain onboarded to Cloudflare Email Sending. The connection check, the test send and the daily health check use the binding too.
+
 ## API documentation
 
 The Worker serves an interactive reference:
@@ -228,12 +234,12 @@ Request schemas are generated from the Zod DTOs so they stay aligned with the ac
 | `GET/PUT/DELETE` | `/smtp-config/{id}` | Session | Reads / updates / deletes a configuration |
 | `POST` | `/smtp-config/check` | Session | Tests unsaved credentials |
 | `POST` | `/smtp-config/{id}/check` | Session | Tests a saved configuration |
-| `POST` | `/smtp-config/{id}/test-send` | Session | Sends a test email (not logged) |
-| `GET/POST` | `/api-keys` | Session | Lists / creates an API key linked to a configuration |
+| `POST` | `/smtp-config/{id}/test-send` | Session | Sends a test email (logged with `source: "test"`, never counted in the dashboard totals) |
+| `GET/POST` | `/api-keys` | Session | Lists / creates an API key linked to a configuration (several keys can share one) |
 | `DELETE` | `/api-keys/{id}` | Session | Revokes an API key |
-| `GET` | `/email-logs` | Session | Paginated logs (filters `status`, `smtpConfigId`, `to`) |
+| `GET` | `/email-logs` | Session | Paginated logs (filters `status`, `smtpConfigId`, `apiKeyId`, `to`) |
 | `GET` | `/email-logs/{id}` | Session | One log and its history |
-| `GET` | `/dashboard/stats`, `/dashboard/by-config`, `/dashboard/recent`, `/dashboard/errors` | Session | Delivery metrics |
+| `GET` | `/dashboard/stats`, `/dashboard/by-config`, `/dashboard/by-api-key`, `/dashboard/recent`, `/dashboard/errors` | Session | Delivery metrics (API sends only; `stats` and `errors` take an optional `apiKeyId`) |
 | `GET/POST` | `/templates` | Session | Lists / creates a template |
 | `GET/PUT/DELETE` | `/templates/{id}` | Session | Reads / updates / deletes a template |
 | `POST` | `/templates/{id}/preview` | Session | Renders the template with sample variables |

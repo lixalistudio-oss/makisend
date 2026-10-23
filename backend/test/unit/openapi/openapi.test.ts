@@ -22,6 +22,7 @@ const EXPECTED_PATHS = [
   "/email-logs/{id}",
   "/dashboard/stats",
   "/dashboard/by-config",
+  "/dashboard/by-api-key",
   "/dashboard/recent",
   "/dashboard/errors",
   "/templates",

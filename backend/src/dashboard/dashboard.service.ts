@@ -1,7 +1,6 @@
-import type { KeyMaterial } from "@/core/crypto";
-import { decrypt } from "@/core/crypto";
+import { decrypt, type KeyMaterial } from "@/core/crypto";
 import { pinoLogger } from "@/core/logger";
-import type { IDashboardRepository, DashboardStats, SmtpConfigBreakdown, RecentEmail, ErrorSummary } from "./dashboard.types";
+import type { IDashboardRepository, DashboardStats, SmtpConfigBreakdown, ApiKeyMetrics, RecentEmail, ErrorSummary } from "./dashboard.types";
 
 export class DashboardService {
   constructor(
@@ -9,9 +8,14 @@ export class DashboardService {
     private readonly aesKey: KeyMaterial,
   ) {}
 
-  async getStats(userId: string, days?: number): Promise<DashboardStats> {
-    pinoLogger.info({ userId, days }, "Fetching dashboard stats");
-    return this.dashboardRepo.getStats(userId, days);
+  async getStats(userId: string, days?: number, apiKeyId?: string): Promise<DashboardStats> {
+    pinoLogger.info({ userId, days, apiKeyId }, "Fetching dashboard stats");
+    return this.dashboardRepo.getStats(userId, days, apiKeyId);
+  }
+
+  async getByApiKey(userId: string, days?: number): Promise<ApiKeyMetrics[]> {
+    pinoLogger.info({ userId, days }, "Fetching dashboard metrics per API key");
+    return this.dashboardRepo.getByApiKey(userId, days);
   }
 
   async getByConfig(userId: string, days?: number): Promise<SmtpConfigBreakdown[]> {
@@ -26,9 +30,9 @@ export class DashboardService {
     return Promise.all(recent.map((r) => this.decryptRecent(r)));
   }
 
-  async getErrors(userId: string, days?: number, limit?: number): Promise<ErrorSummary[]> {
-    pinoLogger.info({ userId, days, limit }, "Fetching error summary");
-    return this.dashboardRepo.getErrors(userId, days, limit);
+  async getErrors(userId: string, days?: number, limit?: number, apiKeyId?: string): Promise<ErrorSummary[]> {
+    pinoLogger.info({ userId, days, limit, apiKeyId }, "Fetching error summary");
+    return this.dashboardRepo.getErrors(userId, days, limit, apiKeyId);
   }
 
   private async decryptBreakdown(item: SmtpConfigBreakdown): Promise<SmtpConfigBreakdown> {
