@@ -52,19 +52,19 @@ const SECTIONS = [
 ]
 
 const METHOD_STYLES: Record<Method, string> = {
-  GET: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300",
-  POST: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-  PUT: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  DELETE: "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300",
+  GET: "border-border bg-muted text-muted-foreground",
+  POST: "border-transparent bg-brand-subtle text-brand-strong",
+  PUT: "border-transparent bg-surface-muted text-warning",
+  DELETE: "border-transparent bg-surface-muted text-destructive",
 }
 
 const STATUS_STYLES: Record<string, string> = {
-  received: "border-border bg-muted text-foreground",
-  processing: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300",
-  cleaned: "border-cyan-500/30 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300",
-  attempt_failed: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  sent: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-  failed: "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300",
+  received: "border-border bg-muted text-muted-foreground",
+  processing: "border-transparent bg-brand-subtle text-brand-strong",
+  cleaned: "border-border bg-muted text-muted-foreground",
+  attempt_failed: "border-transparent bg-surface-muted text-warning",
+  sent: "border-transparent bg-surface-muted text-success",
+  failed: "border-transparent bg-surface-muted text-destructive",
 }
 
 const ENDPOINT_GROUPS: {
@@ -236,7 +236,7 @@ const LIMITS: [string, string][] = [
 
 function MethodBadge({ method }: { method: Method }) {
   return (
-    <Badge variant="outline" className={`font-mono text-[10px] tracking-wide ${METHOD_STYLES[method]}`}>
+    <Badge variant="outline" className={`font-mono text-[10px] ${METHOD_STYLES[method]}`}>
       {method}
     </Badge>
   )
@@ -267,7 +267,7 @@ function CodeBlock({ code, label }: { code: string; label: string }) {
   return (
     <div className="overflow-hidden rounded-lg border bg-muted/35">
       <div className="flex items-center justify-between gap-3 border-b bg-muted/40 px-4 py-2">
-        <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">{label}</span>
+        <span className="font-mono text-[11px] text-muted-foreground">{label}</span>
         <button
           type="button"
           onClick={copy}
@@ -322,14 +322,14 @@ function Callout({
   children: ReactNode
 }) {
   const styles = {
-    info: "border-sky-500/25 bg-sky-500/5",
-    warning: "border-amber-500/30 bg-amber-500/5",
-    success: "border-emerald-500/25 bg-emerald-500/5",
+    info: "border-border bg-surface-muted",
+    warning: "border-warning/30 bg-surface-muted",
+    success: "border-border bg-surface-muted",
   }[tone]
   const Icon = tone === "warning" ? AlertTriangleIcon : tone === "success" ? ShieldCheckIcon : InfoIcon
 
   return (
-    <div className={`flex gap-3 rounded-lg border p-4 ${styles}`}>
+    <div className={`flex gap-3 rounded-xl border p-4 ${styles}`}>
       <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
       <div className="space-y-1 text-sm">
         <p className="font-medium">{title}</p>
@@ -353,7 +353,7 @@ function DocSection({
   return (
     <section id={id} className="scroll-mt-6 space-y-4">
       <div className="space-y-1 border-b pb-4">
-        <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
+        <h2 className="text-xl font-medium tracking-tight">{title}</h2>
         {description ? <p className="max-w-3xl text-sm text-muted-foreground">{description}</p> : null}
       </div>
       {children}
@@ -410,7 +410,7 @@ function QuickstartStep({
   return (
     <Card size="sm" className="h-full">
       <CardHeader>
-        <div className="mb-1 flex size-7 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
+        <div className="mb-1 flex size-7 items-center justify-center rounded-full bg-primary text-xs font-medium text-primary-foreground">
           {number}
         </div>
         <CardTitle>{title}</CardTitle>
@@ -545,7 +545,7 @@ res.raise_for_status()  # 202 when queued`
       <AppSidebar />
       <Toaster position="top-right" />
       <SidebarInset>
-        <SiteHeader title="API Reference" />
+        <SiteHeader title="API reference" />
         <SessionGuard>
           <div className="flex flex-1 flex-col p-4 sm:p-6">
             <div className="mx-auto flex w-full max-w-6xl flex-col gap-8">
@@ -556,7 +556,7 @@ res.raise_for_status()  # 202 when queued`
                     <Badge variant="secondary">Developer guide</Badge>
                   </div>
                   <div className="space-y-2">
-                    <h1 className="text-3xl font-semibold tracking-tight">API Reference</h1>
+                    <h1 className="text-3xl font-medium tracking-tight">API reference</h1>
                     <p className="text-sm leading-relaxed text-muted-foreground sm:text-base">
                       Send transactional email from your backend through your own SMTP account.
                       This guide covers authentication, request shapes, the asynchronous delivery
@@ -609,7 +609,7 @@ res.raise_for_status()  # 202 when queued`
               <div className="grid gap-10 lg:grid-cols-[210px_minmax(0,1fr)]">
                 <aside className="hidden lg:block">
                   <nav className="sticky top-6 space-y-1 border-l pl-4">
-                    <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                    <p className="mb-2 text-[11px] font-medium text-muted-foreground">
                       On this page
                     </p>
                     {SECTIONS.map((section) => (
@@ -660,7 +660,7 @@ res.raise_for_status()  # 202 when queued`
                     </div>
 
                     <div className="rounded-xl border bg-muted/25 p-4">
-                      <p className="mb-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">Request flow</p>
+                      <p className="mb-4 text-xs font-medium text-muted-foreground">Request flow</p>
                       <div className="flex flex-col gap-3 text-sm sm:flex-row sm:items-center">
                         {["POST /send-email", "D1 pending log", "Cloudflare Queue", "Workflow", "SMTP provider"].map(
                           (step, index, steps) => (
@@ -681,7 +681,7 @@ res.raise_for_status()  # 202 when queued`
                     <Callout tone="info" title="The API does not wait for delivery">
                       A <InlineCode>202</InlineCode> means the email is stored and queued. Open{" "}
                       <a href="/dashboard/email-logs" className="font-medium text-foreground underline underline-offset-4">
-                        Email Logs
+                        Email logs
                       </a>{" "}
                       to follow its status and failure history.
                     </Callout>
@@ -698,14 +698,14 @@ res.raise_for_status()  # 202 when queued`
                         title="Connect SMTP"
                         description="Add your provider hostname, port, TLS mode, credentials, and sender address."
                         href="/dashboard/smtp-config"
-                        action="Open SMTP Config"
+                        action="Open SMTP configuration"
                       />
                       <QuickstartStep
                         number="2"
                         title="Create an API key"
                         description="Link the key to the SMTP configuration. Copy it when it is shown; it cannot be recovered."
                         href="/dashboard/api-keys"
-                        action="Open API Keys"
+                        action="Open API keys"
                       />
                       <QuickstartStep
                         number="3"
@@ -786,7 +786,7 @@ res.raise_for_status()  # 202 when queued`
                       </CardHeader>
                       <CardContent className="space-y-6">
                         <div className="space-y-2">
-                          <h3 className="text-sm font-semibold">Inline body</h3>
+                          <h3 className="text-sm font-medium">Inline body</h3>
                           <div className="overflow-hidden rounded-xl ring-1 ring-foreground/10">
                             <Table>
                               <TableHeader>
@@ -825,11 +825,11 @@ res.raise_for_status()  # 202 when queued`
 
                         <div className="grid gap-4 sm:grid-cols-2">
                           <div className="space-y-2">
-                            <h3 className="text-sm font-semibold">Success</h3>
+                            <h3 className="text-sm font-medium">Success</h3>
                             <CodeBlock code={successExample} label="202 response" />
                           </div>
                           <div className="space-y-2">
-                            <h3 className="text-sm font-semibold">Validation error</h3>
+                            <h3 className="text-sm font-medium">Validation error</h3>
                             <CodeBlock code={validationExample} label="400 response" />
                           </div>
                         </div>
@@ -1032,7 +1032,7 @@ res.raise_for_status()  # 202 when queued`
                       {ENDPOINT_GROUPS.map((group) => (
                         <div key={group.title} className="space-y-3">
                           <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="text-sm font-semibold">{group.title}</h3>
+                            <h3 className="text-sm font-medium">{group.title}</h3>
                             <Badge variant="secondary">{group.auth}</Badge>
                           </div>
                           <p className="-mt-1 text-sm text-muted-foreground">{group.description}</p>

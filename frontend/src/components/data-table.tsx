@@ -40,31 +40,31 @@ function StatusBadge({ status }: { status: string }) {
   const variants: Record<string, { icon: React.ReactNode; className: string }> = {
     received: {
       icon: <MailIcon className="size-3" />,
-      className: "text-blue-600",
+      className: "text-muted-foreground",
     },
     processing: {
-      icon: <LoaderIcon className="size-3 animate-spin" />,
-      className: "text-yellow-600",
+      icon: <LoaderIcon className="size-3 animate-spin motion-reduce:animate-none" />,
+      className: "text-brand-strong",
     },
     cleaned: {
       icon: <CircleCheckIcon className="size-3" />,
-      className: "text-indigo-600",
+      className: "text-muted-foreground",
     },
     sent: {
-      icon: <CircleCheckIcon className="fill-green-500 dark:fill-green-400" />,
-      className: "text-green-600",
+      icon: <CircleCheckIcon />,
+      className: "text-success",
     },
     delivered: {
-      icon: <CircleCheckIcon className="fill-green-500 dark:fill-green-400" />,
-      className: "text-green-600",
+      icon: <CircleCheckIcon />,
+      className: "text-success",
     },
     attempt_failed: {
-      icon: <CircleXIcon className="fill-orange-500 dark:fill-orange-400" />,
-      className: "text-orange-600",
+      icon: <CircleXIcon />,
+      className: "text-warning",
     },
     failed: {
-      icon: <CircleXIcon className="fill-red-500 dark:fill-red-400" />,
-      className: "text-red-600",
+      icon: <CircleXIcon />,
+      className: "text-destructive",
     },
     unknown: {
       icon: <LoaderIcon className="size-3" />,
@@ -113,7 +113,7 @@ export function DataTable() {
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border">
+    <div className="min-w-0 overflow-hidden rounded-2xl border">
       <Table>
         <TableHeader>
           <TableRow>

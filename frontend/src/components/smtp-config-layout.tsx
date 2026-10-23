@@ -129,12 +129,12 @@ export function SmtpConfigLayout() {
     <SidebarProvider>
       <AppSidebar />
       <SidebarInset>
-        <SiteHeader />
+        <SiteHeader title="SMTP configuration" />
         <SessionGuard>
-        <div className="flex flex-1 flex-col gap-8 p-6">
+        <div className="flex flex-1 flex-col gap-8 p-4 sm:p-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-2xl font-bold">SMTP Configuration</h2>
+              <h2 className="font-heading text-[1.75rem] leading-tight font-medium tracking-[-0.03em]">SMTP configuration</h2>
               <p className="text-sm text-muted-foreground">
                 Manage your SMTP server connections for sending emails.
               </p>
@@ -142,11 +142,11 @@ export function SmtpConfigLayout() {
             <Dialog open={open} onOpenChange={(v) => { if (v) setOpen(true); else closeForm() }}>
               <DialogTrigger render={<Button onClick={openCreate} />}>
                 <PlusIcon />
-                Add SMTP Config
+                Add SMTP configuration
               </DialogTrigger>
               <DialogContent className="max-h-[85dvh] gap-3 sm:max-w-[460px] sm:gap-4">
                 <DialogHeader>
-                  <DialogTitle>{editingId ? "Edit SMTP Configuration" : "Create SMTP Configuration"}</DialogTitle>
+                  <DialogTitle>{editingId ? "Edit SMTP configuration" : "Create SMTP configuration"}</DialogTitle>
                   <DialogDescription>
                     {editingId ? "Update your SMTP server details." : "Add a new SMTP server to send emails through."}
                   </DialogDescription>
@@ -191,8 +191,8 @@ export function SmtpConfigLayout() {
                     </ItemDescription>
                   </ItemContent>
                   <ItemActions>
-                    <Badge variant="outline" className={config.isActive ? "text-green-600" : "text-muted-foreground"}>
-                      {config.isActive ? <CheckCircleIcon className="fill-green-500" /> : <XCircleIcon />}
+                    <Badge variant="outline" className={config.isActive ? "text-success" : "text-muted-foreground"}>
+                      {config.isActive ? <CheckCircleIcon /> : <XCircleIcon />}
                       {config.isActive ? "Active" : "Inactive"}
                     </Badge>
                     <DropdownMenu>

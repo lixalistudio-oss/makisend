@@ -269,7 +269,7 @@ export function SmtpConfigForm({ editingId, initial, onSaved, onCancel }: Props)
         </Field>
 
         <Field data-invalid={!!errors.senderEmail}>
-          <FieldLabel htmlFor="senderEmail">Sender Email</FieldLabel>
+          <FieldLabel htmlFor="senderEmail">Sender email</FieldLabel>
           <Input
             id="senderEmail"
             type="email"
@@ -292,7 +292,7 @@ export function SmtpConfigForm({ editingId, initial, onSaved, onCancel }: Props)
       {check && (
         <div
           role="status"
-          className={`flex items-start gap-2 rounded-md border p-3 text-sm ${check.ok ? "border-green-600/40 text-green-700" : "border-destructive/40 text-destructive"}`}
+          className={`flex items-start gap-2 rounded-xl border p-4 text-sm ${check.ok ? "border-success/40 text-success" : "border-destructive/40 text-destructive"}`}
         >
           {check.ok ? <CheckCircleIcon className="mt-0.5 size-4 shrink-0" /> : <XCircleIcon className="mt-0.5 size-4 shrink-0" />}
           <span>{check.ok ? "Connected and signed in. No email was sent." : check.message}</span>
@@ -307,7 +307,7 @@ export function SmtpConfigForm({ editingId, initial, onSaved, onCancel }: Props)
           {checking ? "Checking..." : "Test connection"}
         </Button>
         <Button onClick={save} disabled={!complete || submitting || checking}>
-          {submitting ? "Saving..." : editingId ? "Save Changes" : "Create"}
+          {submitting ? "Saving..." : editingId ? "Save changes" : "Create"}
         </Button>
       </DialogFooter>
     </>

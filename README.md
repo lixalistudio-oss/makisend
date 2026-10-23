@@ -92,6 +92,10 @@ makisend/
 
 ---
 
+## Design
+
+[`DESIGN.md`](./DESIGN.md) is the visual system of the dashboard and of the website ([makisend-website](https://github.com/lixalistudio-oss/makisend-website)): neutral [Arc UI](https://uiarc.dev) surfaces, one MakiSend green (`#0f6b4f`) spent only on what is active, selected or in progress, Geist for headings, Inter for text, weights 400 and 500, sentence case. The dashboard maps these tokens onto its shadcn variables in `frontend/src/styles/global.css`; change a token in `DESIGN.md` first, then there and in the website.
+
 ## Tech stack
 
 - **Runtime**: Cloudflare Workers (`workerd`)

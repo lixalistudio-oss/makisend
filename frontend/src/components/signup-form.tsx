@@ -82,7 +82,7 @@ export function SignupForm({
           <form onSubmit={handleSubmit}>
             <FieldGroup>
               <div className="flex flex-col items-center gap-2 text-center">
-                <h1 className="text-2xl font-bold">Set up MakiSend</h1>
+                <h1 className="text-2xl font-medium">Set up MakiSend</h1>
                 <p className="text-sm text-balance text-muted-foreground">
                   Create the administrator account. It is the only account on this instance:
                   once it exists, nobody else can sign up.
@@ -123,7 +123,7 @@ export function SignupForm({
               </Field>
 
               <Field>
-                <FieldLabel htmlFor="confirm-password">Confirm Password</FieldLabel>
+                <FieldLabel htmlFor="confirm-password">Confirm password</FieldLabel>
                 <Input
                   id="confirm-password"
                   type="password"

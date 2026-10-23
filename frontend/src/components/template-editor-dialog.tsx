@@ -173,7 +173,7 @@ const LivePreview = memo(function LivePreview({
 
       <div className="rounded-lg border p-3">
         <span className="text-xs font-medium text-muted-foreground">Subject</span>
-        <p className="mt-1 text-sm font-semibold">{previewSubject || "—"}</p>
+        <p className="mt-1 text-sm font-medium">{previewSubject || "—"}</p>
       </div>
 
       {html ? (
@@ -382,7 +382,7 @@ export function TemplateEditorDialog({
     <Dialog open onOpenChange={(value) => { if (!value) onClose() }}>
       <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-7xl">
         <DialogHeader>
-          <DialogTitle>{editingId ? "Edit Template" : "Create Template"}</DialogTitle>
+          <DialogTitle>{editingId ? "Edit template" : "Create template"}</DialogTitle>
           <DialogDescription>
             Compose visually or paste a React Email component. Use {"{{variable}}"}{" "}
             placeholders in the subject or body; callers pass the values at send time.
@@ -535,7 +535,7 @@ export function TemplateEditorDialog({
             Cancel
           </Button>
           <Button type="button" onClick={handleSubmit} disabled={submitting}>
-            {submitting ? "Saving..." : editingId ? "Save Changes" : "Create"}
+            {submitting ? "Saving..." : editingId ? "Save changes" : "Create"}
           </Button>
         </DialogFooter>
       </DialogContent>

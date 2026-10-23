@@ -123,7 +123,7 @@ export function LoginForm({
           <form onSubmit={handleSubmit}>
             <FieldGroup>
               <div className="flex flex-col items-center gap-2 text-center">
-                <h1 className="text-2xl font-bold">
+                <h1 className="text-2xl font-medium">
                   {step === "second-factor" ? "Two-factor authentication" : "Welcome back"}
                 </h1>
                 <p className="text-sm text-balance text-muted-foreground">{subtitle}</p>
@@ -191,25 +191,25 @@ export function LoginForm({
 
               <Field>
                 <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? "Signing in..." : step === "second-factor" ? "Verify" : "Sign In"}
+                  {loading ? "Signing in..." : step === "second-factor" ? "Verify" : "Sign in"}
                 </Button>
               </Field>
 
               <FieldDescription className="text-center">
                 {step === "password" && (
-                  <button type="button" className="text-primary underline-offset-4 hover:underline" onClick={() => switchTo("code")}>
+                  <button type="button" className="text-brand underline-offset-4 hover:underline" onClick={() => switchTo("code")}>
                     Sign in with an authenticator code instead
                   </button>
                 )}
                 {step === "code" && (
-                  <button type="button" className="text-primary underline-offset-4 hover:underline" onClick={() => switchTo("password")}>
+                  <button type="button" className="text-brand underline-offset-4 hover:underline" onClick={() => switchTo("password")}>
                     Sign in with your password instead
                   </button>
                 )}
                 {step === "second-factor" && (
                   <button
                     type="button"
-                    className="text-primary underline-offset-4 hover:underline"
+                    className="text-brand underline-offset-4 hover:underline"
                     onClick={() => {
                       setUseBackupCode(!useBackupCode);
                       setCode("");

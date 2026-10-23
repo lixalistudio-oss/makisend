@@ -3,6 +3,7 @@ import * as React from "react"
 import { NavMain } from "@/components/nav-main"
 import { NavSecondary } from "@/components/nav-secondary"
 import { NavUser } from "@/components/nav-user"
+import { MakiSendMark } from "@/components/makisend-mark"
 import {
   Sidebar,
   SidebarContent,
@@ -20,7 +21,6 @@ import {
   LayoutTemplateIcon,
   BookOpenIcon,
   Settings2Icon,
-  CommandIcon,
 } from "lucide-react"
 
 const data = {
@@ -31,17 +31,17 @@ const data = {
       icon: <LayoutDashboardIcon />,
     },
     {
-      title: "SMTP Config",
+      title: "SMTP configuration",
       url: "/dashboard/smtp-config",
       icon: <MailIcon />,
     },
     {
-      title: "API Keys",
+      title: "API keys",
       url: "/dashboard/api-keys",
       icon: <KeyIcon />,
     },
     {
-      title: "Email Logs",
+      title: "Email logs",
       url: "/dashboard/email-logs",
       icon: <FileTextIcon />,
     },
@@ -53,7 +53,7 @@ const data = {
   ],
   navSecondary: [
     {
-      title: "API Reference",
+      title: "API reference",
       url: "/dashboard/api-docs",
       icon: <BookOpenIcon />,
     },
@@ -75,8 +75,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               className="data-[slot=sidebar-menu-button]:p-1.5!"
               render={<a href="/dashboard" />}
             >
-              <CommandIcon className="size-5!" />
-              <span className="text-base font-semibold">MakiSend</span>
+              <MakiSendMark className="size-6!" />
+              <span className="font-heading text-base font-medium tracking-tight">MakiSend</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

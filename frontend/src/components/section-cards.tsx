@@ -1,16 +1,13 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Badge } from "@/components/ui/badge"
 import {
   Card,
-  CardAction,
   CardDescription,
   CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { MailIcon, CheckCircleIcon, XCircleIcon, TrendingUpIcon } from "lucide-react"
 import { fetchApi } from "@/lib/api"
 
 interface Stats {
@@ -38,56 +35,24 @@ export function SectionCards() {
   }, [])
 
   const cards = [
-    {
-      title: "Total Emails Sent",
-      value: stats?.totalSent ?? "—",
-      description: "All time",
-      icon: <MailIcon className="size-4" />,
-      trend: null,
-    },
-    {
-      title: "Delivered",
-      value: stats?.successCount ?? "—",
-      description: "Successfully sent",
-      icon: <CheckCircleIcon className="size-4" />,
-      trend: { value: `${stats?.successRate ?? 0}%`, up: true },
-    },
-    {
-      title: "Failed",
-      value: stats?.failureCount ?? "—",
-      description: "Delivery errors",
-      icon: <XCircleIcon className="size-4" />,
-      trend: null,
-    },
-    {
-      title: "Delivery Rate",
-      value: `${stats?.successRate ?? 0}%`,
-      description: "Success percentage",
-      icon: <TrendingUpIcon className="size-4" />,
-      trend: null,
-    },
+    { title: "Total emails sent", value: stats?.totalSent ?? "—", description: "All time" },
+    { title: "Delivered", value: stats?.successCount ?? "—", description: "Successfully sent" },
+    { title: "Failed", value: stats?.failureCount ?? "—", description: "Delivery errors" },
+    { title: "Delivery rate", value: `${stats?.successRate ?? 0}%`, description: "Success percentage" },
   ]
 
   return (
-    <div className="grid grid-cols-1 gap-4 px-4 sm:grid-cols-2 lg:grid-cols-4 *:data-[slot=card]:bg-linear-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs lg:px-6 dark:*:data-[slot=card]:bg-card">
+    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
       {cards.map((card) => (
-        <Card key={card.title} className="@container/card">
+        <Card key={card.title} className="@container/card min-w-0">
           <CardHeader>
             <CardDescription>{card.title}</CardDescription>
-            <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
+            <CardTitle className="font-heading text-[1.75rem] leading-tight font-medium tracking-[-0.03em] tabular-nums @[250px]/card:text-4xl">
               {card.value}
             </CardTitle>
-            {card.trend && (
-              <CardAction>
-                <Badge variant="outline">
-                  {card.trend.up ? <TrendingUpIcon /> : null}
-                  {card.trend.value}
-                </Badge>
-              </CardAction>
-            )}
           </CardHeader>
           <CardFooter className="flex-col items-start gap-1.5 text-sm">
-            <div className="line-clamp-1 flex gap-2 font-medium">
+            <div className="line-clamp-1 flex gap-2 text-muted-foreground">
               {card.description}
             </div>
           </CardFooter>

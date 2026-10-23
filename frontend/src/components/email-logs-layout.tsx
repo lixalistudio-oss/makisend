@@ -76,13 +76,22 @@ interface SmtpConfig {
 }
 
 const statusConfig: Record<string, { color: string; icon: React.ReactNode }> = {
-  received: { color: "text-blue-600 bg-blue-50", icon: <MailIcon className="size-3" /> },
-  processing: { color: "text-yellow-600 bg-yellow-50", icon: <LoaderIcon className="size-3 animate-spin" /> },
-  cleaned: { color: "text-indigo-600 bg-indigo-50", icon: <CircleCheckIcon className="size-3" /> },
-  sent: { color: "text-green-600 bg-green-50", icon: <CircleCheckIcon className="fill-green-500 size-3" /> },
-  attempt_failed: { color: "text-orange-600 bg-orange-50", icon: <CircleXIcon className="fill-orange-500 size-3" /> },
-  failed: { color: "text-red-600 bg-red-50", icon: <CircleXIcon className="fill-red-500 size-3" /> },
+  received: { color: "text-muted-foreground bg-muted", icon: <MailIcon className="size-3" /> },
+  processing: { color: "text-brand-strong bg-brand-subtle", icon: <LoaderIcon className="size-3 animate-spin motion-reduce:animate-none" /> },
+  cleaned: { color: "text-muted-foreground bg-muted", icon: <CircleCheckIcon className="size-3" /> },
+  sent: { color: "text-success bg-surface-muted", icon: <CircleCheckIcon className="size-3" /> },
+  attempt_failed: { color: "text-warning bg-surface-muted", icon: <CircleXIcon className="size-3" /> },
+  failed: { color: "text-destructive bg-surface-muted", icon: <CircleXIcon className="size-3" /> },
   unknown: { color: "text-muted-foreground bg-muted", icon: <LoaderIcon className="size-3" /> },
+}
+
+const statusDot: Record<string, string> = {
+  received: "bg-input",
+  processing: "bg-brand",
+  cleaned: "bg-input",
+  sent: "bg-success",
+  attempt_failed: "bg-warning",
+  failed: "bg-destructive",
 }
 
 /**
@@ -199,11 +208,11 @@ export function EmailLogsLayout() {
       <AppSidebar />
       <Toaster position="top-right" />
       <SidebarInset>
-        <SiteHeader />
+        <SiteHeader title="Email logs" />
         <SessionGuard>
-        <div className="flex flex-1 flex-col gap-6 p-6">
+        <div className="flex flex-1 flex-col gap-6 p-4 sm:p-6">
           <div>
-            <h2 className="text-2xl font-bold">Email Logs</h2>
+            <h2 className="font-heading text-[1.75rem] leading-tight font-medium tracking-[-0.03em]">Email logs</h2>
             <p className="text-sm text-muted-foreground">
               Track the status and history of all sent emails.
             </p>
@@ -225,12 +234,12 @@ export function EmailLogsLayout() {
               <SelectTrigger className="w-[140px]">
                 <SelectValue placeholder="Status">
                   {statusFilter === "all"
-                    ? "All Statuses"
+                    ? "All statuses"
                     : statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Statuses</SelectItem>
+                <SelectItem value="all">All statuses</SelectItem>
                 <SelectItem value="received">Received</SelectItem>
                 <SelectItem value="processing">Processing</SelectItem>
                 <SelectItem value="cleaned">Cleaned</SelectItem>
@@ -240,14 +249,14 @@ export function EmailLogsLayout() {
             </Select>
             <Select value={configFilter} onValueChange={(v) => v && setConfigFilter(v)}>
               <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="SMTP Config">
+                <SelectValue placeholder="SMTP configuration">
                   {configFilter === "all"
-                    ? "All Configs"
-                    : (configs.find((c) => c.id === configFilter)?.smtpHostname ?? "All Configs")}
+                    ? "All configs"
+                    : (configs.find((c) => c.id === configFilter)?.smtpHostname ?? "All configs")}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Configs</SelectItem>
+                <SelectItem value="all">All configs</SelectItem>
                 {configs.map((c) => (
                   <SelectItem key={c.id} value={c.id}>{c.smtpHostname}</SelectItem>
                 ))}
@@ -257,14 +266,14 @@ export function EmailLogsLayout() {
               <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="API Key">
                   {keyFilter === "all"
-                    ? "All API Keys"
+                    ? "All API keys"
                     : keys.some((k) => k.id === keyFilter)
                       ? keyLabel(keyFilter)
                       : "Unknown key"}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All API Keys</SelectItem>
+                <SelectItem value="all">All API keys</SelectItem>
                 {keys.map((k) => (
                   <SelectItem key={k.id} value={k.id}>{k.name || k.prefix || "Unnamed key"}</SelectItem>
                 ))}
@@ -272,7 +281,7 @@ export function EmailLogsLayout() {
             </Select>
           </div>
 
-          <div className="overflow-hidden rounded-lg border">
+          <div className="min-w-0 overflow-hidden rounded-2xl border">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -347,16 +356,16 @@ export function EmailLogsLayout() {
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">
-                        {selectedLog.sentAt ? "Sent At" : "Queued At"}
+                        {selectedLog.sentAt ? "Sent at" : "Queued at"}
                       </span>
                       <span>{formatDate(selectedLog.sentAt ?? selectedLog.createdAt)}</span>
                     </div>
                     <div className="border-t pt-4">
-                      <h4 className="font-medium mb-3">Email Timeline</h4>
+                      <h4 className="font-medium mb-3">Email timeline</h4>
                       <div className="relative ml-2 border-l-2 border-muted pl-4">
                         {selectedLog.history.map((entry, i) => (
                           <div key={i} className="relative mb-4 last:mb-0">
-                            <div className={`absolute -left-[21px] top-1 size-3 rounded-full border-2 border-background ${statusConfig[entry.status]?.color ?? "bg-muted"}`} />
+                            <div className={`absolute -left-[21px] top-1 size-3 rounded-full border-2 border-background ${statusDot[entry.status] ?? "bg-input"}`} />
                             <div className="flex flex-col gap-0.5">
                               <div className="flex items-center gap-2">
                                 <StatusBadge status={entry.status} current={i === selectedLog.history.length - 1} />

@@ -48,8 +48,8 @@ export function ErrorsCard() {
   return (
     <Card className="@container/card">
       <CardHeader>
-        <CardDescription>Delivery Errors</CardDescription>
-        <CardTitle className="text-xl font-semibold">
+        <CardDescription>Delivery errors</CardDescription>
+        <CardTitle className="text-xl font-medium">
           Top errors across all sends
         </CardTitle>
         <CardAction>
@@ -83,7 +83,7 @@ export function ErrorsCard() {
                 className="flex items-center justify-between gap-4 rounded-md border bg-card px-3 py-2"
               >
                 <div className="flex min-w-0 items-center gap-2">
-                  <CircleXIcon className="size-4 shrink-0 fill-red-500 text-red-600" />
+                  <CircleXIcon className="size-4 shrink-0 text-destructive" />
                   <span className="truncate text-sm" title={entry.error}>
                     {entry.error}
                   </span>
