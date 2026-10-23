@@ -2,15 +2,9 @@
 
 ## Overview
 
-MakiSend is a **Proof of Concept (POC)** for a **serverless** transactional email service deployed on **Cloudflare Workers**.
+MakiSend is a **serverless** transactional email service deployed on **Cloudflare Workers**. Apps send one authenticated `POST /send-email`; the message is encrypted, queued, and delivered through the user's own SMTP provider by a durable Workflow.
 
-The three questions this POC tries to validate:
-
-1. Can we deploy a serverless backend using **nodemailer** and raw SMTP on Cloudflare Workers?
-2. Can it work at scale?
-3. Can emails land in the inbox instead of spam folders?
-
-The product aims to provide a simple API for sending transactional emails without managing a dedicated server.
+The project started as a proof of concept to validate nodemailer over raw SMTP on Workers, at scale and with good inbox placement. It is now an early-stage product: the sending pipeline, dashboard and security basics work end to end (see the roadmap and known limitations below).
 
 ## Tech stack
 
@@ -331,7 +325,7 @@ Steps run:
 
 ## Roadmap (from Excalidraw design)
 
-### POC (current)
+### Available today
 
 - `POST /send-email` endpoint with per-user API key auth (Better Auth)
 - Email templates: `/templates` CRUD (session auth) + `templateId`/`variables` branch on `POST /send-email` (API key auth), rendered at request time before enqueueing; frontend page at `/dashboard/templates` with full visual builder (inspector, themes, export), pasted-TSX code mode, and live preview
@@ -354,7 +348,7 @@ Steps run:
 
 ### Public Beta MVP
 
-- **Message and job queues**: Cloudflare Queues + Workflows are already in place (see POC); remaining work is scale/throughput tuning
+- **Message and job queues**: Cloudflare Queues + Workflows are already in place (see Available today); remaining work is scale/throughput tuning
 - Scale and throughput management
 - Deliverability improvements (anti-spam, SPF/DKIM/DMARC)
 
@@ -367,7 +361,7 @@ Steps run:
 - **Pricing**: cost can become high on large volumes or long executions.
 - **Long connections are inefficient**: SMTP keeps a TCP connection; recreating it on every Worker request is not optimal.
 
-### POC-related
+### Current scope
 
 - **Asynchronous sending only**: the caller gets `202 Accepted` when the email is queued; the actual delivery happens later (Queues → SendEmailWorkflow → SMTP) and is only visible through the D1 logs.
 - **Single SMTP provider**: credentials are stored per user in D1 (encrypted), but there is no multi-provider routing or failover.
