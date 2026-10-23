@@ -195,7 +195,7 @@ function TestSendForm({ config, onClose }: { config: NonNullable<Props["config"]
       {result && (
         <div
           role="status"
-          className={`flex items-start gap-2 rounded-md border p-3 text-sm ${result.ok ? "border-green-600/40 text-green-700" : "border-destructive/40 text-destructive"}`}
+          className={`flex items-start gap-2 rounded-xl border p-4 text-sm ${result.ok ? "border-success/40 text-success" : "border-destructive/40 text-destructive"}`}
         >
           {result.ok ? <CheckCircleIcon className="mt-0.5 size-4 shrink-0" /> : <XCircleIcon className="mt-0.5 size-4 shrink-0" />}
           <span>

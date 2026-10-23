@@ -208,12 +208,12 @@ export function ApiKeysLayout() {
     <SidebarProvider>
       <AppSidebar />
       <SidebarInset>
-        <SiteHeader />
+        <SiteHeader title="API keys" />
         <SessionGuard>
-        <div className="flex flex-1 flex-col gap-8 p-6">
+        <div className="flex flex-1 flex-col gap-8 p-4 sm:p-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-2xl font-bold">API Keys</h2>
+              <h2 className="font-heading text-[1.75rem] leading-tight font-medium tracking-[-0.03em]">API keys</h2>
               <p className="text-sm text-muted-foreground">
                 Manage API keys for sending emails through your SMTP configs.
               </p>
@@ -232,11 +232,11 @@ export function ApiKeysLayout() {
             <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm() }}>
               <DialogTrigger render={<Button onClick={openCreate} />}>
                 <PlusIcon />
-                Create API Key
+                Create API key
               </DialogTrigger>
               <DialogContent className="max-h-[85dvh] overflow-y-auto gap-3 sm:max-w-[425px] sm:gap-4">
                 <DialogHeader>
-                  <DialogTitle>{newKeyValue ? "API Key Created" : "Create API Key"}</DialogTitle>
+                  <DialogTitle>{newKeyValue ? "API Key Created" : "Create API key"}</DialogTitle>
                   <DialogDescription>
                     {newKeyValue
                       ? "Copy this key now. You won't be able to see it again."
@@ -245,7 +245,7 @@ export function ApiKeysLayout() {
                 </DialogHeader>
                 {newKeyValue ? (
                   <FieldGroup className="py-1 gap-2 sm:gap-3">
-                    <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
+                    <div className="rounded-xl border border-warning/30 bg-surface-muted p-4 text-sm text-foreground [&_svg]:text-warning">
                       <div className="flex items-start gap-2">
                         <AlertTriangleIcon className="mt-0.5 size-4 shrink-0" />
                         <span>
@@ -272,7 +272,7 @@ export function ApiKeysLayout() {
                 ) : (
                   <FieldGroup className="py-1 gap-1.5 sm:gap-2">
                     <Field>
-                      <FieldLabel>SMTP Config</FieldLabel>
+                      <FieldLabel>SMTP configuration</FieldLabel>
                       <Select
                         value={selectedConfigId}
                         onValueChange={(value) => setSelectedConfigId(value ?? "")}
@@ -299,7 +299,7 @@ export function ApiKeysLayout() {
                       </FieldDescription>
                     </Field>
                     <Field>
-                      <FieldLabel htmlFor="keyName">Key Name</FieldLabel>
+                      <FieldLabel htmlFor="keyName">Key name</FieldLabel>
                       <Input
                         id="keyName"
                         placeholder="e.g., Production Key"
@@ -349,7 +349,7 @@ export function ApiKeysLayout() {
                       <KeyIcon className="size-5" />
                     </ItemMedia>
                     <ItemContent className="gap-1.5">
-                      <ItemTitle className="text-base">{key.name || "Unnamed Key"}</ItemTitle>
+                      <ItemTitle className="text-base">{key.name || "Unnamed key"}</ItemTitle>
                       <ItemDescription className="font-mono text-xs">
                         {maskedKeyDisplay(key)}
                       </ItemDescription>
@@ -363,8 +363,8 @@ export function ApiKeysLayout() {
                       </div>
                     </ItemContent>
                     <ItemActions>
-                      <Badge variant="outline" className={key.enabled ? "text-green-600" : "text-muted-foreground"}>
-                        {key.enabled ? <CheckCircleIcon className="fill-green-500" /> : <XCircleIcon />}
+                      <Badge variant="outline" className={key.enabled ? "text-success" : "text-muted-foreground"}>
+                        {key.enabled ? <CheckCircleIcon /> : <XCircleIcon />}
                         {key.enabled ? "Active" : "Disabled"}
                       </Badge>
                       <DropdownMenu>

@@ -82,7 +82,7 @@ export function TemplatePreviewDialog({
 
         <div className="rounded-lg border p-3">
           <span className="text-xs font-medium text-muted-foreground">Subject</span>
-          <p className="mt-1 text-sm font-semibold">{subject || "—"}</p>
+          <p className="mt-1 text-sm font-medium">{subject || "—"}</p>
         </div>
 
         <iframe

@@ -110,12 +110,12 @@ export function TemplatesLayout() {
     <SidebarProvider>
       <AppSidebar />
       <SidebarInset>
-        <SiteHeader />
+        <SiteHeader title="Templates" />
         <SessionGuard>
-        <div className="flex flex-1 flex-col gap-8 p-6">
+        <div className="flex flex-1 flex-col gap-8 p-4 sm:p-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-2xl font-bold">Email Templates</h2>
+              <h2 className="font-heading text-[1.75rem] leading-tight font-medium tracking-[-0.03em]">Email templates</h2>
               <p className="text-sm text-muted-foreground">
                 Build reusable React Email templates with {"{{variable}}"} placeholders, sent
                 through the API with templateId and variables.

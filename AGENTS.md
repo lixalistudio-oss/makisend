@@ -170,6 +170,13 @@ Even though the runtime remains **Hono** (not NestJS), the code organization is 
 - Do not use `c.env` beyond the entrypoint and factories: transform `Bindings` into a typed `Config` as early as possible.
 - Do not import `nodemailer` or `drizzle` directly from a controller.
 
+## Design system
+
+- `DESIGN.md` (repository root) is the source of truth for the dashboard and the website. Read it before any UI change.
+- Tokens live in `frontend/src/styles/global.css`, mapped onto shadcn variables. `--brand*` is MakiSend green; shadcn's `--accent` stays a neutral hover fill. Use `bg-brand-subtle text-brand-strong` for active or selected states, `text-brand` for links, `text-success` / `text-warning` / `text-destructive` for statuses (always with their word).
+- No Tailwind palette classes (`text-green-600`...), no `font-semibold` / `font-bold`, no `uppercase` or wide tracking, sentence case labels, one primary button per surface.
+- Controls are 44px high (`h-11`), cards use `rounded-2xl` (34px), panels `rounded-xl` (26px), controls `rounded-lg` (18px).
+
 ## Code conventions
 
 - **Strict TypeScript** implicitly via `tsconfig.json`

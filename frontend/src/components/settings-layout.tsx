@@ -158,11 +158,11 @@ export function SettingsLayout() {
       <AppSidebar />
       <Toaster position="top-right" />
       <SidebarInset>
-        <SiteHeader />
+        <SiteHeader title="Settings" />
         <SessionGuard>
-        <div className="flex flex-1 flex-col gap-8 p-6 max-w-2xl">
+        <div className="flex flex-1 flex-col gap-8 p-4 sm:p-6 max-w-2xl">
           <div>
-            <h2 className="text-2xl font-bold">Settings</h2>
+            <h2 className="font-heading text-[1.75rem] leading-tight font-medium tracking-[-0.03em]">Settings</h2>
             <p className="text-sm text-muted-foreground">
               Manage your account settings and preferences.
             </p>
@@ -196,7 +196,7 @@ export function SettingsLayout() {
                 </Field>
                 <div>
                   <Button onClick={handleSaveProfile} disabled={savingProfile}>
-                    {savingProfile ? "Saving..." : "Save Changes"}
+                    {savingProfile ? "Saving..." : "Save changes"}
                   </Button>
                 </div>
               </FieldGroup>
@@ -264,7 +264,7 @@ export function SettingsLayout() {
                 </Field>
                 <div>
                   <Button onClick={handleChangePassword} disabled={savingPassword}>
-                    {savingPassword ? "Changing..." : "Change Password"}
+                    {savingPassword ? "Changing..." : "Change password"}
                   </Button>
                 </div>
               </FieldGroup>
@@ -273,11 +273,17 @@ export function SettingsLayout() {
 
           <TwoFactorCard />
 
-          <Card className="border-destructive/50">
-            <CardContent className="pt-6">
+          <Card className="ring-destructive/40">
+            <CardHeader>
+              <CardTitle>Delete account</CardTitle>
+              <CardDescription>
+                This action is irreversible. All your SMTP configs, API keys, and email logs will be permanently deleted.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
               <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
                 <DialogTrigger render={<Button variant="destructive" />}>
-                  Delete Account
+                  Delete account
                 </DialogTrigger>
                 <DialogContent className="sm:max-w-[425px]">
                   <DialogHeader>
@@ -315,9 +321,6 @@ export function SettingsLayout() {
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
-              <p className="text-sm text-muted-foreground mt-3">
-                This action is irreversible. All your SMTP configs, API keys, and email logs will be permanently deleted.
-              </p>
             </CardContent>
           </Card>
         </div>

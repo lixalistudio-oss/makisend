@@ -34,11 +34,11 @@ import { fetchApi } from "@/lib/api"
 const chartConfig = {
   sent: {
     label: "Sent",
-    color: "var(--primary)",
+    color: "var(--brand)",
   },
   failed: {
     label: "Failed",
-    color: "hsl(var(--destructive))",
+    color: "var(--destructive)",
   },
 } satisfies ChartConfig
 
@@ -76,8 +76,11 @@ export function ChartAreaInteractive() {
             failed: 0,
           })
         }
+        // The API returns window totals only, so the chart spreads them evenly over the days
+        // (a per-day series needs a backend endpoint). "Sent" counts delivered emails, not
+        // every attempt: drawing totalSent here showed failures as green deliveries.
         if (stats && stats.totalSent > 0) {
-          const perDay = Math.ceil(stats.totalSent / days)
+          const perDay = Math.ceil((stats.successCount ?? 0) / days)
           const failPerDay = Math.ceil((stats.failureCount ?? 0) / days)
           entries.forEach((e) => {
             e.sent = perDay
@@ -103,7 +106,7 @@ export function ChartAreaInteractive() {
   return (
     <Card className="@container/card">
       <CardHeader>
-        <CardTitle>Emails Sent</CardTitle>
+        <CardTitle>Emails sent</CardTitle>
         <CardDescription>
           <span className="hidden @[540px]/card:block">
             Showing email volume over time

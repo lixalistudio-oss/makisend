@@ -14,10 +14,8 @@ export function DashboardLayout() {
       <SidebarInset>
         <SiteHeader />
         <SessionGuard>
-          <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
-            <div className="pt-4">
-              <SectionCards />
-            </div>
+          <div className="flex flex-1 flex-col gap-6 p-4 sm:p-6">
+            <SectionCards />
             <ChartAreaInteractive />
             <ErrorsCard />
             <DataTable />
