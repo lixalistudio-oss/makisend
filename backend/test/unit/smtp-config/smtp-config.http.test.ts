@@ -21,7 +21,7 @@ const smtpPayload = {
   senderEmail: "sender@example.com",
 };
 
-describe("POST /smtp-config", () => {
+describe("SMTP config HTTP", () => {
   beforeAll(async () => {
     const testD1 = await createTestD1();
     mf = testD1.mf;
@@ -29,7 +29,6 @@ describe("POST /smtp-config", () => {
       AES_256_KEY:
         "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
       makisend_db: testD1.d1,
-      PORT: 587,
       BETTER_AUTH_SECRET: "test-secret",
       BETTER_AUTH_URL: "http://localhost:8787",
       FRONTEND_URL: ORIGIN,
@@ -67,11 +66,10 @@ describe("POST /smtp-config", () => {
     );
 
     expect(res.status).toBe(401);
-    // without this the browser hides the 401 from the frontend as a CORS failure
     expect(res.headers.get("access-control-allow-origin")).toBe(ORIGIN);
   });
 
-  it("creates a config bound to the session user", async () => {
+  it("creates a config bound to the session user with default TLS on 465", async () => {
     const res = await app.request(
       "/smtp-config",
       {
@@ -85,11 +83,73 @@ describe("POST /smtp-config", () => {
       },
       env,
     );
-    const body = (await res.json()) as { config: { userId: string; senderEmail: string } };
+    const body = (await res.json()) as {
+      config: { userId: string; senderEmail: string; smtpPort: number; smtpSecurity: string };
+    };
 
     expect(res.status).toBe(201);
     expect(body.config.userId).toBeTruthy();
     expect(body.config.senderEmail).toBe(smtpPayload.senderEmail);
+    expect(body.config.smtpPort).toBe(465);
+    expect(body.config.smtpSecurity).toBe("tls");
+    expect(body.config).not.toHaveProperty("smtpPassword");
+  });
+
+  it("rejects a hostname with a scheme or a port", async () => {
+    const res = await app.request(
+      "/smtp-config",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: ORIGIN,
+          Cookie: cookie,
+        },
+        body: json({ ...smtpPayload, smtpHostname: "smtp.example.com:465" }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects port 25, which Workers cannot reach", async () => {
+    const res = await app.request(
+      "/smtp-config",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: ORIGIN,
+          Cookie: cookie,
+        },
+        body: json({ ...smtpPayload, smtpPort: 25 }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(400);
+  });
+
+  it("derives STARTTLS when port 587 is supplied without a security", async () => {
+    const res = await app.request(
+      "/smtp-config",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: ORIGIN,
+          Cookie: cookie,
+        },
+        body: json({ ...smtpPayload, smtpHostname: "smtp.starttls.example.com", smtpPort: 587 }),
+      },
+      env,
+    );
+    const body = (await res.json()) as { config: { smtpPort: number; smtpSecurity: string } };
+
+    expect(res.status).toBe(201);
+    expect(body.config.smtpPort).toBe(587);
+    expect(body.config.smtpSecurity).toBe("starttls");
   });
 
   it("lists only the configs of the session user", async () => {
@@ -104,7 +164,89 @@ describe("POST /smtp-config", () => {
     const body = (await res.json()) as { configs: { senderEmail: string }[] };
 
     expect(res.status).toBe(200);
-    expect(body.configs).toHaveLength(1);
-    expect(body.configs[0].senderEmail).toBe(smtpPayload.senderEmail);
+    expect(body.configs).toHaveLength(2);
+    expect(body.configs.map((config) => config.senderEmail)).toContain(smtpPayload.senderEmail);
+    expect(body.configs[0]).not.toHaveProperty("smtpPassword");
+  });
+
+  it("requires a session for the unsaved check", async () => {
+    const res = await app.request(
+      "/smtp-config/check",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Origin: ORIGIN },
+        body: json(smtpPayload),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(401);
+  });
+
+  it("validates the unsaved check like a creation", async () => {
+    const res = await app.request(
+      "/smtp-config/check",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: ORIGIN,
+          Cookie: cookie,
+        },
+        body: json({ ...smtpPayload, smtpHostname: "https://smtp.example.com" }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 404 for an unknown saved configuration", async () => {
+    const res = await app.request(
+      "/smtp-config/does-not-exist/check",
+      {
+        method: "POST",
+        headers: { Origin: ORIGIN, Cookie: cookie },
+      },
+      env,
+    );
+
+    expect(res.status).toBe(404);
+  });
+
+  it("validates the test-send recipient", async () => {
+    const res = await app.request(
+      "/smtp-config/does-not-exist/test-send",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: ORIGIN,
+          Cookie: cookie,
+        },
+        body: json({ to: "not-an-email" }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 404 for test-send on an unknown configuration", async () => {
+    const res = await app.request(
+      "/smtp-config/does-not-exist/test-send",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: ORIGIN,
+          Cookie: cookie,
+        },
+        body: json({ to: "dest@example.com" }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(404);
   });
 });

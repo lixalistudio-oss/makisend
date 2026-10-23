@@ -2,6 +2,14 @@ import { encrypt, decrypt } from "@/core/crypto";
 import { AppError } from "@/core/errors";
 import { pinoLogger } from "@/core/logger";
 import type { ISmtpConfigRepository, SmtpConfigRecord } from "./smtp-config.types";
+import { defaultSecurityFor, type SmtpSecurity } from "./smtp-host";
+import {
+  checkSmtpConnection,
+  sendTestEmail,
+  type SmtpCheckResult,
+  type SmtpSendResult,
+  type TestEmail,
+} from "./smtp-connection";
 
 export class SmtpConfigService {
   constructor(
@@ -39,9 +47,19 @@ export class SmtpConfigService {
 
   async create(
     userId: string,
-    input: { smtpHostname: string; smtpUsername: string; smtpPassword: string; senderEmail: string },
+    input: {
+      smtpHostname: string;
+      smtpPort: number;
+      smtpSecurity: SmtpSecurity;
+      smtpUsername: string;
+      smtpPassword: string;
+      senderEmail: string;
+    },
   ): Promise<SmtpConfigRecord> {
-    pinoLogger.info({ userId, senderEmail: input.senderEmail }, "Creating SMTP config");
+    pinoLogger.info(
+      { userId, senderEmail: input.senderEmail, smtpPort: input.smtpPort, smtpSecurity: input.smtpSecurity },
+      "Creating SMTP config",
+    );
 
     const [encryptedHostname, encryptedUsername, encryptedPassword, encryptedSenderEmail] =
       await Promise.all([
@@ -53,6 +71,8 @@ export class SmtpConfigService {
 
     const config = await this.smtpConfigRepo.create(userId, {
       smtpHostname: encryptedHostname,
+      smtpPort: input.smtpPort,
+      smtpSecurity: input.smtpSecurity,
       smtpUsername: encryptedUsername,
       smtpPassword: encryptedPassword,
       senderEmail: encryptedSenderEmail,
@@ -65,7 +85,15 @@ export class SmtpConfigService {
   async update(
     id: string,
     userId: string,
-    updates: { smtpHostname?: string; smtpUsername?: string; smtpPassword?: string; senderEmail?: string; isActive?: boolean },
+    updates: {
+      smtpHostname?: string;
+      smtpPort?: number;
+      smtpSecurity?: SmtpSecurity;
+      smtpUsername?: string;
+      smtpPassword?: string;
+      senderEmail?: string;
+      isActive?: boolean;
+    },
   ): Promise<SmtpConfigRecord> {
     pinoLogger.info({ id, userId }, "Updating SMTP config");
 
@@ -77,7 +105,16 @@ export class SmtpConfigService {
       throw new AppError(403, "Not authorized to update this SMTP config");
     }
 
-    const encryptedUpdates: Record<string, string | boolean> = {};
+    const encryptedUpdates: Record<string, string | number | boolean> = {};
+
+    // A new port without an explicit security takes that port's usual mode, so
+    // changing 465 to 587 cannot leave an implicit-TLS row on a STARTTLS port.
+    if (updates.smtpPort !== undefined) {
+      encryptedUpdates.smtpPort = updates.smtpPort;
+      encryptedUpdates.smtpSecurity = updates.smtpSecurity ?? defaultSecurityFor(updates.smtpPort);
+    } else if (updates.smtpSecurity !== undefined) {
+      encryptedUpdates.smtpSecurity = updates.smtpSecurity;
+    }
 
     if (updates.smtpHostname) {
       encryptedUpdates.smtpHostname = await encrypt(updates.smtpHostname, this.aesKey);
@@ -98,6 +135,78 @@ export class SmtpConfigService {
     const config = await this.smtpConfigRepo.update(id, encryptedUpdates);
     pinoLogger.info({ id }, "SMTP config updated successfully");
     return this.decryptRecord(config);
+  }
+
+
+  async checkConnection(input: {
+    smtpHostname: string;
+    smtpPort: number;
+    smtpSecurity: SmtpSecurity;
+    smtpUsername: string;
+    smtpPassword: string;
+  }): Promise<SmtpCheckResult> {
+    return checkSmtpConnection({
+      smtpHostName: input.smtpHostname,
+      smtpPort: input.smtpPort,
+      smtpSecurity: input.smtpSecurity,
+      smtpUsername: input.smtpUsername,
+      smtpPassword: input.smtpPassword,
+    });
+  }
+
+  async checkConnectionById(id: string, userId: string): Promise<SmtpCheckResult> {
+    const config = await this.findByIdAndUser(id, userId);
+    return checkSmtpConnection(this.toTransportConfig(config));
+  }
+
+  async sendTest(id: string, userId: string, email: TestEmail): Promise<SmtpSendResult> {
+    const config = await this.findByIdAndUser(id, userId);
+    return sendTestEmail(this.toTransportConfig(config), email);
+  }
+
+  async checkAll(): Promise<{ checked: number; healthy: number }> {
+    const records = await this.smtpConfigRepo.findAll();
+    let healthy = 0;
+
+    for (const record of records) {
+      let result: SmtpCheckResult;
+      try {
+        const decrypted = await this.decryptRecord(record);
+        result = await checkSmtpConnection(this.toTransportConfig(decrypted));
+      } catch (err) {
+        pinoLogger.error({ err, configId: record.id }, "SMTP health check could not read the configuration");
+        result = {
+          ok: false,
+          reason: "unknown",
+          message: "The stored SMTP configuration could not be read.",
+        };
+      }
+
+      if (result.ok) healthy++;
+
+      try {
+        await this.smtpConfigRepo.update(record.id, {
+          lastCheckAt: new Date(),
+          lastCheckOk: result.ok,
+          lastCheckError: result.ok ? null : result.message,
+        });
+      } catch (err) {
+        pinoLogger.error({ err, configId: record.id }, "SMTP health check result could not be stored");
+      }
+    }
+
+    return { checked: records.length, healthy };
+  }
+
+  private toTransportConfig(config: SmtpConfigRecord) {
+    return {
+      smtpHostName: config.smtpHostname,
+      smtpPort: config.smtpPort,
+      smtpSecurity: config.smtpSecurity,
+      smtpUsername: config.smtpUsername,
+      smtpPassword: config.smtpPassword,
+      senderEmail: config.senderEmail,
+    };
   }
 
   async delete(id: string, userId: string): Promise<void> {

@@ -5,26 +5,15 @@ import { AppError } from "@/core/errors";
 import { pinoLogger } from "@/core/logger";
 import { createDatabase } from "@/db/connection";
 import { SmtpEmailTransport } from "./index";
-import type { Config, SmtpConfig } from "@/config/config";
+import type { SmtpConfig } from "@/config/config";
 import type { IEmailTransport } from "./send-email.types";
 import type { Bindings } from "@/index";
-
-export function buildTransportConfig(env: Bindings): Config {
-  return {
-    port: env.PORT,
-    aesKey: env.AES_256_KEY,
-    db: env.makisend_db,
-    better_auth_secret: env.BETTER_AUTH_SECRET,
-    better_auth_url: env.BETTER_AUTH_URL,
-  };
-}
 
 type SmtpConfigRow = typeof smtpConfigTable.$inferSelect;
 
 /**
- * Look up an SMTP configuration. With `smtpConfigId` the exact row the event was
- * queued with is used; without it (legacy events) the active configuration — or
- * any configuration — is used as a fallback.
+ * With an explicit id, use exactly that row and refuse it when disabled.
+ * Without one, use an active configuration.
  */
 export async function findSmtpRecord(
   env: Bindings,
@@ -38,6 +27,9 @@ export async function findSmtpRecord(
       .from(smtpConfigTable)
       .where(eq(smtpConfigTable.id, smtpConfigId))
       .limit(1);
+    if (byId && !byId.isActive) {
+      throw new AppError(409, "SMTP configuration is inactive");
+    }
     return byId;
   }
 
@@ -46,7 +38,7 @@ export async function findSmtpRecord(
     .from(smtpConfigTable)
     .where(eq(smtpConfigTable.isActive, true))
     .limit(1);
-  return active ?? (await db.select().from(smtpConfigTable).limit(1))[0];
+  return active;
 }
 
 export async function decryptSmtpRecord(
@@ -59,14 +51,19 @@ export async function decryptSmtpRecord(
     decrypt(record.smtpPassword, env.AES_256_KEY),
     decrypt(record.senderEmail, env.AES_256_KEY),
   ]);
-  return { smtpHostName, smtpUsername, smtpPassword, senderEmail };
+  return {
+    smtpHostName,
+    smtpPort: record.smtpPort,
+    smtpSecurity: record.smtpSecurity,
+    smtpUsername,
+    smtpPassword,
+    senderEmail,
+  };
 }
 
 /**
- * Transport factory used by the SendEmailWorkflow. It builds a fresh nodemailer
- * transport from the configuration referenced by the event, so credential edits
- * apply immediately and each tenant sends with its own SMTP account instead of
- * a per-isolate singleton.
+ * Builds a fresh transport for the configuration selected at enqueue time, so
+ * credential edits apply immediately and tenants never share an SMTP account.
  */
 export async function resolveTransportFor(
   env: Bindings,
@@ -76,6 +73,7 @@ export async function resolveTransportFor(
   try {
     record = await findSmtpRecord(env, smtpConfigId);
   } catch (err) {
+    if (err instanceof AppError) throw err;
     pinoLogger.error({ err, smtpConfigId }, "Failed to look up SMTP configuration");
     throw new AppError(500, "Failed to look up SMTP configuration");
   }
@@ -86,5 +84,5 @@ export async function resolveTransportFor(
   }
 
   const smtpConfig = await decryptSmtpRecord(env, record);
-  return new SmtpEmailTransport(buildTransportConfig(env), smtpConfig);
+  return new SmtpEmailTransport(smtpConfig);
 }

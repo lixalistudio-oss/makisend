@@ -1,10 +1,12 @@
 import { Hono } from "hono";
+import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { pinoLogger } from "@/core/logger";
 import type { Bindings, UserInfoVariables } from "@/index";
 import type { EmailLogService } from "./email-logs.service";
 import type { EmailLogPageFilters } from "./email-logs.types";
 import { MAX_PAGE_SIZE } from "./email-logs.repository";
+import { MAX_EMAIL_LENGTH, MAX_ID_LENGTH } from "@/core/validation";
 
 export function createEmailLogsController(
   getService: () => EmailLogService,
@@ -24,11 +26,11 @@ export function createEmailLogsController(
 
     const filters: EmailLogPageFilters = {};
     if (smtpConfigId) {
-      const parsed = z.string().min(1).safeParse(smtpConfigId);
+      const parsed = z.string().min(1).max(MAX_ID_LENGTH).safeParse(smtpConfigId);
       if (parsed.success) filters.smtpConfigId = parsed.data;
     }
     if (to) {
-      const parsed = z.string().min(1).safeParse(to);
+      const parsed = z.string().min(1).max(MAX_EMAIL_LENGTH).safeParse(to);
       if (parsed.success) filters.to = parsed.data;
     }
     if (status) {
@@ -40,7 +42,7 @@ export function createEmailLogsController(
       if (parsed.success) filters.limit = parsed.data;
     }
     if (cursor) {
-      const parsed = z.string().min(1).safeParse(cursor);
+      const parsed = z.string().min(1).max(512).safeParse(cursor);
       if (parsed.success) filters.cursor = parsed.data;
     }
 
@@ -52,9 +54,10 @@ export function createEmailLogsController(
 
   controller.get(
     "/:id",
+    zValidator("param", z.object({ id: z.string().min(1).max(MAX_ID_LENGTH) })),
     async (c) => {
       const userId = c.get("userId");
-      const id = c.req.param("id");
+      const id = c.req.valid("param").id;
       pinoLogger.info({ userId, id }, "GET /email-logs/:id - fetching log");
       const service = getService();
 

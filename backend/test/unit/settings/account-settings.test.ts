@@ -59,10 +59,11 @@ describe("settings account routes", () => {
       AES_256_KEY:
         "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
       makisend_db: testD1.d1,
-      PORT: 587,
       BETTER_AUTH_SECRET: "test-secret",
       BETTER_AUTH_URL: BASE_URL,
       FRONTEND_URL: ORIGIN,
+      // This suite exercises account settings, not brute-force protection.
+      RATE_LIMIT: "off",
     } as unknown as Bindings;
 
     const res = await app.request(

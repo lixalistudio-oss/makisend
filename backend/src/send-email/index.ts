@@ -1,45 +1,31 @@
-import * as nodemailer from "nodemailer";
 import type { Transporter } from "nodemailer";
-import type { Config, SmtpConfig } from "@/config/config";
+import type { SmtpConfig } from "@/config/config";
+import { createSmtpTransport } from "@/smtp-config/smtp-connection";
 import type { EmailInput, EmailSendResult, IEmailTransport } from "./send-email.types";
 
 export class SmtpEmailTransport implements IEmailTransport {
   private readonly transporter: Transporter;
-  private readonly senderEmail: string;//
+  private readonly senderEmail: string;
 
-  constructor(config: Config, smtpConfig: SmtpConfig) {
+  constructor(smtpConfig: SmtpConfig) {
     this.senderEmail = smtpConfig.senderEmail;
-    this.transporter = nodemailer.createTransport({
-      host: smtpConfig.smtpHostName,
-      port: config.port,
-      secure: true,
-      auth: {
-        user: smtpConfig.smtpUsername,
-        pass: smtpConfig.smtpPassword,
-      },
-      family: 4,
-      tls: {
-        rejectUnauthorized: true,
-      },
-      // Keep a single attempt short: a hung SMTP dial would otherwise block
-      // the workflow run until Workflows times it out. Nodemailer's defaults
-      // (2min / 30s / 10min) are far too generous for one attempt.
-      connectionTimeout: 5_000,
-      greetingTimeout: 5_000,
-      socketTimeout: 10_000,
-    } as any); // eslint-disable-line @typescript-eslint/no-explicit-any
+    this.transporter = createSmtpTransport(smtpConfig);
   }
 
   async send(input: EmailInput): Promise<EmailSendResult> {
-    const info = await this.transporter.sendMail({
-      from: this.senderEmail,
-      to: input.to,
-      subject: input.subject,
-      text: input.text,
-      html: input.html,
-    });
+    try {
+      const info = await this.transporter.sendMail({
+        from: this.senderEmail,
+        to: input.to,
+        subject: input.subject,
+        text: input.text,
+        html: input.html,
+      });
 
-    return { messageId: info.messageId };
+      return { messageId: info.messageId };
+    } finally {
+      this.transporter.close();
+    }
   }
 }
 

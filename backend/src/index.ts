@@ -1,10 +1,12 @@
 // --- Framework & core imports ---
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { Scalar } from "@scalar/hono-api-reference";
 
 // --- Middleware imports ---
 import { errorHandler } from "@/middleware/error.handler";
 import { requestLoggerMiddleware } from "@/middleware/request-logger.middleware";
+import { securityHeadersMiddleware } from "@/middleware/security-headers.middleware";
 import { configMiddleware } from "@/middleware/config.middleware";
 import { apiKeyMiddleware } from "@/middleware/api-key.middleware";
 import { sessionMiddleware } from "@/middleware/session.middleware";
@@ -16,7 +18,14 @@ import { createApiKeysController, ApiKeyRepository, ApiKeyService } from "@/api-
 import { createEmailLogsController, EmailLogRepository, EmailLogService } from "@/email-logs";
 import { createDashboardController, DashboardRepository, DashboardService } from "@/dashboard";
 import { createTemplatesController, TemplateRepository, TemplateService } from "@/templates";
+import {
+  IdempotencyRepository,
+  IdempotencyService,
+  idempotencyMiddleware,
+} from "@/idempotency";
 import { sendEmailQueueConsumer } from "@/queue/send-email.consumer";
+import { runSmtpHealthChecks } from "@/smtp-config/smtp-health";
+import { openApiDocument } from "@/openapi";
 
 // --- Better Auth ---
 import { createAuth } from "@/lib/auth";
@@ -34,16 +43,20 @@ import type { IApiKeyRepository } from "@/api-keys/api-keys.types";
 import type { IEmailLogRepository } from "@/email-logs/email-logs.types";
 import type { IDashboardRepository } from "@/dashboard/dashboard.types";
 import type { ITemplateRepository } from "@/templates/templates.types";
+import type { IIdempotencyRepository } from "@/idempotency";
 
 // --- Cloudflare Worker environment bindings ---
 export type Bindings = {
   AES_256_KEY: string;
   makisend_db: D1Database;
-  PORT: number;
   BETTER_AUTH_SECRET: string;
   BETTER_AUTH_URL: string;
   FRONTEND_URL: string;
+  // "off" disables the auth rate limiter (local dev and tests only). Anything else, or
+  // unset, keeps it on: production and preview never set it.
+  RATE_LIMIT?: string;
   SEND_EMAIL_QUEUE: Queue<SendEmailQueueMessage>;
+  SEND_EMAIL_DLQ: Queue<SendEmailQueueMessage>;
   SEND_EMAIL_WORKFLOW: Workflow;
   // Static assets binding (frontend/dist) — handled by the platform before the
   // Worker script; declared so the Bindings type matches wrangler.jsonc.
@@ -85,11 +98,13 @@ const deps = {
   emailLogRepository: null as IEmailLogRepository | null,
   dashboardRepository: null as IDashboardRepository | null,
   templateRepository: null as ITemplateRepository | null,
+  idempotencyRepository: null as IIdempotencyRepository | null,
   smtpConfigService: null as SmtpConfigService | null,
   apiKeyService: null as ApiKeyService | null,
   emailLogService: null as EmailLogService | null,
   dashboardService: null as DashboardService | null,
   templateService: null as TemplateService | null,
+  idempotencyService: null as IdempotencyService | null,
   aesKey: null as string | null,
   dbInitialized: false,
 
@@ -104,6 +119,7 @@ const deps = {
     this.emailLogRepository = new EmailLogRepository(db);
     this.dashboardRepository = new DashboardRepository(db);
     this.templateRepository = new TemplateRepository(db);
+    this.idempotencyRepository = new IdempotencyRepository(db);
     this.aesKey = env.AES_256_KEY;
     this.dbInitialized = true;
   },
@@ -118,32 +134,77 @@ const deps = {
     this.emailLogService = new EmailLogService(this.emailLogRepository!, this.aesKey!);
     this.dashboardService = new DashboardService(this.dashboardRepository!, this.aesKey!);
     this.templateService = new TemplateService(this.templateRepository!);
+    this.idempotencyService = new IdempotencyService(this.idempotencyRepository!);
   },
 };
 
 // --- Hono app setup ---
 const app = new Hono<{ Bindings: Bindings; Variables: UserInfoVariables }>();
 
-// Global middleware: CORS, request logging, error handling, config injection
-app.use("*", cors({
-  origin: (origin) => origin,
-  credentials: true,
-  allowHeaders: ["Content-Type", "Authorization"],
-  allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-}));
+/**
+ * CORS allowlist: the dashboard origin (`FRONTEND_URL`) and nothing else.
+ *
+ * The session cookie is `SameSite=None` (dashboard and API live on different sites),
+ * and credentialed responses include decrypted SMTP credentials. Reflecting any
+ * origin would let every website a logged-in admin visits read them, so an origin
+ * that is not exactly the dashboard gets no CORS headers at all.
+ */
+function allowedOrigin(origin: string | undefined, env: Bindings): string | null {
+  const frontend = env.FRONTEND_URL?.replace(/\/+$/, "");
+  return origin && frontend && origin === frontend ? origin : null;
+}
+
+// Global middleware: security headers, CORS, request logging, error handling, config injection
+app.use("*", securityHeadersMiddleware());
+app.use("*", async (c, next) => {
+  // Any other origin gets no CORS headers at all (Hono's middleware would still send
+  // `Allow-Credentials: true` once `credentials` is on): a preflight is answered
+  // empty, so the browser refuses the request.
+  if (!allowedOrigin(c.req.header("origin"), c.env)) {
+    if (c.req.method === "OPTIONS") return c.body(null, 204);
+    return next();
+  }
+  return cors({
+    origin: (origin) => allowedOrigin(origin, c.env),
+    credentials: true,
+    allowHeaders: ["Content-Type", "Authorization", "x-api-key", "Idempotency-Key"],
+    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    exposeHeaders: ["Idempotency-Replayed"],
+  })(c, next);
+});
 app.use("*", requestLoggerMiddleware());
 app.onError(errorHandler);
 app.use(configMiddleware());
+
+// Public API documentation. Registered before the lazily initialized DB
+// middleware so the schema and reference work even if D1 is unavailable.
+app.get("/openapi.json", (c) => c.json(openApiDocument));
+app.get(
+  "/docs",
+  Scalar((c) => ({
+    url: "/openapi.json",
+    pageTitle: "MakiSend API Reference",
+    nonce: c.get("cspNonce"),
+    theme: "default",
+    cdn: "https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.75.1",
+  })),
+);
 
 // Better Auth: forward raw Request to auth.handler() for all /api/auth/* routes.
 // We wrap the result to add CORS headers that Hono's middleware can't inject into
 // raw Response objects.
 
-function addCorsHeaders(result: Response, origin: string | undefined): Response {
+function addCorsHeaders(
+  result: Response,
+  origin: string | undefined,
+  env: Bindings,
+): Response {
   const headers = new Headers(result.headers);
-  if (origin) {
-    headers.set("Access-Control-Allow-Origin", origin);
+  const allowed = allowedOrigin(origin, env);
+  if (allowed) {
+    headers.set("Access-Control-Allow-Origin", allowed);
     headers.set("Access-Control-Allow-Credentials", "true");
+    headers.append("Vary", "Origin");
   }
   return new Response(result.body, {
     status: result.status,
@@ -171,13 +232,13 @@ app.post("/api/auth/sign-up/email", async (c) => {
       body: JSON.stringify({ ...body, name: body.name || fallbackName }),
     }),
   );
-  return addCorsHeaders(result, c.req.header("origin"));
+  return addCorsHeaders(result, c.req.header("origin"), c.env);
 });
 
 app.all("/api/auth/*", async (c) => {
   const auth = getAuthInstance(c.env);
   const result = await auth.handler(c.req.raw);
-  return addCorsHeaders(result, c.req.header("origin"));
+  return addCorsHeaders(result, c.req.header("origin"), c.env);
 });
 
 // API key auth (Better Auth) on send-email routes
@@ -197,6 +258,10 @@ app.use("*", async (c, next) => {
   }
   await next();
 });
+
+// HTTP-level idempotency for POST /send-email. Runs after API-key auth, so the
+// key is scoped to the caller, and after DB deps are initialized.
+app.use("/send-email/*", idempotencyMiddleware(() => deps.idempotencyService!));
 
 // Mount send-email controller — produces to the Cloudflare Queue
 const sendEmailController = createSendEmailController(
@@ -264,4 +329,11 @@ export { SendEmailWorkflow } from "@/workflows";
 export default {
   fetch: app.fetch,
   queue: sendEmailQueueConsumer,
+  scheduled: async (
+    _controller: ScheduledController,
+    env: Bindings,
+    ctx: ExecutionContext,
+  ) => {
+    ctx.waitUntil(runSmtpHealthChecks(env));
+  },
 };

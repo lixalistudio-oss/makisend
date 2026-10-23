@@ -22,6 +22,7 @@ Pour le contexte technique complet — architecture, conventions, flux de dével
 - **Architecture** : Repository / Service / Controller (inspirée de NestJS)
 - **Logging** : [Pino](https://getpino.io/), configuré pour l’edge sans transport Node.js
 - **Tests** : [Vitest](https://vitest.dev/)
+- **Documentation API** : OpenAPI 3.1 + [Scalar](https://scalar.com/)
 - **Lint** : ESLint + TypeScript ESLint
 - **Chiffrement** : Web Crypto API (AES-256-GCM)
 - **Nettoyage HTML** : `sanitize-html`
@@ -63,11 +64,10 @@ Les variables suivantes sont définies dans `.env` et mappées dans `src/index.t
 | `BETTER_AUTH_SECRET` | Secret de signature Better Auth |
 | `BETTER_AUTH_URL` | URL de base du Worker (ex. `http://localhost:8787`) |
 | `FRONTEND_URL` | Origine frontend autorisée (CORS / redirections) |
-| `PORT` | Port SMTP de nodemailer (ex. `465`, `587`) |
 
 Plus des variables d'environnement :
 
-- **Identifiants SMTP** (`SMTP_USER`, `SMTP_PASSWORD`, `SENDER_EMAIL`, `HOST`) : stockés par utilisateur, chiffrés dans D1, gérés via le module `smtp-config`.
+- **Identifiants SMTP** (`SMTP_USER`, `SMTP_PASSWORD`, `SENDER_EMAIL`, `HOST`) : stockés par utilisateur, chiffrés dans D1, gérés via le module `smtp-config`. Le port et le mode TLS (`tls` ou `starttls`) sont propres à chaque configuration ; le port 25 est refusé.
 - **`API_KEY`** : les clés API sont par utilisateur (module `api-keys`, Better Auth), envoyées dans `x-api-key` ou `Authorization: Bearer`.
 
 Ces variables sont transformées en un objet `Config` typé par `createConfig()` et injectées dans les services.
@@ -124,7 +124,35 @@ Un devcontainer (` .devcontainer/`) réutilise la même compose pour ouvrir le p
 
 ---
 
+## Documentation API
+
+Une référence interactive est servie par le Worker :
+
+- **Guide intégré au dashboard** : `/dashboard/api-docs` (authentification, cycle de livraison, SMTP, templates, endpoints, erreurs)
+- **Scalar** : `http://localhost:8787/docs` (ou l'URL du Worker déployé)
+- **OpenAPI 3.1** : `http://localhost:8787/openapi.json`
+
+Les schémas de requête sont générés depuis les DTO Zod afin de rester alignés sur la validation réelle.
+
 ## Endpoints
+
+| Méthode | Route | Authentification | Description |
+|---------|-------|------------------|-------------|
+| `POST` | `/send-email` | Clé API (`x-api-key` ou Bearer) | Met un email en file ; supporte `Idempotency-Key`, contenu inline ou `templateId` |
+| `GET/POST` | `/smtp-config` | Session | Liste / crée une configuration SMTP |
+| `GET/PUT/DELETE` | `/smtp-config/{id}` | Session | Consulte / modifie / supprime une configuration |
+| `POST` | `/smtp-config/check` | Session | Teste des identifiants non enregistrés |
+| `POST` | `/smtp-config/{id}/check` | Session | Teste une configuration enregistrée |
+| `POST` | `/smtp-config/{id}/test-send` | Session | Envoie un email de test (non journalisé) |
+| `GET/POST` | `/api-keys` | Session | Liste / crée une clé API liée à une configuration |
+| `DELETE` | `/api-keys/{id}` | Session | Révoque une clé API |
+| `GET` | `/email-logs` | Session | Liste paginée des logs (filtres `status`, `smtpConfigId`, `to`) |
+| `GET` | `/email-logs/{id}` | Session | Détail d'un log et de son historique |
+| `GET` | `/dashboard/stats`, `/dashboard/by-config`, `/dashboard/recent`, `/dashboard/errors` | Session | Métriques de livraison |
+| `GET/POST` | `/templates` | Session | Liste / crée un template |
+| `GET/PUT/DELETE` | `/templates/{id}` | Session | Consulte / modifie / supprime un template |
+
+Les routes `/api/auth/*` sont fournies par [Better Auth](https://www.better-auth.com/) (inscription, connexion, session, déconnexion).
 
 ### `POST /send-email`
 
@@ -190,7 +218,8 @@ Avant de déployer, assure-toi que :
 
 ## Sécurité
 
-- **Authentification** : le middleware `api-key.middleware.ts` vérifie les clés API par utilisateur via Better Auth (`401` en-tête manquant, `403` clé invalide), avec `x-api-key: <KEY>` ou `Authorization: Bearer <KEY>`. Les clés sont créées/révoquées via le module `api-keys`.
+- **Authentification** : le middleware `api-key.middleware.ts` vérifie les clés API par utilisateur via Better Auth (`401` en-tête manquant, `403` clé invalide), avec `x-api-key: <KEY>` ou `Authorization: Bearer <KEY>`. Les clés sont créées/révoquées via le module `api-keys`. Les routes du dashboard utilisent la session Better Auth.
+- **Mots de passe SMTP** : chiffrés au repos et jamais renvoyés par l'API (les réponses exposent uniquement l'identifiant, l'hôte, le port, le mode TLS, l'utilisateur et l'expéditeur).
 - **Chiffrement** : l’adresse du destinataire est chiffrée avec AES-256-GCM avant stockage en base.
 - **Nettoyage HTML** : le contenu HTML est nettoyé avec `sanitize-html` avant envoi.
 - **TLS vérifié** : les connexions SMTP utilisent `rejectUnauthorized: true`.
@@ -198,7 +227,7 @@ Avant de déployer, assure-toi que :
 
 ### Limites de sécurité actuelles
 
-- Pas de rate limiting.
+- **Rate limiting global mais non configurable par tenant** : Better Auth limite les tentatives de connexion et chaque clé API (10 000 requêtes/jour par défaut).
 - Clés API par utilisateur mais sans scopes ni rotation automatique.
 - Pas de webhook ou de signature de vérification d’origine.
 - Pas de logs d’audit dédiés en dehors des logs applicatifs Pino.
@@ -217,8 +246,8 @@ Avant de déployer, assure-toi que :
 ### Liées au POC
 
 - Envoi **asynchrone** : `POST /send-email` répond `202 Accepted` dès la mise en file ; la délivrance (Cloudflare Queues → Workflow → SMTP) se fait ensuite et n’est visible que dans les logs D1.
-- **Un seul fournisseur SMTP** : les identifiants sont stockés par utilisateur dans D1 (chiffrés), sans routage multi-fournisseur ni failover.
-- **Retry borné** : chaque exécution du workflow fait **une seule tentative** — un échec fait échouer rapidement l’exécution, permettant de classifier l’erreur de nodemailer en interne. Échec transitoire → retour en file (5 cycles, backoff 1 min → 1 h), échec permanent (auth, TLS, DNS, config, 5xx) → abandon immédiat avec une raison lisible dans D1.
+- **Un seul fournisseur SMTP par configuration** : les identifiants sont stockés par utilisateur dans D1 (chiffrés), sans routage multi-fournisseur ni failover. Le port et le mode TLS sont configurables par configuration.
+- **Retry borné** : une tentative SMTP initiale + **3 retries espacés de 30 s** dans le même workflow. Un échec permanent (auth, TLS, DNS, config, 5xx) s’arrête immédiatement ; après épuisement du budget, l’email passe à `failed` et part en DLQ. Le consumer Queue retente uniquement le démarrage du workflow (backoff exponentiel, puis DLQ).
 - **Pas de tracking** : pas de suivi des bounces, ouvertures ou clics. Seuls les logs d’envoi sont stockés.
 - **D1 est une base SQLite serverless** : latence possible, peu adaptée aux très gros volumes sans cache.
 - **Délivrabilité** : SPF, DKIM, DMARC et réputation d’IP dépendent du fournisseur SMTP et du domaine expéditeur.
@@ -229,12 +258,14 @@ Avant de déployer, assure-toi que :
 
 ### POC (actuel)
 
-- Endpoint `POST /send-email` (authentification API key en TODO)
-- Pipeline asynchrone : Cloudflare Queues → Workflow durable → SMTP, avec retour en file (5 cycles)
-- Envoi via nodemailer + SMTP brut
-- Logs chiffrés stockés dans D1
-- Tests unitaires route / service / middleware
-- CI GitHub Actions (lint + tests) sur les PR vers `main` et `dev`
+- Endpoint `POST /send-email` avec authentification par clé API par utilisateur
+- Pipeline asynchrone : Cloudflare Queues → Workflow durable → SMTP, avec retries bornés et DLQ
+- Envoi via nodemailer + SMTP brut, port et TLS configurables par SMTP
+- Templates réutilisables, logs chiffrés et idempotence HTTP
+- Vérification de connexion SMTP à la demande + health check quotidien planifié
+- Documentation OpenAPI 3.1 servie par Scalar (`/docs`, `/openapi.json`)
+- Tests unitaires route / service / middleware + intégration
+- CI GitHub Actions (lint, typecheck, tests, build frontend) sur les PR et pushes vers `main` et `dev`
 - Test de déploiement sur Cloudflare Workers
 
 ### MVP interne

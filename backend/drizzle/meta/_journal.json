@@ -15,6 +15,34 @@
       "when": 1792048469213,
       "tag": "0001_majestic_the_phantom",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1792626494445,
+      "tag": "0002_condemned_mysterio",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1792627960347,
+      "tag": "0003_cold_carmella_unuscione",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1792630189044,
+      "tag": "0004_same_cloak",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1792630989110,
+      "tag": "0005_cloudy_omega_sentinel",
+      "breakpoints": true
     }
   ]
 }

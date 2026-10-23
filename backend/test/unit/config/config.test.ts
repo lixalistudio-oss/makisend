@@ -5,7 +5,6 @@ import { createConfig } from "@/config/config";
 import { AppError } from "@/core/errors";
 
 const baseBindings = {
-  PORT: 587,
   makisend_db: {} as D1Database,
 };
 
@@ -15,7 +14,7 @@ describe("createConfig", () => {
       createConfig({
         ...baseBindings,
         AES_256_KEY: "",
-      } as Bindings),
+      } as unknown as Bindings),
     ).toThrow(new AppError(500, "AES_256_KEY environment variable is required"));
   });
 
@@ -26,7 +25,6 @@ describe("createConfig", () => {
     } as Bindings);
 
     expect(config.aesKey).toBe("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
-    expect(config.port).toBe(587);
   });
 
   it("should accept an uppercase 64-char hex AES_256_KEY", () => {
@@ -43,7 +41,7 @@ describe("createConfig", () => {
       createConfig({
         ...baseBindings,
         AES_256_KEY: "0123456789abcdef",
-      } as Bindings),
+      } as unknown as Bindings),
     ).toThrow(new AppError(500, "AES_256_KEY must be a 64-character hexadecimal string (generate one with: openssl rand -hex 32)"));
   });
 
@@ -52,7 +50,7 @@ describe("createConfig", () => {
       createConfig({
         ...baseBindings,
         AES_256_KEY: "0".repeat(65),
-      } as Bindings),
+      } as unknown as Bindings),
     ).toThrow(AppError);
   });
 
@@ -61,7 +59,7 @@ describe("createConfig", () => {
       createConfig({
         ...baseBindings,
         AES_256_KEY: "zzzz456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-      } as Bindings),
+      } as unknown as Bindings),
     ).toThrow(AppError);
   });
 });

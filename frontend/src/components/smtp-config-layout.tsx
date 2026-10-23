@@ -7,6 +7,13 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Field, FieldGroup, FieldLabel, FieldDescription } from "@/components/ui/field"
 import {
   Dialog,
@@ -33,12 +40,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { MailIcon, PlusIcon, EllipsisVerticalIcon, PencilIcon, TrashIcon, CheckCircleIcon, XCircleIcon, LoaderIcon } from "lucide-react"
+import { MailIcon, PlusIcon, EllipsisVerticalIcon, PencilIcon, TrashIcon, CheckCircleIcon, XCircleIcon, LoaderIcon, ActivityIcon } from "lucide-react"
 import { fetchApi } from "@/lib/api"
 
 interface SmtpConfig {
   id: string
   smtpHostname: string
+  smtpPort: number
+  smtpSecurity: "tls" | "starttls"
   smtpUsername: string
   senderEmail: string
   isActive: boolean
@@ -50,6 +59,8 @@ export function SmtpConfigLayout() {
   const [open, setOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [hostname, setHostname] = useState("")
+  const [port, setPort] = useState("465")
+  const [security, setSecurity] = useState<"tls" | "starttls">("tls")
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [senderEmail, setSenderEmail] = useState("")
@@ -73,6 +84,8 @@ export function SmtpConfigLayout() {
 
   const resetForm = () => {
     setHostname("")
+    setPort("465")
+    setSecurity("tls")
     setUsername("")
     setPassword("")
     setSenderEmail("")
@@ -87,21 +100,33 @@ export function SmtpConfigLayout() {
   const openEdit = (config: SmtpConfig) => {
     setEditingId(config.id)
     setHostname(config.smtpHostname)
+    setPort(String(config.smtpPort))
+    setSecurity(config.smtpSecurity)
     setUsername(config.smtpUsername)
     setPassword("")
     setSenderEmail(config.senderEmail)
     setOpen(true)
   }
 
+  const handlePortChange = (value: string) => {
+    setPort(value)
+    const numeric = Number(value)
+    if (numeric === 465 || numeric === 2465) setSecurity("tls")
+    else if (numeric) setSecurity("starttls")
+  }
+
   const handleSubmit = async () => {
-    if (!hostname || !username || !senderEmail) return
+    if (!hostname || !port || !username || !senderEmail) return
+    if (!Number.isInteger(Number(port))) return
     if (!editingId && !password) return
 
     setSubmitting(true)
     try {
       if (editingId) {
-        const body: Record<string, string> = {
+        const body: Record<string, string | number> = {
           smtpHostname: hostname,
+          smtpPort: Number(port),
+          smtpSecurity: security,
           smtpUsername: username,
           senderEmail,
         }
@@ -120,6 +145,8 @@ export function SmtpConfigLayout() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             smtpHostname: hostname,
+            smtpPort: Number(port),
+            smtpSecurity: security,
             smtpUsername: username,
             smtpPassword: password,
             senderEmail,
@@ -135,6 +162,18 @@ export function SmtpConfigLayout() {
       toast.error(editingId ? "Failed to update config" : "Failed to create config")
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const handleCheck = async (id: string) => {
+    try {
+      const res = await fetchApi(`/smtp-config/${id}/check`, { method: "POST" })
+      const data = (await res.json()) as { ok?: boolean; message?: string }
+      if (!res.ok) throw new Error(data.message ?? "Failed to check")
+      if (data.ok) toast.success("SMTP connection works")
+      else toast.error(data.message ?? "SMTP connection failed")
+    } catch {
+      toast.error("SMTP connection check failed")
     }
   }
 
@@ -188,6 +227,36 @@ export function SmtpConfigLayout() {
                       The SMTP server address (e.g., smtp.gmail.com)
                     </FieldDescription>
                   </Field>
+                  <div className="grid grid-cols-[1fr_1.4fr] gap-3">
+                    <Field>
+                      <FieldLabel htmlFor="port">Port</FieldLabel>
+                      <Input
+                        id="port"
+                        type="number"
+                        min={1}
+                        value={port}
+                        onChange={(e) => handlePortChange(e.target.value)}
+                      />
+                      <FieldDescription className="text-xs leading-snug sm:text-sm">
+                        465, 587, 2465, 2525 or 2587.
+                      </FieldDescription>
+                    </Field>
+                    <Field>
+                      <FieldLabel htmlFor="security">Security</FieldLabel>
+                      <Select value={security} onValueChange={(v) => v && setSecurity(v as "tls" | "starttls")}>
+                        <SelectTrigger id="security" className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="tls">TLS (implicit)</SelectItem>
+                          <SelectItem value="starttls">STARTTLS</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FieldDescription className="text-xs leading-snug sm:text-sm">
+                        Implicit TLS on 465/2465, STARTTLS elsewhere.
+                      </FieldDescription>
+                    </Field>
+                  </div>
                   <Field>
                     <FieldLabel htmlFor="username">SMTP Username</FieldLabel>
                     <Input
@@ -258,7 +327,9 @@ export function SmtpConfigLayout() {
                   </ItemMedia>
                   <ItemContent className="gap-1.5">
                     <ItemTitle className="text-base">{config.smtpHostname}</ItemTitle>
-                    <ItemDescription>{config.senderEmail}</ItemDescription>
+                    <ItemDescription>
+                      {config.senderEmail} · {config.smtpHostname}:{config.smtpPort} ({config.smtpSecurity})
+                    </ItemDescription>
                   </ItemContent>
                   <ItemActions>
                     <Badge variant="outline" className={config.isActive ? "text-green-600" : "text-muted-foreground"}>
@@ -274,7 +345,11 @@ export function SmtpConfigLayout() {
                         <EllipsisVerticalIcon />
                         <span className="sr-only">Actions</span>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-32">
+                      <DropdownMenuContent align="end" className="w-44">
+                        <DropdownMenuItem onClick={() => handleCheck(config.id)}>
+                          <ActivityIcon />
+                          Check connection
+                        </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => openEdit(config)}>
                           <PencilIcon />
                           Edit

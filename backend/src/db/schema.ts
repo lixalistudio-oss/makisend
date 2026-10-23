@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer ,index} from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { createId } from "@paralleldrive/cuid2";
 import { relations, sql } from "drizzle-orm";
 
@@ -23,6 +23,60 @@ export const emailLogs = sqliteTable("email_logs", {
     // without this the whole table is scanned on each load.
     index("emailLogs_userId_createdAt_idx").on(table.userId, table.createdAt),
     index("emailLogs_apiKeyId_idx").on(table.apiKeyId),
+  ],
+);
+
+// Better Auth rate limiter storage (model "rateLimit"). In-memory storage would be
+// per-isolate on Workers, i.e. no limit at all, so the counters live in D1.
+export const rateLimit = sqliteTable("rate_limit", {
+  id: text("id").primaryKey().$defaultFn(() => createId()),
+  key: text("key").notNull().unique(),
+  count: integer("count").notNull(),
+  lastRequest: integer("last_request").notNull(),
+});
+
+// Message bodies live in their own table so dashboard queries on email_logs
+// never read them. text/html are AES-GCM encrypted (hex, ~2x their size) — the
+// DTO caps keep a row well under D1's 2 MB limit. Deleting an email_logs row
+// (e.g. account deletion) deletes its content with it.
+export const emailContents = sqliteTable("email_contents", {
+  emailId: text("email_id")
+    .primaryKey()
+    .references(() => emailLogs.internalId, { onDelete: "cascade" }),
+  textBody: text("text_body").notNull(),
+  htmlBody: text("html_body").notNull(),
+  // No FK: deleting an SMTP config must not erase the content of emails already
+  // queued with it; sending then fails with a permanent "config not found".
+  smtpConfigId: text("smtp_config_id"),
+  createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
+});
+
+// HTTP idempotency for POST /send-email. A row is reserved before the handler
+// runs and filled with the response afterwards, so a client retry with the same
+// Idempotency-Key replays the original emailId instead of sending twice.
+export const idempotencyKeys = sqliteTable(
+  "idempotency_keys",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    userId: text("user_id").notNull(),
+    route: text("route").notNull(),
+    key: text("key").notNull(),
+    requestHash: text("request_hash").notNull(),
+    // NULL while the first request is still running.
+    statusCode: integer("status_code"),
+    responseBody: text("response_body"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("idempotencyKeys_userId_route_key_unique").on(
+      table.userId,
+      table.route,
+      table.key,
+    ),
+    index("idempotencyKeys_expiresAt_idx").on(table.expiresAt),
   ],
 );
 
@@ -135,10 +189,21 @@ export const smtpConfig = sqliteTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     smtpHostname: text("smtphostname").notNull(),
+    // Submission port and TLS mode belong to the configuration: providers differ,
+    // and a Worker cannot use port 25. Defaults preserve the old implicit-TLS/465
+    // behaviour for rows created before these columns existed.
+    smtpPort: integer("smtp_port").default(465).notNull(),
+    smtpSecurity: text("smtp_security", { enum: ["tls", "starttls"] })
+      .default("tls")
+      .notNull(),
     smtpUsername: text("smtpusername").notNull(),
     smtpPassword: text("smtppassword").notNull(),
     senderEmail: text("sender_email").notNull(),
     isActive: integer("is_active", { mode: "boolean" }).default(true),
+    // Written by the scheduled SMTP health check; null until the first run.
+    lastCheckAt: integer("last_check_at", { mode: "timestamp_ms" }),
+    lastCheckOk: integer("last_check_ok", { mode: "boolean" }),
+    lastCheckError: text("last_check_error"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
       .notNull(),

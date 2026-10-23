@@ -34,6 +34,35 @@ export interface IEmailRepository {
     error?: string,
     attempts?: number,
   ): Promise<void>;
+  /**
+   * Stores the message bodies (already AES-GCM encrypted by the caller) so the
+   * workflow can rebuild the email from D1 instead of carrying it through the
+   * queue.
+   */
+  saveEmailContent(emailId: string, content: StoredEmailContent): Promise<void>;
+  /** Everything needed to send an email, as stored (to/text/html are encrypted). */
+  getEmailForSending(emailId: string): Promise<StoredEmail | null>;
+}
+
+/** Message bodies as written at enqueue time: `text` and `html` are encrypted. */
+export interface StoredEmailContent {
+  text: string;
+  html: string;
+  smtpConfigId?: string | null;
+}
+
+/** An email as read back from D1: `to`, `text` and `html` are encrypted, `subject` is clear. */
+export interface StoredEmail {
+  to: string;
+  subject: string;
+  text: string;
+  html: string;
+  smtpConfigId: string | null;
+}
+
+/** An email ready to be sent: decrypted, plus the SMTP configuration it was queued with. */
+export interface EmailToSend extends EmailInput {
+  smtpConfigId: string | null;
 }
 
 export interface IEmailTransport {
@@ -42,27 +71,10 @@ export interface IEmailTransport {
 
 /**
  * Payload buffered in the Cloudflare Queue before being handed to the
- * SendEmailWorkflow. The envelope mirrors the original `app/send-email` event
- * body so the consumer can start a workflow with it unchanged.
+ * SendEmailWorkflow. Only the id travels: bodies live encrypted in D1
+ * (`email_contents`), so queue payloads stay small and contain no PII.
  */
 export interface SendEmailQueueMessage {
-  name: "app/send-email";
-  data: {
-    to: string;
-    subject: string;
-    text: string;
-    html: string;
-    emailId: string;
-    userId: string;
-    apiKeyId?: string | null;
-    smtpConfigId?: string | null;
-    /**
-     * Number of times this message has been bounced back onto the queue after
-     * a workflow run failed (attempt failed or the run was abandoned). The
-     * workflow abandons the send once it reaches `MAX_QUEUE_CYCLES`, which is
-     * what keeps transient errors from looping forever.
-     */
-    queueCycles: number;
-  };
+  emailId: string;
 }
 

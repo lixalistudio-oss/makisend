@@ -3,6 +3,9 @@ import type { Bindings } from "@/index";
 
 export interface SmtpConfig {
   smtpHostName: string;
+  /** Optional only for rows read before the port/security columns existed. */
+  smtpPort?: number;
+  smtpSecurity?: "tls" | "starttls";
   senderEmail: string;
   smtpUsername: string;
   smtpPassword: string;
@@ -11,7 +14,6 @@ export interface UserConfig {
   userId: string;
 }
 export interface Config {
-  port: number;
   aesKey: string;
   db: D1Database;
   better_auth_url: string;
@@ -41,7 +43,6 @@ export function createConfig(env: Bindings): Config {
   }
 
   return {
-    port: env.PORT,
     aesKey: env.AES_256_KEY,
     db: env.makisend_db,
     better_auth_url: env.BETTER_AUTH_URL,
