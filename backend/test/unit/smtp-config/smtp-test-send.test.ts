@@ -10,9 +10,17 @@
  *  T6  A file attached in the dashboard reaches the server as a MIME attachment, with its name, its
  *      type and its exact bytes; the DTO takes the same `attachments` as POST /send-email.
  */
+import { createHash } from "node:crypto";
+import { simpleParser } from "mailparser";
 import { SMTPServer } from "smtp-server";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { MAX_SUBJECT_LENGTH } from "@/core/validation";
+import {
+  DEFAULT_ATTACHMENT_CONTENT_TYPE,
+  MAX_ATTACHMENTS,
+  MAX_ATTACHMENT_BYTES,
+  toEmailAttachment,
+} from "@/send-email/attachments";
 import { TestSendDto } from "@/smtp-config/smtp-config.dto";
 import { classifySmtpError, sendTestEmail } from "@/smtp-config/smtp-connection";
 
@@ -112,6 +120,30 @@ describe("manual test send, against a real SMTP server", () => {
     expect(part).toMatch(/filename="?recu\.pdf"?/i);
     const body = part.slice(part.search(/\r?\n\r?\n/)).replace(/\s+/g, "");
     expect(new Uint8Array(Buffer.from(body, "base64"))).toEqual(bytes);
+  });
+
+  it("T6 several files keep their UTF-8 names, their types and their order, byte for byte", async () => {
+    const pdf = Uint8Array.from({ length: 4096 }, (_, i) => i % 256);
+    const csv = new TextEncoder().encode("ref;montant\nREC-1;5000\n");
+    const sha = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
+    const r = await sendTestEmail(
+      cfg(),
+      {
+        ...mail,
+        attachments: [
+          { filename: "reçu.pdf", contentType: "application/pdf", content: pdf },
+          { filename: "détail.csv", contentType: "text/csv", content: csv },
+        ],
+      },
+      { rejectUnauthorized: false },
+    );
+    expect(r.ok).toBe(true);
+
+    const parsed = await simpleParser(running.received.at(-1)?.body ?? "");
+    expect(parsed.attachments.map((a) => [a.filename, a.contentType, sha(a.content)])).toEqual([
+      ["reçu.pdf", "application/pdf", sha(pdf)],
+      ["détail.csv", "text/csv", sha(csv)],
+    ]);
   });
 
   it("T6 without attachments, the message has no attachment part", async () => {
@@ -216,5 +248,28 @@ describe("T5 the DTO", () => {
     expect(TestSendDto.safeParse({ to: "a@b.co", attachments: [{ ...ok, content: "not base64!!" }] }).success).toBe(false);
     expect(TestSendDto.safeParse({ to: "a@b.co", attachments: [{ ...ok, filename: "a.pdf\r\nBcc: x@y.z" }] }).success).toBe(false);
     expect(TestSendDto.safeParse({ to: "a@b.co", attachments: Array.from({ length: 6 }, () => ok) }).success).toBe(false);
+  });
+
+  it("T6 the limits are the edges of POST /send-email: count and size at the limit pass, one over fails, no `path`", () => {
+    const one = { filename: "a.pdf", content: Buffer.from("hello").toString("base64") };
+    const ok = (attachments: unknown) => TestSendDto.safeParse({ to: "a@b.co", attachments }).success;
+
+    expect(ok(Array.from({ length: MAX_ATTACHMENTS }, () => one))).toBe(true);
+    expect(ok([{ filename: "max.bin", content: Buffer.alloc(MAX_ATTACHMENT_BYTES).toString("base64") }])).toBe(true);
+    expect(ok(Array.from({ length: MAX_ATTACHMENTS + 1 }, () => one))).toBe(false);
+    expect(ok([{ filename: "big.bin", content: Buffer.alloc(MAX_ATTACHMENT_BYTES + 1).toString("base64") }])).toBe(false);
+    expect(ok([{ filename: "a.pdf", path: "https://example.com/a.pdf" }])).toBe(false);
+  });
+
+  it("T6 toEmailAttachment decodes the bytes and applies the default type", () => {
+    const [file] = TestSendDto.parse({
+      to: "a@b.co",
+      attachments: [{ filename: "a.bin", content: Buffer.from([0, 255, 7]).toString("base64") }],
+    }).attachments ?? [];
+    expect(file && toEmailAttachment(file)).toEqual({
+      filename: "a.bin",
+      contentType: DEFAULT_ATTACHMENT_CONTENT_TYPE,
+      content: new Uint8Array([0, 255, 7]),
+    });
   });
 });

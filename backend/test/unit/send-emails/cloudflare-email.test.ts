@@ -96,6 +96,15 @@ describe("check and test send", () => {
     expect(binding.sent[0]?.from).toBe("noreply@getitaja.com");
   });
 
+  it("C2 a test send through the binding keeps its attachments", async () => {
+    const binding = new RecordingBinding();
+    const file = { filename: "a.pdf", contentType: "application/pdf", content: new Uint8Array([1, 2, 3]) };
+    await sendTestViaCloudflare(binding, "noreply@getitaja.com", { to: "dest@example.com", subject: "Probe", text: "x", attachments: [file] });
+    expect(binding.sent[0]?.attachments).toEqual([
+      { disposition: "attachment", filename: "a.pdf", type: "application/pdf", content: file.content },
+    ]);
+  });
+
   it("C3 a refusal is a value with the reason, not a throw", async () => {
     const result = await sendTestViaCloudflare(new RefusingBinding(), "noreply@getitaja.com", { to: "dest@example.com", subject: "Probe", text: "x" });
     expect(result.ok).toBe(false);
