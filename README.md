@@ -396,10 +396,6 @@ Releases are cut by bumping `version` in the root `package.json` and `APP_VERSIO
 
 ### Serverless-related
 
-- **Limited execution time**: a long SMTP exchange can fail because of the Workers CPU limits.
-- **Cold start**: the first invocation may see extra latency.
-- **Cost**: large volumes or long executions can become expensive.
-- **Long-lived connections are inefficient**: opening an SMTP connection for every send is not optimal.
 - **No fixed outbound IP**: Workers connect from shared, changing Cloudflare IPs, so an SMTP provider that requires IP allow-listing will refuse or destabilize sends. Disable allow-listing at the provider and rely on the SMTP credentials, or run the service on a server with a fixed IP and allow-list that IP.
 
 ### Current scope
