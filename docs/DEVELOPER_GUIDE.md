@@ -2,8 +2,6 @@
 
 > Companion to `ARCHITECTURE.md`. This guide is task-oriented: get the project
 > running, make a change safely, test it, debug it, and know what to avoid.
->
-> French version: `DEVELOPER_GUIDE.fr.md`.
 
 ---
 
@@ -693,5 +691,4 @@ When working in this repo, an automated agent should:
 
 ---
 
-*See `ARCHITECTURE.md` for the full system description and
-`ARCHITECTURE.fr.md` / `DEVELOPER_GUIDE.fr.md` for the French versions.*
+*See `ARCHITECTURE.md` for the full system description.*
