@@ -16,6 +16,9 @@ importers:
       '@better-auth/drizzle-adapter':
         specifier: ^1.6.25
         version: 1.7.4(@better-auth/core@1.7.4(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(@cloudflare/workers-types@5.20260911.1)(better-call@1.4.0(zod@4.6.4))(jose@6.2.12)(kysely@0.29.5)(nanostores@1.5.3))(@better-auth/utils@0.4.2)(drizzle-orm@0.45.2(@cloudflare/workers-types@5.20260911.1)(@libsql/client@0.17.4)(@types/better-sqlite3@7.6.13)(better-sqlite3@13.0.3)(kysely@0.29.5))
+      '@better-auth/utils':
+        specifier: 0.4.2
+        version: 0.4.2
       '@emnapi/core':
         specifier: 2.0.0-alpha.4
         version: 2.0.0-alpha.4
