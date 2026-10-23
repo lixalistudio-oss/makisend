@@ -22,6 +22,13 @@
       "when": 1792744783168,
       "tag": "0002_owner_lock_two_factor",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1792746046221,
+      "tag": "0003_email_attachments",
+      "breakpoints": true
     }
   ]
 }

@@ -80,6 +80,8 @@ describe("runSendEmailFlow", () => {
     saveEmailHistory: vi.fn(),
     saveEmailContent: vi.fn(),
     getEmailForSending: vi.fn(),
+    saveEmailAttachments: vi.fn().mockResolvedValue(undefined),
+    getEmailAttachments: vi.fn().mockResolvedValue([]),
   };
 
   const transport: IEmailTransport = { send: mockSend };

@@ -63,6 +63,7 @@ src/
 │   ├── send-email.dto.ts       # Zod schemas + types
 │   ├── send-email.repository.ts # Drizzle/D1 persistence
 │   ├── send-email.loader.ts    # Rebuilds + decrypts an email from D1
+│   ├── attachments.ts          # Resend-shaped `attachments` DTO, caps, base64 decoding
 │   ├── transport-resolver.ts   # Per-event SMTP transport factory
 │   ├── error-classifier.ts     # Permanent/transient verdicts + human-readable messages
 │   └── send-email.types.ts     # Interfaces / contracts
@@ -260,7 +261,7 @@ Tests: `test/unit/auth/auth-routes.test.ts` (single account, races, 2FA, passwor
 - Config: `drizzle.config.ts`
 - Migrations: managed in the `drizzle/` folder
 - Wrangler binding: `makisend_db`
-- Email bodies live in `email_contents` (encrypted, keyed by `email_logs.internalId`); templates store visual-builder JSON (theme + TipTap content) or pasted TSX source alongside exported HTML/text;
+- Email bodies live in `email_contents` (encrypted, keyed by `email_logs.internalId`); attachments live in `email_attachments`, one encrypted row per file (base64 then AES-GCM), never in the queue; templates store visual-builder JSON (theme + TipTap content) or pasted TSX source alongside exported HTML/text;
   queue/workflow payloads carry only `emailId`
 - HTTP idempotency reservations/responses live in `idempotency_keys` (24h TTL)
 

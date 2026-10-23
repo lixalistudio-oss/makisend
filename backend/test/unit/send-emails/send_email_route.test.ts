@@ -39,6 +39,8 @@ function buildApp() {
     saveEmailHistory: vi.fn().mockResolvedValue(undefined),
     saveEmailContent: vi.fn().mockResolvedValue(undefined),
     getEmailForSending: vi.fn().mockResolvedValue(null),
+    saveEmailAttachments: vi.fn().mockResolvedValue(undefined),
+    getEmailAttachments: vi.fn().mockResolvedValue([]),
   };
 
   const mockTemplateRepository = {

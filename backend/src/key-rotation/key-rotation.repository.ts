@@ -13,6 +13,8 @@ export const ENCRYPTED_COLUMNS: readonly EncryptedColumn[] = [
   { table: "email_logs", primaryKey: "internalId", column: "to" },
   { table: "email_contents", primaryKey: "email_id", column: "text_body" },
   { table: "email_contents", primaryKey: "email_id", column: "html_body" },
+  // The file as base64, encrypted (POST /send-email `attachments`).
+  { table: "email_attachments", primaryKey: "id", column: "content" },
 ];
 
 const quote = (identifier: string) => `"${identifier}"`;

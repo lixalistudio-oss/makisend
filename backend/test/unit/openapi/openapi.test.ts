@@ -91,6 +91,10 @@ describe("OpenAPI document", () => {
     });
     expect(schemas.SendEmailPayload).toHaveProperty("anyOf");
     expect(schemas.SendEmailPayload.anyOf).toHaveLength(2);
+    // Resend's attachment shape, on both the inline and the template branch.
+    for (const branch of schemas.SendEmailPayload.anyOf as { properties: Record<string, { items?: { required?: string[] } }> }[]) {
+      expect(branch.properties.attachments?.items?.required).toEqual(["filename", "content"]);
+    }
 
     expect(schemas).not.toHaveProperty("$schema");
   });

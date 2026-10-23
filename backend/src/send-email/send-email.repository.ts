@@ -1,11 +1,12 @@
-import { emailLogs, emailHistories, emailContents } from "@/db/schema";
+import { emailLogs, emailHistories, emailContents, emailAttachments } from "@/db/schema";
 import type { Database } from "@/db/connection";
 import type {
   IEmailRepository,
   StoredEmail,
   StoredEmailContent,
+  StoredEmailAttachment,
 } from "./send-email.types";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 
 export class SendEmailRepository implements IEmailRepository {
   constructor(private readonly db: Database) {}
@@ -80,5 +81,25 @@ export class SendEmailRepository implements IEmailRepository {
       .limit(1);
 
     return row ?? null;
+  }
+
+  async saveEmailAttachments(emailId: string, attachments: StoredEmailAttachment[]): Promise<void> {
+    if (attachments.length === 0) return;
+    // One statement per row: a single multi-row INSERT would carry several MB in one query.
+    for (const [position, attachment] of attachments.entries()) {
+      await this.db.insert(emailAttachments).values({ emailId, position, ...attachment });
+    }
+  }
+
+  async getEmailAttachments(emailId: string): Promise<StoredEmailAttachment[]> {
+    return this.db
+      .select({
+        filename: emailAttachments.filename,
+        contentType: emailAttachments.contentType,
+        content: emailAttachments.content,
+      })
+      .from(emailAttachments)
+      .where(eq(emailAttachments.emailId, emailId))
+      .orderBy(asc(emailAttachments.position));
   }
 }
