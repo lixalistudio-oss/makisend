@@ -7,6 +7,10 @@ export interface EmailLogRecord {
   smtpId: string | null;
   sentAt: string | null;
   emailProcessingTimeMs: number | null;
+  /** "api" for a POST /send-email, "test" for the dashboard's manual test send. */
+  source: "api" | "test";
+  /** Set for a test (the configuration it went through), NULL for an API send. */
+  smtpConfigId: string | null;
   createdAt: string;
 }
 
@@ -25,6 +29,7 @@ export interface EmailLogWithHistory extends EmailLogRecord {
 
 export interface EmailLogFilters {
   smtpConfigId?: string;
+  apiKeyId?: string;
   to?: string;
   status?: string;
 }

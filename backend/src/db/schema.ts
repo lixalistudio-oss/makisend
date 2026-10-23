@@ -16,6 +16,12 @@ export const emailLogs = sqliteTable("email_logs", {
   smtpId: text("smtp_id"),
   sentAt: text("sent_at"),
   emailProcessingTimeMs: integer("email_processing_time"),
+  // "api": sent through POST /send-email. "test": the dashboard's manual test send. Tests are listed
+  // in the logs but never counted in the dashboard's totals and success rate, which describe API traffic.
+  source: text("source", { enum: ["api", "test"] }).notNull().default("api"),
+  // The configuration a test went through. Not a foreign key, like email_contents: deleting a
+  // configuration keeps the history. NULL for API sends, whose configuration is their key's.
+  smtpConfigId: text("smtp_config_id"),
   createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
 },
   (table) => [
@@ -311,9 +317,11 @@ export const apikey = sqliteTable(
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
     permissions: text("permissions"),
     metadata: text("metadata"),
-    smtpConfigId: text("smtp_config_id").unique().references(() => smtpConfig.id, { onDelete: "cascade" }),
+    // Not unique: one SMTP config can be shared by many API keys.
+    smtpConfigId: text("smtp_config_id").references(() => smtpConfig.id, { onDelete: "cascade" }),
   },
   (table) => [
+    index("apikey_smtpConfigId_idx").on(table.smtpConfigId),
     index("apikey_configId_idx").on(table.configId),
     index("apikey_referenceId_idx").on(table.referenceId),
     index("apikey_key_idx").on(table.key),

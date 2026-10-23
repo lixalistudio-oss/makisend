@@ -49,8 +49,18 @@ interface HistoryEntry {
   createdAt: string
 }
 
+interface ApiKeyOption {
+  id: string
+  name: string | null
+  prefix: string | null
+}
+
 interface EmailLog {
   internalId: string
+  apiKeyId: string | null
+  /** "test" for the SMTP page's manual test send, "api" for POST /send-email. */
+  source: "api" | "test"
+  smtpConfigId: string | null
   to: string
   subject: string
   smtpId: string | null
@@ -75,11 +85,15 @@ const statusConfig: Record<string, { color: string; icon: React.ReactNode }> = {
   unknown: { color: "text-muted-foreground bg-muted", icon: <LoaderIcon className="size-3" /> },
 }
 
-function StatusBadge({ status }: { status: string }) {
+/**
+ * `current` is false for a step the email has already left (a timeline entry followed by another):
+ * its spinner stops, since nothing is happening there any more.
+ */
+function StatusBadge({ status, current = true }: { status: string; current?: boolean }) {
   const config = statusConfig[status] ?? statusConfig.unknown
   return (
     <Badge variant="outline" className={`gap-1 px-1.5 ${config.color}`}>
-      {config.icon}
+      {status === "processing" && !current ? <CircleCheckIcon className="size-3" /> : config.icon}
       {status}
     </Badge>
   )
@@ -110,6 +124,11 @@ export function EmailLogsLayout() {
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState("all")
   const [configFilter, setConfigFilter] = useState("all")
+  // Deep link from the API Keys page: /dashboard/email-logs?apiKey=<id>
+  const [keyFilter, setKeyFilter] = useState(() =>
+    typeof window === "undefined" ? "all" : (new URLSearchParams(window.location.search).get("apiKey") ?? "all"),
+  )
+  const [keys, setKeys] = useState<ApiKeyOption[]>([])
   const [search, setSearch] = useState("")
   const [selectedLog, setSelectedLog] = useState<EmailLog | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -119,12 +138,14 @@ export function EmailLogsLayout() {
       const params = new URLSearchParams()
       if (statusFilter !== "all") params.set("status", statusFilter)
       if (configFilter !== "all") params.set("smtpConfigId", configFilter)
+      if (keyFilter !== "all") params.set("apiKeyId", keyFilter)
       if (search) params.set("to", search)
 
       const qs = params.toString()
-      const [logsRes, configsRes] = await Promise.all([
+      const [logsRes, configsRes, keysRes] = await Promise.all([
         fetchApi(`/email-logs${qs ? `?${qs}` : ""}`),
         fetchApi("/smtp-config"),
+        fetchApi("/api-keys"),
       ])
       if (!logsRes.ok) {
         throw new Error(`Failed to load email logs (HTTP ${logsRes.status})`)
@@ -134,8 +155,11 @@ export function EmailLogsLayout() {
       }
       const logsData = await logsRes.json()
       const configsData = await configsRes.json()
+      // The key list only labels rows: a failure there must not hide the logs.
+      const keysData = keysRes.ok ? await keysRes.json() : { keys: [] }
       setLogs(logsData.logs ?? [])
       setConfigs(configsData.configs ?? [])
+      setKeys(keysData.keys ?? [])
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to load email logs"
       toast.error(message)
@@ -146,7 +170,20 @@ export function EmailLogsLayout() {
 
   useEffect(() => {
     fetchLogs()
-  }, [statusFilter, configFilter])
+  }, [statusFilter, configFilter, keyFilter])
+
+  const keyLabel = (id: string | null) => {
+    if (!id) return "Deleted key"
+    const key = keys.find((k) => k.id === id)
+    return key ? (key.name || key.prefix || "Unnamed key") : "Deleted key"
+  }
+
+  // A test goes through no API key: it is labelled with what it is, and the configuration it used.
+  const senderLabel = (log: EmailLog) => {
+    if (log.source !== "test") return keyLabel(log.apiKeyId)
+    const config = configs.find((c) => c.id === log.smtpConfigId)
+    return config ? `Test (${config.smtpHostname})` : "Test"
+  }
 
   const handleSearch = () => {
     fetchLogs()
@@ -216,6 +253,23 @@ export function EmailLogsLayout() {
                 ))}
               </SelectContent>
             </Select>
+            <Select value={keyFilter} onValueChange={(v) => v && setKeyFilter(v)}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="API Key">
+                  {keyFilter === "all"
+                    ? "All API Keys"
+                    : keys.some((k) => k.id === keyFilter)
+                      ? keyLabel(keyFilter)
+                      : "Unknown key"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All API Keys</SelectItem>
+                {keys.map((k) => (
+                  <SelectItem key={k.id} value={k.id}>{k.name || k.prefix || "Unnamed key"}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="overflow-hidden rounded-lg border">
@@ -225,6 +279,7 @@ export function EmailLogsLayout() {
                   <TableHead>Recipient</TableHead>
                   <TableHead>Subject</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>API Key</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead className="text-right">Duration</TableHead>
                 </TableRow>
@@ -232,13 +287,13 @@ export function EmailLogsLayout() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="h-24 text-center">
+                    <TableCell colSpan={6} className="h-24 text-center">
                       <LoaderIcon className="size-6 animate-spin text-muted-foreground mx-auto" />
                     </TableCell>
                   </TableRow>
                 ) : logs.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+                    <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
                       No email logs found.
                     </TableCell>
                   </TableRow>
@@ -256,6 +311,7 @@ export function EmailLogsLayout() {
                         <TableCell>
                           <StatusBadge status={latestStatus} />
                         </TableCell>
+                        <TableCell className="text-muted-foreground">{senderLabel(log)}</TableCell>
                         <TableCell>{formatDate(log.sentAt ?? log.createdAt)}</TableCell>
                         <TableCell className="text-right text-muted-foreground">
                           {log.emailProcessingTimeMs ? `${log.emailProcessingTimeMs}ms` : "—"}
@@ -282,6 +338,10 @@ export function EmailLogsLayout() {
                   </DrawerHeader>
                   <div className="flex flex-col gap-4 overflow-y-auto px-4 pb-4 text-sm">
                     <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">{selectedLog.source === "test" ? "Sent from" : "API Key"}</span>
+                      <span>{senderLabel(selectedLog)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">Duration</span>
                       <span>{selectedLog.emailProcessingTimeMs ? `${selectedLog.emailProcessingTimeMs}ms` : "—"}</span>
                     </div>
@@ -299,7 +359,7 @@ export function EmailLogsLayout() {
                             <div className={`absolute -left-[21px] top-1 size-3 rounded-full border-2 border-background ${statusConfig[entry.status]?.color ?? "bg-muted"}`} />
                             <div className="flex flex-col gap-0.5">
                               <div className="flex items-center gap-2">
-                                <StatusBadge status={entry.status} />
+                                <StatusBadge status={entry.status} current={i === selectedLog.history.length - 1} />
                                 <span className="text-xs text-muted-foreground">{formatTime(entry.createdAt)}</span>
                                 {entry.attempts != null && entry.attempts > 0 && (
                                   <span className="text-xs text-muted-foreground">

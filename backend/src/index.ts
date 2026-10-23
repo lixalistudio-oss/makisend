@@ -66,6 +66,9 @@ export type Bindings = {
   SEND_EMAIL_QUEUE: Queue<SendEmailQueueMessage>;
   SEND_EMAIL_DLQ: Queue<SendEmailQueueMessage>;
   SEND_EMAIL_WORKFLOW: Workflow;
+  // Cloudflare Email Service. Optional: unused unless an SMTP configuration points at
+  // smtp.mx.cloudflare.net, which only this binding can reach from a Worker.
+  EMAIL?: SendEmail;
   // Static assets binding (frontend/dist) — handled by the platform before the
   // Worker script; declared so the Bindings type matches wrangler.jsonc.
   ASSETS: Fetcher;
@@ -114,6 +117,7 @@ const deps = {
   templateService: null as TemplateService | null,
   idempotencyService: null as IdempotencyService | null,
   aesKey: null as EncryptionKeys | null,
+  emailBinding: undefined as SendEmail | undefined,
   dbInitialized: false,
 
   initDb(env: Bindings) {
@@ -129,15 +133,16 @@ const deps = {
     this.templateRepository = new TemplateRepository(db);
     this.idempotencyRepository = new IdempotencyRepository(db);
     this.aesKey = resolveEncryptionKeys(env);
+    this.emailBinding = env.EMAIL;
     this.dbInitialized = true;
   },
 
   initServices() {
     if (this.smtpConfigService) return;
-    this.smtpConfigService = new SmtpConfigService(
-      this.smtpConfigRepository!,
-      this.aesKey!,
-    );
+    this.smtpConfigService = new SmtpConfigService(this.smtpConfigRepository!, this.aesKey!, {
+      emailBinding: this.emailBinding,
+      emailLogs: this.emailRepository!,
+    });
     this.apiKeyService = new ApiKeyService(this.apiKeyRepository!);
     this.emailLogService = new EmailLogService(this.emailLogRepository!, this.aesKey!);
     this.dashboardService = new DashboardService(this.dashboardRepository!, this.aesKey!);

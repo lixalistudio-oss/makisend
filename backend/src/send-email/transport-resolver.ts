@@ -5,6 +5,8 @@ import { AppError } from "@/core/errors";
 import { pinoLogger } from "@/core/logger";
 import { createDatabase } from "@/db/connection";
 import { SmtpEmailTransport } from "@/transports";
+import { CloudflareEmailTransport } from "./cloudflare-email.transport";
+import { isCloudflareEmailHost } from "@/smtp-config/smtp-host";
 import type { SmtpConfig } from "@/config/config";
 import { resolveEncryptionKeys } from "@/config/config";
 import type { IEmailTransport } from "./send-email.types";
@@ -85,5 +87,9 @@ export async function resolveTransportFor(
   }
 
   const smtpConfig = await decryptSmtpRecord(env, record);
+  // A Worker cannot open a socket to Cloudflare Email Service: it goes through the send_email binding.
+  if (isCloudflareEmailHost(smtpConfig.smtpHostName)) {
+    return new CloudflareEmailTransport(env.EMAIL, smtpConfig.senderEmail);
+  }
   return new SmtpEmailTransport(smtpConfig);
 }

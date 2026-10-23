@@ -94,9 +94,9 @@ const ENDPOINT_GROUPS: {
       { method: "POST", path: "/smtp-config/check", description: "Test credentials before saving them." },
       { method: "GET", path: "/smtp-config/{id}", description: "Read one configuration. The password is never returned." },
       { method: "PUT", path: "/smtp-config/{id}", description: "Update a configuration, including its active state." },
-      { method: "DELETE", path: "/smtp-config/{id}", description: "Delete a configuration and its linked API key." },
+      { method: "DELETE", path: "/smtp-config/{id}", description: "Delete a configuration and the API keys linked to it." },
       { method: "POST", path: "/smtp-config/{id}/check", description: "Test a saved configuration." },
-      { method: "POST", path: "/smtp-config/{id}/test-send", description: "Send a test email. Test sends are not logged." },
+      { method: "POST", path: "/smtp-config/{id}/test-send", description: "Send a test email. It shows in the logs as a test, never in the dashboard totals." },
     ],
   },
   {
@@ -105,7 +105,7 @@ const ENDPOINT_GROUPS: {
     description: "Each key is linked to exactly one SMTP configuration.",
     endpoints: [
       { method: "GET", path: "/api-keys", description: "List key metadata. Secrets are never listed." },
-      { method: "POST", path: "/api-keys", description: "Create a key. The full key is returned only once." },
+      { method: "POST", path: "/api-keys", description: "Create a key linked to an SMTP configuration (several keys can share one). The full key is returned only once." },
       { method: "DELETE", path: "/api-keys/{id}", description: "Revoke a key." },
     ],
   },
@@ -130,7 +130,7 @@ const ENDPOINT_GROUPS: {
       {
         method: "GET",
         path: "/email-logs",
-        description: "Paginated logs. Filters: status, smtpConfigId, to, limit, cursor.",
+        description: "Paginated logs. Filters: status, smtpConfigId, apiKeyId, to, limit, cursor.",
       },
       { method: "GET", path: "/email-logs/{id}", description: "One log with its complete attempt history." },
     ],
@@ -140,10 +140,11 @@ const ENDPOINT_GROUPS: {
     auth: "Dashboard session",
     description: "Aggregated data used by the dashboard cards and charts.",
     endpoints: [
-      { method: "GET", path: "/dashboard/stats", description: "Totals, failures and success rate. Query: days." },
+      { method: "GET", path: "/dashboard/stats", description: "Totals, failures and success rate of API sends. Query: days, apiKeyId (optional)." },
       { method: "GET", path: "/dashboard/by-config", description: "Per-SMTP-config delivery breakdown. Query: days." },
+      { method: "GET", path: "/dashboard/by-api-key", description: "Sent, delivered, failed, average duration and last use for each API key. Query: days." },
       { method: "GET", path: "/dashboard/recent", description: "Most recent sends. Query: limit." },
-      { method: "GET", path: "/dashboard/errors", description: "Frequent delivery errors. Query: days, limit." },
+      { method: "GET", path: "/dashboard/errors", description: "Frequent delivery errors. Query: days, limit, apiKeyId (optional)." },
     ],
   },
 ]
@@ -200,7 +201,7 @@ const ERROR_ROWS = [
   {
     status: "403",
     meaning: "Key rejected",
-    detail: "The key is invalid, disabled, rate-limited, or its SMTP configuration is inactive.",
+    detail: "The key is invalid or disabled, or its SMTP configuration is inactive.",
   },
   {
     status: "404",
@@ -227,7 +228,7 @@ const LIMITS: [string, string][] = [
   ["Template variables", "Up to 50 variables; names up to 64 chars, values up to 10,000 chars."],
   ["TSX source", "1 to 100,000 characters for pasted React Email code."],
   ["Idempotency-Key", "1 to 255 visible ASCII characters; replay window 24 hours."],
-  ["API key throughput", "10,000 requests per day per key, enforced by Better Auth."],
+  ["API key throughput", "No daily or monthly quota per key. The real ceiling is your SMTP provider's own limits."],
   ["SMTP ports", "465, 587, 2465, 2525 or 2587. Port 25 is blocked on Workers."],
 ]
 

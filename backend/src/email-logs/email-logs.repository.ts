@@ -48,11 +48,20 @@ export class EmailLogRepository implements IEmailLogRepository {
     if (filters?.smtpConfigId) {
       // Subquery instead of inArray(apiKeyIds): same 100-param trap if the user
       // ever owns more than 100 API keys.
+      // An API send reaches its configuration through its key; a test send carries the configuration itself.
       conditions.push(
-        sql`${emailLogs.apiKeyId} in (
-          select ${apikey.id} from ${apikey} where ${apikey.smtpConfigId} = ${filters.smtpConfigId}
-        )`,
+        or(
+          sql`${emailLogs.apiKeyId} in (
+            select ${apikey.id} from ${apikey} where ${apikey.smtpConfigId} = ${filters.smtpConfigId}
+          )`,
+          and(eq(emailLogs.source, "test"), eq(emailLogs.smtpConfigId, filters.smtpConfigId)),
+        ) as SQL,
       );
+    }
+
+    // Both filters can be set together: the log has to satisfy each of them.
+    if (filters?.apiKeyId) {
+      conditions.push(eq(emailLogs.apiKeyId, filters.apiKeyId));
     }
 
     if (filters?.status) {
@@ -159,6 +168,8 @@ export class EmailLogRepository implements IEmailLogRepository {
       subject: row.subject,
       smtpId: row.smtpId,
       sentAt: row.sentAt,
+      source: row.source === "test" ? "test" : "api",
+      smtpConfigId: row.smtpConfigId ?? null,
       emailProcessingTimeMs: row.emailProcessingTimeMs,
       createdAt: row.createdAt,
     };

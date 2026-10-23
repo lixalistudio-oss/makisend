@@ -7,6 +7,17 @@ export type SmtpSecurity = (typeof SMTP_SECURITIES)[number];
 export const SMTP_PORTS = [465, 587, 2465, 2525, 2587] as const;
 export const DEFAULT_SMTP_PORT = 465;
 
+/**
+ * Cloudflare Email Service speaks SMTP at this host, but a Worker cannot open a socket to it
+ * (workerd refuses: "proxy request failed, cannot connect to the specified address"). A
+ * configuration that points here is sent through the Worker's `send_email` binding instead.
+ */
+export const CLOUDFLARE_EMAIL_HOST = "smtp.mx.cloudflare.net";
+
+export function isCloudflareEmailHost(host: string): boolean {
+  return host.trim().toLowerCase() === CLOUDFLARE_EMAIL_HOST;
+}
+
 export function isAllowedSmtpPort(port: number): boolean {
   return (SMTP_PORTS as readonly number[]).includes(port);
 }

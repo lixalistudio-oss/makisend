@@ -341,7 +341,7 @@ export const openApiDocument = {
         summary: "Send a test email",
         operationId: "sendSmtpTestEmail",
         description:
-          "Sends a one-off message through the saved configuration. Test emails are not recorded in email logs.",
+          "Sends a one-off message through the saved configuration. It is recorded in the email logs with `source: \"test\"` and this configuration's id, and never counted in the dashboard totals.",
         security: sessionSecurity,
         parameters: [idParameter],
         requestBody: {
@@ -379,7 +379,7 @@ export const openApiDocument = {
         summary: "Create an API key",
         operationId: "createApiKey",
         description:
-          "Each SMTP configuration has at most one API key. The plaintext key is returned only in this response.",
+          "Several API keys can share one SMTP configuration. The plaintext key is returned only in this response.",
         security: sessionSecurity,
         requestBody: {
           required: true,
@@ -422,6 +422,13 @@ export const openApiDocument = {
           {
             name: "smtpConfigId",
             in: "query",
+            description: "The emails sent with this configuration's keys, plus its test sends.",
+            schema: { type: "string", maxLength: 128 },
+          },
+          {
+            name: "apiKeyId",
+            in: "query",
+            description: "Only the emails sent with this API key.",
             schema: { type: "string", maxLength: 128 },
           },
           {
@@ -475,12 +482,19 @@ export const openApiDocument = {
         tags: ["Dashboard"],
         summary: "Delivery totals",
         operationId: "getDashboardStats",
+        description: "API sends only: the dashboard's test sends are never counted.",
         security: sessionSecurity,
         parameters: [
           {
             name: "days",
             in: "query",
             schema: { type: "integer", minimum: 1, maximum: 365, default: 7 },
+          },
+          {
+            name: "apiKeyId",
+            in: "query",
+            description: "Only the emails sent with this API key.",
+            schema: { type: "string", maxLength: 128 },
           },
         ],
         responses: {
@@ -505,6 +519,26 @@ export const openApiDocument = {
         ],
         responses: {
           200: jsonResponse("Per-configuration breakdown.", "SmtpBreakdownEnvelope"),
+          400: responseRef("ValidationError"),
+          ...sessionErrors,
+        },
+      },
+    },
+    "/dashboard/by-api-key": {
+      get: {
+        tags: ["Dashboard"],
+        summary: "Delivery totals per API key",
+        operationId: "getDashboardByApiKey",
+        security: sessionSecurity,
+        parameters: [
+          {
+            name: "days",
+            in: "query",
+            schema: { type: "integer", minimum: 1, maximum: 365, default: 7 },
+          },
+        ],
+        responses: {
+          200: jsonResponse("Per-key breakdown, including keys that sent nothing.", "ApiKeyBreakdownEnvelope"),
           400: responseRef("ValidationError"),
           ...sessionErrors,
         },
@@ -546,6 +580,12 @@ export const openApiDocument = {
             name: "limit",
             in: "query",
             schema: { type: "integer", minimum: 1, maximum: 50, default: 10 },
+          },
+          {
+            name: "apiKeyId",
+            in: "query",
+            description: "Only the emails sent with this API key.",
+            schema: { type: "string", maxLength: 128 },
           },
         ],
         responses: {
@@ -898,6 +938,8 @@ export const openApiDocument = {
           "smtpId",
           "sentAt",
           "emailProcessingTimeMs",
+          "source",
+          "smtpConfigId",
           "createdAt",
           "history",
         ],
@@ -910,6 +952,15 @@ export const openApiDocument = {
           smtpId: { type: ["string", "null"] },
           sentAt: { type: ["string", "null"], format: "date-time" },
           emailProcessingTimeMs: { type: ["integer", "null"] },
+          source: {
+            type: "string",
+            enum: ["api", "test"],
+            description: "`test` for the dashboard's manual test send, `api` for POST /send-email.",
+          },
+          smtpConfigId: {
+            type: ["string", "null"],
+            description: "The configuration a test went through; null for an API send.",
+          },
           createdAt: { type: "string", format: "date-time" },
           history: { type: "array", items: schemaRef("EmailHistory") },
         },
@@ -1019,6 +1070,42 @@ export const openApiDocument = {
           totalSent: { type: "integer" },
           successCount: { type: "integer" },
           failureCount: { type: "integer" },
+        },
+      },
+      ApiKeyMetrics: {
+        type: "object",
+        required: [
+          "apiKeyId",
+          "name",
+          "prefix",
+          "start",
+          "enabled",
+          "totalSent",
+          "successCount",
+          "failureCount",
+          "successRate",
+          "avgProcessingTimeMs",
+          "lastUsedAt",
+        ],
+        properties: {
+          apiKeyId: { type: "string" },
+          name: { type: ["string", "null"] },
+          prefix: { type: ["string", "null"] },
+          start: { type: ["string", "null"] },
+          enabled: { type: "boolean" },
+          totalSent: { type: "integer" },
+          successCount: { type: "integer" },
+          failureCount: { type: "integer" },
+          successRate: { type: "number", description: "Percentage, 0 when nothing was sent." },
+          avgProcessingTimeMs: { type: ["integer", "null"] },
+          lastUsedAt: { type: ["string", "null"], format: "date-time" },
+        },
+      },
+      ApiKeyBreakdownEnvelope: {
+        type: "object",
+        required: ["breakdown"],
+        properties: {
+          breakdown: { type: "array", items: schemaRef("ApiKeyMetrics") },
         },
       },
       SmtpBreakdownEnvelope: {
