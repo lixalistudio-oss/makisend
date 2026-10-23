@@ -1,9 +1,8 @@
 # MakiSend — End-to-End Architecture
 
-> **Status:** POC. This document describes the code as it exists on branch
-> `feat/email-templates` (HEAD `47ef9e8`) and calls out known gaps explicitly.
-> It is not a specification of the target product (see `FICHE_SUJET.md` for the
-> broader vision).
+> **Status:** POC. This document describes the code on the `dev` branch and
+> calls out known gaps explicitly. It is not a specification of the target
+> product.
 >
 > **Audience:** engineers, reviewers and future maintainers who need to
 > understand how a request becomes a delivered email, and where the sharp edges
@@ -951,4 +950,4 @@ filter to that page.
 ---
 
 *See `DEVELOPER_GUIDE.md` for setup, commands, testing, recipes and a reuse
-checklist. French version: `ARCHITECTURE.fr.md`.*
+checklist.*
