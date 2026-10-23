@@ -405,7 +405,7 @@ Fichiers : `send-email.controller.ts`, `send-email.dto.ts`,
     (record string/number/boolean converti en string), `.strict()`.
 - Repository : `createPendingEmailLog`, `completeEmailLog`,
   `saveEmailHistory`.
-- Transport : `SmtpEmailTransport` (`send-email/index.ts`) crée un transport
+- Transport : `SmtpEmailTransport` (`transports/smtp-email.transport.ts`) crée un transport
   nodemailer avec `secure: true`, `family: 4`, `rejectUnauthorized: true`,
   des timeouts connexion/greeting/socket de 5s/5s/10s. Il n'appelle **pas**
   `transporter.close()` (retiré dans `47ef9e8` ; les timeouts sont le filet de
@@ -962,7 +962,7 @@ lieu de `404/403`.
 | Middleware clé API | `backend/src/middleware/api-key.middleware.ts` |
 | Endpoint d'envoi | `backend/src/send-email/send-email.controller.ts` |
 | Schémas de payload | `backend/src/send-email/send-email.dto.ts` |
-| Transport SMTP | `backend/src/send-email/index.ts` |
+| Transport SMTP | `backend/src/transports/smtp-email.transport.ts` |
 | Résolution du transport | `backend/src/send-email/transport-resolver.ts` |
 | Classification d'erreurs | `backend/src/send-email/error-classifier.ts` |
 | Consommateur de file | `backend/src/queue/send-email.consumer.ts` |

@@ -394,7 +394,7 @@ Files: `send-email.controller.ts`, `send-email.dto.ts`,
     of string/number/boolean (coerced to string), `.strict()`.
 - Repository: `createPendingEmailLog`, `completeEmailLog`,
   `saveEmailHistory`.
-- Transport: `SmtpEmailTransport` (`send-email/index.ts`) creates a nodemailer
+- Transport: `SmtpEmailTransport` (`transports/smtp-email.transport.ts`) creates a nodemailer
   transporter with `secure: true`, `family: 4`, `rejectUnauthorized: true`,
   connection/greeting/socket timeouts of 5s/5s/10s. It does **not** call
   `transporter.close()` (removed in `47ef9e8`; the timeouts are the hang
@@ -932,7 +932,7 @@ filter to that page.
 | API-key middleware | `backend/src/middleware/api-key.middleware.ts` |
 | Send endpoint | `backend/src/send-email/send-email.controller.ts` |
 | Payload schemas | `backend/src/send-email/send-email.dto.ts` |
-| SMTP transport | `backend/src/send-email/index.ts` |
+| SMTP transport | `backend/src/transports/smtp-email.transport.ts` |
 | Transport resolution | `backend/src/send-email/transport-resolver.ts` |
 | Error classification | `backend/src/send-email/error-classifier.ts` |
 | Queue consumer | `backend/src/queue/send-email.consumer.ts` |

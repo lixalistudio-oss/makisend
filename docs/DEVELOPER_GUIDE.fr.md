@@ -712,7 +712,7 @@ Lorsqu'un agent automatique travaille dans ce dépôt, il doit :
 | Middleware clé API | `backend/src/middleware/api-key.middleware.ts` |
 | Controller + DTO d'envoi | `backend/src/send-email/send-email.controller.ts`, `send-email.dto.ts` |
 | Contrat du message de file | `backend/src/send-email/send-email.types.ts` |
-| Transport SMTP | `backend/src/send-email/index.ts` |
+| Transport SMTP | `backend/src/transports/smtp-email.transport.ts` |
 | Résolution du transport | `backend/src/send-email/transport-resolver.ts` |
 | Classifier d'erreurs | `backend/src/send-email/error-classifier.ts` |
 | Consommateur de file | `backend/src/queue/send-email.consumer.ts` |

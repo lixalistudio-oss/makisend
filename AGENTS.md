@@ -72,6 +72,9 @@ src/
 │   ├── smtp-host.ts            # Hostname/port/security parsing and defaults
 │   ├── smtp-connection.ts      # Shared nodemailer options, check/test-send helpers
 │   └── smtp-health.ts          # Scheduled check over every stored config
+├── transports/                 # Delivery transports (SmtpEmailTransport over nodemailer)
+│   ├── index.ts                # Barrel export
+│   └── smtp-email.transport.ts # IEmailTransport implementation, one connection per send
 ├── templates/                  # Email templates (legacy HTML, React Email visual editor, or pasted TSX)
 │   ├── index.ts                # Barrel export
 │   ├── templates.types.ts      # Contracts / repository interface
@@ -94,6 +97,7 @@ test/
     ├── send-email/             # error classifier, transport resolver, controller
     ├── idempotency/            # replay / conflict / 5xx retry behaviour
     ├── workflows/              # send flow retries, DLQ, classifier integration
+    ├── transports/             # SmtpEmailTransport (send + close)
     ├── middleware/ queue/ send-emails/ settings/ smtp-config/
 ```
 
@@ -152,7 +156,7 @@ Even though the runtime remains **Hono** (not NestJS), the code organization is 
 - **Providers / Services**: business logic lives in services. They know nothing about the web framework.
 - **Repositories**: persistence is isolated behind an interface / contract (`IEmailRepository`). The concrete repository can be implemented with Drizzle/D1 today and replaced later without touching the service.
 - **DTOs / Schemas**: Zod validation schemas are extracted into `*.dto.ts` files next to the controller. They serve both as API contracts and TypeScript types (`z.infer`).
-- **Manual dependency injection**: Hono has no native IoC container. Dependencies are injected through constructors (`new Service(new Repository(...), config)`), or via simple factory functions (`createSendEmailModule(env)`).
+- **Manual dependency injection**: Hono has no native IoC container. Dependencies are injected through constructors (`new Service(new Repository(...), config)`), or via controller factories that take lazy getters (`createSendEmailController(() => deps.emailRepository!, ...)`), wired in `src/index.ts`.
 - **Shared kernel**: cross-cutting code (logger, errors, encryption, configuration) lives in `src/core/` and depends on no business module.
 
 ### Anti-patterns to avoid

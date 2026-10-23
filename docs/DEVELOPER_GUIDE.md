@@ -671,7 +671,7 @@ When working in this repo, an automated agent should:
 | API-key middleware | `backend/src/middleware/api-key.middleware.ts` |
 | Send controller + DTO | `backend/src/send-email/send-email.controller.ts`, `send-email.dto.ts` |
 | Queue message contract | `backend/src/send-email/send-email.types.ts` |
-| SMTP transport | `backend/src/send-email/index.ts` |
+| SMTP transport | `backend/src/transports/smtp-email.transport.ts` |
 | Transport resolution | `backend/src/send-email/transport-resolver.ts` |
 | Error classifier | `backend/src/send-email/error-classifier.ts` |
 | Queue consumer | `backend/src/queue/send-email.consumer.ts` |

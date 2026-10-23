@@ -10,7 +10,7 @@ vi.mock("@/smtp-config/smtp-connection", () => ({
   createSmtpTransport: mockCreateSmtpTransport,
 }));
 
-import { SmtpEmailTransport } from "@/send-email";
+import { SmtpEmailTransport } from "@/transports";
 
 const config = {
   smtpHostName: "smtp.example.com",

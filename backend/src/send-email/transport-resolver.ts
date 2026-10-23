@@ -4,7 +4,7 @@ import { decrypt } from "@/core/crypto";
 import { AppError } from "@/core/errors";
 import { pinoLogger } from "@/core/logger";
 import { createDatabase } from "@/db/connection";
-import { SmtpEmailTransport } from "./index";
+import { SmtpEmailTransport } from "@/transports";
 import type { SmtpConfig } from "@/config/config";
 import type { IEmailTransport } from "./send-email.types";
 import type { Bindings } from "@/index";
