@@ -1,4 +1,5 @@
 import { AppError } from "@/core/errors";
+import { isValidKeyHex, type EncryptionKeys } from "@/core/crypto";
 import type { Bindings } from "@/index";
 
 export interface SmtpConfig {
@@ -14,36 +15,52 @@ export interface UserConfig {
   userId: string;
 }
 export interface Config {
-  aesKey: string;
+  aesKey: EncryptionKeys;
   db: D1Database;
   better_auth_url: string;
   better_auth_secret: string;
 }
 
-// AES-256-GCM requires a 256-bit key. We accept it as 64 hexadecimal
-// characters, i.e. the exact output of `openssl rand -hex 32`.
-const AES_256_KEY_HEX = /^[0-9a-fA-F]{64}$/;
+type EncryptionKeyBindings = Pick<Bindings, "ENCRYPTION_KEY" | "ENCRYPTION_KEY_PREVIOUS" | "AES_256_KEY">;
+
+/**
+ * Builds the keyring from the Worker secrets:
+ * - `ENCRYPTION_KEY`: current key, encrypts everything new.
+ * - `ENCRYPTION_KEY_PREVIOUS`: optional, decrypt-only keys, comma-separated.
+ * - `AES_256_KEY`: legacy name. Used as the current key when `ENCRYPTION_KEY` is unset;
+ *   otherwise kept as a previous key, so data it encrypted stays readable until the
+ *   key-rotation job has re-encrypted it. Delete it once the job reports 0 values left.
+ */
+export function resolveEncryptionKeys(env: EncryptionKeyBindings): EncryptionKeys {
+  const current = env.ENCRYPTION_KEY?.trim() || env.AES_256_KEY?.trim();
+  if (!current) {
+    throw new AppError(500, "ENCRYPTION_KEY environment variable is required");
+  }
+
+  const previous = (env.ENCRYPTION_KEY_PREVIOUS ?? "")
+    .split(",")
+    .map((key) => key.trim())
+    .filter(Boolean);
+  const legacy = env.AES_256_KEY?.trim();
+  if (legacy) previous.push(legacy);
+
+  const invalid = [current, ...previous].filter((key) => !isValidKeyHex(key));
+  if (invalid.length > 0) {
+    throw new AppError(500, "Encryption keys must be 64 hexadecimal characters (openssl rand -hex 32)");
+  }
+
+  return { current, previous: [...new Set(previous)].filter((key) => key !== current) };
+}
 
 export function createConfig(env: Bindings): Config {
-  if (!env.AES_256_KEY) {
-    throw new AppError(500, "AES_256_KEY environment variable is required");
-  }
-
-  if (!AES_256_KEY_HEX.test(env.AES_256_KEY)) {
-    // Refuse to serve requests with a malformed key instead of letting
-    // encrypt/decrypt fail later with an opaque OperationError.
-    throw new AppError(
-      500,
-      "AES_256_KEY must be a 64-character hexadecimal string (generate one with: openssl rand -hex 32)",
-    );
-  }
+  const aesKey = resolveEncryptionKeys(env);
 
   if (!env.makisend_db) {
     throw new AppError(500, "makisend_db environment variable is required");
   }
 
   return {
-    aesKey: env.AES_256_KEY,
+    aesKey,
     db: env.makisend_db,
     better_auth_url: env.BETTER_AUTH_URL,
     better_auth_secret: env.BETTER_AUTH_SECRET,

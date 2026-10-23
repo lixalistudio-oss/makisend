@@ -65,10 +65,13 @@
 			"class_name": "SendEmailWorkflow"
 		}
 	],
-	// Daily credential/connection check for every SMTP configuration. Results
-	// are stored on the row; checks never deactivate a configuration by themselves.
+	// One `scheduled` handler, dispatched on the expression (src/index.ts):
+	// - "17 3 * * *": daily credential/connection check for every SMTP configuration. Results
+	//   are stored on the row; checks never deactivate a configuration by themselves.
+	// - "17 * * * *": key rotation (src/key-rotation), re-encrypts with ENCRYPTION_KEY the values
+	//   still encrypted with an older key. A no-op (two COUNT queries per column) when nothing is stale.
 	"triggers": {
-		"crons": ["17 3 * * *"]
+		"crons": ["17 3 * * *", "17 * * * *"]
 	},
 	"env": {
 		"preview": {

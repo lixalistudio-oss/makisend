@@ -1,3 +1,4 @@
+import type { KeyMaterial } from "@/core/crypto";
 import { encrypt, decrypt } from "@/core/crypto";
 import { AppError } from "@/core/errors";
 import { pinoLogger } from "@/core/logger";
@@ -14,7 +15,7 @@ import {
 export class SmtpConfigService {
   constructor(
     private readonly smtpConfigRepo: ISmtpConfigRepository,
-    private readonly aesKey: string,
+    private readonly aesKey: KeyMaterial,
   ) {}
 
   private async decryptRecord(record: SmtpConfigRecord): Promise<SmtpConfigRecord> {

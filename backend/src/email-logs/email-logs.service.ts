@@ -1,3 +1,4 @@
+import type { KeyMaterial } from "@/core/crypto";
 import { decrypt } from "@/core/crypto";
 import { AppError } from "@/core/errors";
 import { pinoLogger } from "@/core/logger";
@@ -11,7 +12,7 @@ import type {
 export class EmailLogService {
   constructor(
     private readonly emailLogRepo: IEmailLogRepository,
-    private readonly aesKey: string,
+    private readonly aesKey: KeyMaterial,
   ) {}
 
   async findPageByUser(userId: string, filters?: EmailLogPageFilters): Promise<EmailLogPage> {
