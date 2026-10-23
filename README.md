@@ -2,6 +2,8 @@
 
 **Transactional email, one API call away. No mail server to run.**
 
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/lixalistudio-oss/makisend)
+
 MakiSend is a self-hosted, serverless email API on **Cloudflare Workers**. Your app sends one authenticated `POST /send-email`; MakiSend encrypts and queues the message, then delivers it through **your own SMTP provider** with automatic retries, and shows every delivery in a dashboard.
 
 ## Why MakiSend
@@ -160,6 +162,11 @@ The following variables are set in `backend/.env` and mapped in `backend/src/ind
 | `BETTER_AUTH_URL` | Base URL of the Worker (e.g. `http://localhost:8787`) |
 | `FRONTEND_URL` | Allowed frontend origin (CORS / redirects) |
 | `SEND_RATE_LIMIT` | Optional per-API-key send quota on `POST /send-email`, e.g. `100/min` or `5000/day` (units `s`, `min`, `hour`, `day`). Unset: no quota. Over it: `429` with `Retry-After` |
+| `UPDATE_CHECK` | Optional. `off` stops the daily new-release check (no request to GitHub). See [Updates](#updates) |
+| `MAKISEND_REPOSITORY` | Optional. Your copy of the repository (`owner/name`): the dashboard's **Update** button opens its sync workflow |
+| `UPDATE_SOURCE_REPOSITORY` | Optional. Read releases from another repository (`owner/name`). Default `lixalistudio-oss/makisend` |
+
+`BETTER_AUTH_URL` and `FRONTEND_URL` may be left unset on a deployed Worker: the dashboard and the API share one origin, so the Worker then uses the origin the request arrived on.
 
 These are **no longer** environment variables:
 
@@ -254,6 +261,7 @@ Request schemas are generated from the Zod DTOs so they stay aligned with the ac
 | `GET` | `/dashboard/stats`, `/dashboard/by-config`, `/dashboard/by-api-key`, `/dashboard/recent`, `/dashboard/errors` | Session | Delivery metrics (API sends only; `stats` and `errors` take an optional `apiKeyId`) |
 | `GET/POST` | `/templates` | Session | Lists / creates a template |
 | `GET/PUT/DELETE` | `/templates/{id}` | Session | Reads / updates / deletes a template |
+| `GET` | `/updates/status` | Session | Installed and latest MakiSend versions (`?refresh=true` checks now) |
 | `POST` | `/templates/{id}/preview` | Session | Renders the template with sample variables |
 
 The `/api/auth/*` routes are provided by [Better Auth](https://www.better-auth.com/) (sign-up, sign-in, session, sign-out).
@@ -333,6 +341,28 @@ Both jobs depend on `Verify and build` (lint, tests, frontend build). The Cloudf
 Secrets to define in the GitHub repository: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `AES_256_KEY` (preview), `BETTER_AUTH_SECRET`. The production Worker reads its own Cloudflare secrets (`ENCRYPTION_KEY` or the legacy `AES_256_KEY`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `FRONTEND_URL`); the job checks that they exist after deploying.
 
 > SMTP credentials are not Worker secrets: they are encrypted in D1 and managed per user (`smtp-config` module).
+
+### Deploy to Cloudflare (one click)
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/lixalistudio-oss/makisend)
+
+The button opens the Cloudflare dashboard of the account you are signed in to and:
+
+1. copies this repository into your GitHub (or GitLab) account;
+2. lets you name the Worker, the D1 database and the queues, and asks for the two secrets (`ENCRYPTION_KEY`: `openssl rand -hex 32`, **keep a copy**; `BETTER_AUTH_SECRET`: `openssl rand -base64 32`);
+3. creates the D1 database and the queues, then builds and deploys with Workers Builds: `pnpm run build` (dashboard) and `pnpm run deploy` (D1 migrations, then `wrangler deploy`).
+
+Open the Worker's URL: the first connection creates the administrator account. Then turn on 2FA and, if the API is reachable from the internet, set `SEND_RATE_LIMIT`.
+
+How it is wired: the button reads the **root** `wrangler.jsonc` and `package.json` (`cloudflare.bindings` holds the secret descriptions, `.dev.vars.example` the secret names). Our own deployments keep using `backend/wrangler.jsonc` through GitHub Actions; `backend/test/unit/config/root-wrangler.test.ts` fails when the two configurations drift apart. The root `deploy` script (`scripts/workers-builds-deploy.sh`) refuses to run outside Workers Builds (`WORKERS_CI=1`), and the GitHub Actions deploy jobs only run in `lixalistudio-oss/makisend`, never in a copy.
+
+### Updates
+
+The dashboard shows a banner when a newer release is published, with its notes and an **Update** button; **Settings → MakiSend version** shows the installed and latest versions and a **Check now** button. The Worker reads the latest GitHub release of `lixalistudio-oss/makisend` once a day (daily cron, result cached in D1, unauthenticated, nothing about the instance is sent); `UPDATE_CHECK=off` turns it off.
+
+Installing an update means merging the release into your copy of the repository, which redeploys it through Workers Builds: run the **Sync with upstream** workflow shipped in every copy (`.github/workflows/sync-upstream.yml`, it keeps your `wrangler.jsonc`), or merge by hand. Full guide, token note and rollback: [`docs/UPDATING.md`](docs/UPDATING.md).
+
+Releases are cut by bumping `version` in the root `package.json` and `APP_VERSION` in `backend/src/core/version.ts`; on `main`, `.github/workflows/release.yml` tags `vX.Y.Z` and publishes the GitHub release.
 
 ### Self-hosting with an agent
 

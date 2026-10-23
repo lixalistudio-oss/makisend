@@ -1,12 +1,43 @@
 {
   "name": "makisend",
+  "version": "0.1.0",
   "private": true,
+  "description": "Self-hosted transactional email API on Cloudflare Workers: one POST /send-email, delivered through your own SMTP provider.",
+  "cloudflare": {
+    "label": "MakiSend",
+    "products": [
+      "Workers",
+      "D1",
+      "Queues",
+      "Workflows"
+    ],
+    "docs_url": "https://github.com/lixalistudio-oss/makisend#readme",
+    "bindings": {
+      "ENCRYPTION_KEY": {
+        "description": "AES-256 key that encrypts recipients, bodies and SMTP credentials in D1: 64 hex characters, generate it with `openssl rand -hex 32`. **Keep a copy**: data encrypted with a lost key cannot be read again."
+      },
+      "BETTER_AUTH_SECRET": {
+        "description": "Signs dashboard sessions and encrypts the two-factor secrets. A long random string, e.g. `openssl rand -base64 32`."
+      },
+      "MAKISEND_REPOSITORY": {
+        "description": "Optional. The GitHub repository this install was copied to, as `owner/name` (the one created by this set-up). The dashboard's **Update** button then opens its *Sync with upstream* workflow."
+      },
+      "UPDATE_CHECK": {
+        "description": "Checks once a day whether a newer MakiSend release is published on GitHub and shows it on the dashboard. Set to `off` to never contact GitHub."
+      }
+    }
+  },
   "scripts": {
+    "build": "pnpm --filter frontend build",
+    "deploy": "bash scripts/workers-builds-deploy.sh",
     "docker:build": "docker compose build",
     "docker:up": "docker compose up",
     "docker:down": "docker compose down",
     "docker:test": "docker compose run --rm backend pnpm test:run",
     "docker:lint": "docker compose run --rm backend pnpm lint",
     "docker:migrate": "docker compose run --rm backend pnpm exec wrangler d1 migrations apply makisend_db --local"
+  },
+  "devDependencies": {
+    "wrangler": "4.131.1"
   }
 }

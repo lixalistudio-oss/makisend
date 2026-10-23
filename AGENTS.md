@@ -301,6 +301,15 @@ Config: `wrangler.jsonc`
   frontend and the API on the **same origin**, so there is no Cloudflare Pages
   project and no CORS between UI and API
 
+## Deploy to Cloudflare button and updates
+
+- **Two Wrangler configs, one Worker.** `backend/wrangler.jsonc` drives our own deployments (GitHub Actions). The **root** `wrangler.jsonc` + root `package.json` (`build`, `deploy`, `cloudflare.bindings`) + `.dev.vars.example` drive the *Deploy to Cloudflare* button and Workers Builds in users' copies. Add a binding, queue, workflow or cron to **both**: `test/unit/config/root-wrangler.test.ts` fails otherwise. The root file keeps a placeholder `database_id`.
+- The root `deploy` script (`scripts/workers-builds-deploy.sh`) refuses to run unless `WORKERS_CI=1`; the GitHub Actions deploy jobs are guarded by `github.repository == 'lixalistudio-oss/makisend'` so copies never try to use our secrets.
+- `BETTER_AUTH_URL` / `FRONTEND_URL` are optional: `withPublicUrls` (`src/index.ts`) falls back to the request origin (same-origin Worker), which is what a button install has.
+- **Versioning**: `APP_VERSION` (`src/core/version.ts`) must equal the root `package.json` `version` (tested). Bumping both on `main` makes `.github/workflows/release.yml` publish `vX.Y.Z`.
+- **Update check** (`src/updates/`): reads `GET /repos/{UPDATE_SOURCE_REPOSITORY}/releases/latest` unauthenticated, stores the result in the single-row `update_check` table, refreshed by the daily cron and at most daily (or every 5 min with `?refresh=true`) from `GET /updates/status`. `UPDATE_CHECK=off` = no GitHub call. A failed check keeps the last known release and records `error`. Dashboard: `frontend/src/components/update-banner.tsx` (banner + Settings card).
+- **Installing an update** in a copy: `.github/workflows/sync-upstream.yml` merges the release tag and keeps the copy's `wrangler.jsonc`; see `docs/UPDATING.md`.
+
 ## API documentation
 
 The Worker serves its own reference:

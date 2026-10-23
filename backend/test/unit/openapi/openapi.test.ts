@@ -28,6 +28,7 @@ const EXPECTED_PATHS = [
   "/templates",
   "/templates/{id}",
   "/templates/{id}/preview",
+  "/updates/status",
   "/openapi.json",
 ];
 
