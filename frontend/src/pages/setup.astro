@@ -1,0 +1,11 @@
+---
+import Layout from "../layouts/Layout.astro";
+import "../styles/global.css";
+import { SignupForm } from "@/components/signup-form";
+---
+
+<Layout title="Set up - MakiSend">
+  <main class="flex min-h-screen items-center justify-center p-4">
+    <SignupForm client:load />
+  </main>
+</Layout>

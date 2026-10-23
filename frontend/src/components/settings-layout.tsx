@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/dialog"
 import { KeyIcon } from "lucide-react"
 import { fetchApi } from "@/lib/api"
+import { TwoFactorCard } from "@/components/two-factor-card"
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -269,6 +270,8 @@ export function SettingsLayout() {
               </FieldGroup>
             </CardContent>
           </Card>
+
+          <TwoFactorCard />
 
           <Card className="border-destructive/50">
             <CardContent className="pt-6">

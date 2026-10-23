@@ -135,8 +135,9 @@ Copy `.env.example` to `.env` and fill in:
 
 | Variable | Description |
 |----------|-------------|
-| `AES_256_KEY` | 64-character hex AES-256 key (`openssl rand -hex 32`) |
-| `BETTER_AUTH_SECRET` | Better Auth signing secret |
+| `ENCRYPTION_KEY` | Current 64-character hex AES-256 key (`openssl rand -hex 32`). The legacy name `AES_256_KEY` is still read |
+| `ENCRYPTION_KEY_PREVIOUS` | Optional, decrypt-only keys during a rotation, comma-separated |
+| `BETTER_AUTH_SECRET` | Signs sessions and encrypts the TOTP secrets and backup codes. Changing it signs everyone out and breaks existing two-factor set-ups (see "Accounts and authentication") |
 | `BETTER_AUTH_URL` | Backend URL of the Worker (e.g. `http://localhost:8787`) |
 | `FRONTEND_URL` | Frontend origin allowed for CORS / redirects |
 
@@ -180,15 +181,42 @@ Even though the runtime remains **Hono** (not NestJS), the code organization is 
 ## Security
 
 - **API key authentication**: `src/middleware/api-key.middleware.ts` verifies per-user API keys via Better Auth (`401` missing header, `403` invalid key), with header `x-api-key: <KEY>` or `Authorization: Bearer <KEY>`. Keys are created/listed/revoked through the `api-keys` module.
-- **Encryption**: recipient email address is encrypted with AES-256-GCM before database storage.
+- **Encryption**: SMTP credentials, recipients and email bodies are encrypted with AES-256-GCM before storage. Ciphertexts are `{"kid","iv","data"}` JSON; `kid` is a public fingerprint of the key, used by the key rotation below.
 - **HTML sanitization**: HTML content is cleaned with `sanitize-html` before sending.
 - **Template ownership**: the `templateId` branch of `POST /send-email` checks that the template belongs to the API key's user (a foreign or unknown id answers the same `404` so ids cannot be probed).
 - **Verified TLS**: SMTP connections use `rejectUnauthorized: true`.
 - **Strict validation**: payloads are validated with Zod (`strict()` blocks unexpected fields).
 
+### Accounts and authentication
+
+**One account: the super admin, created at the first connection.** While no account exists, `GET /api/setup-status` answers `{ needsSetup: true }` and the dashboard sends every visitor to `/setup` (`/register` redirects there), where the first connection creates the administrator with an email and a password. After that, every account creation is refused with 403 (`SETUP_COMPLETE`) and `/setup` redirects to `/login`.
+
+- The rule is enforced on account creation itself (`databaseHooks.user.create.before` in `src/lib/auth.ts`), not on the sign-up route: any Better Auth endpoint or server-side call that creates a user goes through it. `core/create-user.ts` (direct insert) claims the instance the same way.
+- It is atomic: each creation claims the single row of `instance_owner` with one conditional UPSERT (`src/lib/owner-lock.ts`), so concurrent first sign-ups create exactly one account (the previous count-then-insert check let a race create two). A claim whose account was never created is freed after 30 s while no user exists. An instance that already has an account stays locked after the migration: the claim requires an empty `user` table.
+- Deleting the account (Settings > Delete Account) releases the instance: the next connection sets it up again. There is no password reset by email.
+
+**Two-factor authentication (TOTP).** Settings > Two-factor authentication turns on TOTP with any authenticator app (Google Authenticator, 1Password, Authy...): the password is asked, a QR code and a manual key are shown with 10 backup codes, and 2FA only turns on once a first code is accepted. Sign-in then asks for the code after the password (`twoFactorRedirect`), with a backup code as fallback and an optional 30-day trusted device. Better Auth's `twoFactor` plugin: 3 attempts per 10 s per IP on `/two-factor/*`, 5 attempts per challenge, account locked 15 min after 10 failures.
+
+The TOTP secret and backup codes (`two_factor` table) are encrypted by Better Auth with `BETTER_AUTH_SECRET`, **not** with `ENCRYPTION_KEY`: the key-rotation job does not touch them and they are not in `ENCRYPTED_COLUMNS`. Rotating `BETTER_AUTH_SECRET` breaks existing set-ups unless you use Better Auth's versioned secrets (`BETTER_AUTH_SECRETS=2:new,1:old`); otherwise turn 2FA off, rotate, turn it on again.
+
+**Sign-in without a password (email + authenticator code).** Once 2FA is on, the account can opt in (Settings, password required) to sign in with its email and a TOTP code only (`POST /api/auth/sign-in/totp`, `src/lib/totp-sign-in.ts`). The code then becomes the only factor, so it is off by default. Same 401 for an unknown email, an account that did not opt in and a wrong code; a code is accepted once (replay refused); wrong codes count toward the same 10-failure / 15-min lockout; `/sign-in/*` is limited to 3 attempts per 10 s per IP. Turning 2FA off turns it off too.
+
+Tests: `test/unit/auth/auth-routes.test.ts` (single account, races, 2FA, passwordless, replay, lockout).
+
+### Key rotation
+
+`decrypt` tries the key matching `kid` first, then every configured key (values written before `kid` existed have none). New values are always encrypted with `ENCRYPTION_KEY`.
+
+1. Copy the current `ENCRYPTION_KEY` (or `AES_256_KEY`) into `ENCRYPTION_KEY_PREVIOUS` (comma-separated if several keys are still in use).
+2. Set a new `ENCRYPTION_KEY` (`openssl rand -hex 32`) as a Worker secret. No deploy needed.
+3. The hourly cron (`17 * * * *`, `src/key-rotation`) re-encrypts up to 200 values per column per run through a compare-and-swap `UPDATE` (a value edited in between is never overwritten) and logs `key-rotation: run complete` with `{reEncrypted, failed, remaining}`.
+4. Once a run logs `remaining: 0` and `failed: 0`, delete `ENCRYPTION_KEY_PREVIOUS` (and the legacy `AES_256_KEY`).
+
+**Never replace the key outright once the database holds data**: SMTP credentials, recipients and bodies become unreadable. Every encrypted column must be listed in `ENCRYPTED_COLUMNS` (`src/key-rotation/key-rotation.repository.ts`). The daily cron (`17 3 * * *`) still runs the SMTP health checks; `scheduled` dispatches on the expression.
+
 ### Current security limitations
 
-- **Rate limiting is coarse**: Better Auth limits sign-in attempts and API keys (10,000 requests/day by default), but there is no per-tenant configurable send quota.
+- **No send quota on API keys**: the per-key daily quota was removed on purpose (`apiKeyOptions.rateLimit.enabled = false` in `src/lib/auth.ts`, which also overrides the quota stamped on existing keys). Queues and Workflows absorb bursts; SMTP quotas are the real limit. A leaked key can send until it is deleted.
 - **No webhook / signature**: no request origin verification beyond the API key.
 - **No dedicated audit logs**: only Pino application logs are present.
 
