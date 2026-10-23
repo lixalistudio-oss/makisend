@@ -35,7 +35,7 @@ export function createAuth(env: Bindings) {
     }),
     secret: env.BETTER_AUTH_SECRET,
     baseURL: env.BETTER_AUTH_URL,
-    trustedOrigins: [env.FRONTEND_URL].filter(Boolean),
+    trustedOrigins: env.FRONTEND_URL ? [env.FRONTEND_URL] : [],
     emailAndPassword: {
       enabled: true,
     },

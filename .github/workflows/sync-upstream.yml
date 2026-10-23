@@ -1,0 +1,124 @@
+name: Sync with upstream
+
+# For copies of MakiSend (created by the "Deploy to Cloudflare" button or by hand).
+# Merges an official release into this repository's default branch; the push then makes
+# Cloudflare Workers Builds rebuild and redeploy the Worker, migrations included.
+# The dashboard's "Update" button opens this page (set MAKISEND_REPOSITORY = owner/name).
+#
+# Token: the default GITHUB_TOKEN cannot push a commit that changes a file under
+# .github/workflows. When a release does, add a repository secret SYNC_TOKEN (fine-grained
+# token on this repository, permissions "Contents" and "Workflows": read and write).
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release to install, e.g. v0.2.0. Empty: the latest release."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+env:
+  UPSTREAM: lixalistudio-oss/makisend
+
+jobs:
+  sync:
+    name: Merge the release into the default branch
+    if: github.repository != 'lixalistudio-oss/makisend'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_TOKEN || github.token }}
+
+      - name: Resolve the release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -n "$REQUESTED" ]; then
+            TAG="v${REQUESTED#v}"
+          else
+            TAG=$(gh api "repos/$UPSTREAM/releases/latest" --jq .tag_name)
+          fi
+          CURRENT="v$(jq -r '.version // "0.0.0"' package.json)"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "Installed: $CURRENT, requested: $TAG"
+
+      - name: Merge the release
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+          CURRENT: ${{ steps.release.outputs.current }}
+          BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream "https://github.com/$UPSTREAM.git"
+          git fetch --no-tags upstream "refs/tags/$TAG:refs/tags/$TAG"
+
+          if git merge-base --is-ancestor "$TAG" HEAD; then
+            echo "Already on $TAG or newer, nothing to merge." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # Cloudflare wrote this copy's own database id (and resource names) into wrangler.jsonc:
+          # it must survive the merge.
+          cp wrangler.jsonc "$RUNNER_TEMP/wrangler.jsonc"
+
+          # A copy made by the button may not share history with upstream.
+          if ! git merge --no-edit --allow-unrelated-histories -X theirs "$TAG" -m "chore: update MakiSend to $TAG"; then
+            {
+              echo "### Could not merge $TAG automatically"
+              echo
+              echo "Conflicts the merge could not resolve:"
+              echo '```'
+              git diff --name-only --diff-filter=U
+              echo '```'
+              echo "Merge \`$TAG\` from https://github.com/$UPSTREAM by hand (see docs/UPDATING.md)."
+            } >> "$GITHUB_STEP_SUMMARY"
+            git merge --abort
+            exit 1
+          fi
+
+          cp "$RUNNER_TEMP/wrangler.jsonc" wrangler.jsonc
+          if ! git diff --quiet -- wrangler.jsonc; then
+            git commit -m "chore: keep this instance's wrangler.jsonc" -- wrangler.jsonc
+          fi
+
+          # Tell the owner when the release changed wrangler.jsonc: new bindings must be copied by hand.
+          if git fetch --no-tags upstream "refs/tags/$CURRENT:refs/tags/$CURRENT" 2>/dev/null \
+            && ! git diff --quiet "$CURRENT" "$TAG" -- wrangler.jsonc; then
+            {
+              echo "### wrangler.jsonc changed between $CURRENT and $TAG"
+              echo "Your own wrangler.jsonc was kept. Copy these changes into it:"
+              echo '```diff'
+              git diff "$CURRENT" "$TAG" -- wrangler.jsonc
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::wrangler.jsonc changed upstream, see the run summary"
+          fi
+
+          if ! git push origin "HEAD:$BRANCH"; then
+            {
+              echo "### Push refused"
+              echo "If the release changes files under .github/workflows, add a SYNC_TOKEN secret"
+              echo "(fine-grained token, Contents and Workflows: read and write) and run this again."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          {
+            echo "### Updated to $TAG"
+            echo "Cloudflare Workers Builds now rebuilds and redeploys the Worker (migrations included)."
+            echo "Release notes: https://github.com/$UPSTREAM/releases/tag/$TAG"
+          } >> "$GITHUB_STEP_SUMMARY"

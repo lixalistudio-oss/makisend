@@ -5,6 +5,7 @@ Documentation for the MakiSend POC (Cloudflare Workers transactional email API).
 | Document | Contents |
 |---|---|
 | [`ARCHITECTURE.md`](./ARCHITECTURE.md) | End-to-end architecture: system context, request lifecycle, auth planes, data model and encryption, module catalogue, send/template flows, retry state machine, security model, observability, frontend, deployment, design decisions, known limitations, file map |
+| [`UPDATING.md`](./UPDATING.md) | How an installed instance learns about a release and installs it (dashboard banner, *Sync with upstream* workflow, manual merge, rollback), and how maintainers cut a release |
 | [`DEVELOPER_GUIDE.md`](./DEVELOPER_GUIDE.md) | Setup and `.dev.vars`, commands, Docker, testing with Miniflare D1, database workflow, recipes for new modules/routes/workflow steps/templates/frontend pages, debugging table, deployment and CI warnings, reuse/fork guide, agent checklist |
 
 Related docs:

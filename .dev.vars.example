@@ -1,0 +1,8 @@
+# Secrets the "Deploy to Cloudflare" button asks for (see README, "Deploy to Cloudflare").
+# Descriptions are in package.json (cloudflare.bindings). For local development use
+# backend/.env.example instead.
+
+# 64 hex characters: openssl rand -hex 32. Keep a copy, a lost key makes the data unreadable.
+ENCRYPTION_KEY=your_64_character_hexadecimal_string_here
+# Long random string: openssl rand -base64 32
+BETTER_AUTH_SECRET=change_me_to_a_long_random_string

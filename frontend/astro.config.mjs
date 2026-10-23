@@ -25,6 +25,7 @@ export default defineConfig({
         "/api-keys": backendUrl,
         "/email-logs": backendUrl,
         "/templates": backendUrl,
+        "/updates": backendUrl,
         "/dashboard/stats": backendUrl,
         "/dashboard/by-config": backendUrl,
         "/dashboard/recent": backendUrl,

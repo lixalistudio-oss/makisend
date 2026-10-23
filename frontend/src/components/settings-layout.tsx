@@ -27,6 +27,7 @@ import {
 import { KeyIcon } from "lucide-react"
 import { fetchApi } from "@/lib/api"
 import { TwoFactorCard } from "@/components/two-factor-card"
+import { VersionCard } from "@/components/update-banner"
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -272,6 +273,18 @@ export function SettingsLayout() {
           </Card>
 
           <TwoFactorCard />
+
+          <Card>
+            <CardHeader>
+              <CardTitle>MakiSend version</CardTitle>
+              <CardDescription>
+                Checked once a day against the latest release on GitHub. Set UPDATE_CHECK=off to never contact GitHub.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <VersionCard />
+            </CardContent>
+          </Card>
 
           <Card className="ring-destructive/40">
             <CardHeader>

@@ -5,6 +5,7 @@ import { ChartAreaInteractive } from "@/components/chart-area-interactive"
 import { ErrorsCard } from "@/components/errors-card"
 import { DataTable } from "@/components/data-table"
 import { SessionGuard } from "@/components/session-guard"
+import { UpdateBanner } from "@/components/update-banner"
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar"
 
 export function DashboardLayout() {
@@ -15,6 +16,7 @@ export function DashboardLayout() {
         <SiteHeader />
         <SessionGuard>
           <div className="flex flex-1 flex-col gap-6 p-4 sm:p-6">
+            <UpdateBanner />
             <SectionCards />
             <ChartAreaInteractive />
             <ErrorsCard />

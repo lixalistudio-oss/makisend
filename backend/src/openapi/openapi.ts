@@ -157,6 +157,7 @@ export const openApiDocument = {
     { name: "Email Logs", description: "Inspect delivery logs and history." },
     { name: "Dashboard", description: "Aggregated delivery metrics." },
     { name: "Templates", description: "Reusable email templates with variables." },
+    { name: "Updates", description: "Whether a newer MakiSend release is published." },
     { name: "Meta", description: "API documentation and schema discovery." },
   ],
   paths: {
@@ -708,6 +709,29 @@ export const openApiDocument = {
         },
       },
     },
+    "/updates/status": {
+      get: {
+        tags: ["Updates"],
+        summary: "New-release check",
+        operationId: "getUpdateStatus",
+        description:
+          "Compares this build with the latest release of the upstream repository (GitHub, checked at most daily and cached in D1). `UPDATE_CHECK=off` turns the check off.",
+        security: sessionSecurity,
+        parameters: [
+          {
+            name: "refresh",
+            in: "query",
+            description: "`true` re-checks now, unless the last check is less than five minutes old.",
+            schema: { type: "string", enum: ["true", "false"] },
+          },
+        ],
+        responses: {
+          200: jsonResponse("Current and latest versions.", "UpdateStatusEnvelope"),
+          400: responseRef("ValidationError"),
+          ...sessionErrors,
+        },
+      },
+    },
     "/openapi.json": {
       get: {
         tags: ["Meta"],
@@ -1063,6 +1087,33 @@ export const openApiDocument = {
           failureCount: { type: "integer" },
           successRate: { type: "integer", minimum: 0, maximum: 100 },
         },
+      },
+      UpdateStatus: {
+        type: "object",
+        required: ["enabled", "currentVersion", "latestVersion", "updateAvailable", "checkedAt", "upstreamRepository"],
+        properties: {
+          enabled: { type: "boolean" },
+          currentVersion: { type: "string", examples: ["0.1.0"] },
+          latestVersion: { type: ["string", "null"], examples: ["0.2.0"] },
+          updateAvailable: { type: "boolean" },
+          releaseName: { type: ["string", "null"] },
+          releaseUrl: { type: ["string", "null"], format: "uri" },
+          releaseNotes: { type: ["string", "null"], description: "Markdown, truncated to 4000 characters." },
+          publishedAt: { type: ["string", "null"], format: "date-time" },
+          checkedAt: { type: ["string", "null"], format: "date-time" },
+          error: { type: ["string", "null"], description: "Why the last check failed." },
+          upstreamRepository: { type: "string", examples: ["lixalistudio-oss/makisend"] },
+          syncWorkflowUrl: {
+            type: ["string", "null"],
+            format: "uri",
+            description: "The sync workflow of this instance's own repository, when `MAKISEND_REPOSITORY` is set.",
+          },
+        },
+      },
+      UpdateStatusEnvelope: {
+        type: "object",
+        required: ["status"],
+        properties: { status: schemaRef("UpdateStatus") },
       },
       DashboardStatsEnvelope: {
         type: "object",

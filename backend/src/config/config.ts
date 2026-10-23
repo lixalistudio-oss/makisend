@@ -62,7 +62,7 @@ export function createConfig(env: Bindings): Config {
   return {
     aesKey,
     db: env.makisend_db,
-    better_auth_url: env.BETTER_AUTH_URL,
+    better_auth_url: env.BETTER_AUTH_URL ?? "",
     better_auth_secret: env.BETTER_AUTH_SECRET,
   };
 }

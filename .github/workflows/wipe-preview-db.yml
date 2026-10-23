@@ -9,6 +9,7 @@ permissions:
 jobs:
   wipe:
     name: Delete all rows in preview D1
+    if: github.repository == 'lixalistudio-oss/makisend'
     runs-on: ubuntu-latest
     environment:
       name: preview

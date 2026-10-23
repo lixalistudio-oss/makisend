@@ -43,6 +43,13 @@
       "when": 1792762394718,
       "tag": "0005_send_rate_limit",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1792770361464,
+      "tag": "0006_update_check",
+      "breakpoints": true
     }
   ]
 }

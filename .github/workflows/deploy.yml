@@ -60,7 +60,10 @@ jobs:
   deploy:
     name: Deploy to Cloudflare (production)
     needs: build
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    # Copies made by the Deploy to Cloudflare button deploy through Workers Builds instead.
+    if: >-
+      github.repository == 'lixalistudio-oss/makisend' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     # Any branch can push at the same time: serialize production deploys so two
     # runs never upload the Worker/Pages at once. Never cancel a deploy mid-flight.
@@ -259,6 +262,7 @@ jobs:
     name: Deploy preview to Cloudflare
     needs: build
     if: >-
+      github.repository == 'lixalistudio-oss/makisend' &&
       github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest

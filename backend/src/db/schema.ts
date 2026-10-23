@@ -360,6 +360,20 @@ export const sendRateLimit = sqliteTable("send_rate_limit", {
   count: integer("count").notNull(),
 });
 
+// Result of the last "is a newer MakiSend release published?" check (src/updates). A single
+// row (id = "latest"): the daily cron or the dashboard overwrites it. Only the latest
+// release is stored; whether it is newer is decided at read time against the running build.
+export const updateCheck = sqliteTable("update_check", {
+  id: text("id").primaryKey(),
+  latestVersion: text("latest_version"),
+  releaseName: text("release_name"),
+  releaseUrl: text("release_url"),
+  releaseNotes: text("release_notes"),
+  publishedAt: text("published_at"),
+  checkedAt: integer("checked_at").notNull(),
+  error: text("error"),
+});
+
 export const userRelations = relations(user, ({ many }) => ({
   sessions: many(session),
   accounts: many(account),

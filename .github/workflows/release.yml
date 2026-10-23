@@ -1,0 +1,69 @@
+name: Release
+
+# Publishes a GitHub release when the version in the root package.json has none yet.
+# Installed instances read the latest release (GET /repos/.../releases/latest) to show the
+# "new version available" banner, so bumping `version` (and APP_VERSION in
+# backend/src/core/version.ts, kept equal by the tests) is how a release is cut.
+on:
+  push:
+    branches: [main]
+    paths:
+      - package.json
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Tag and publish the release
+    # Copies of this repository (Deploy to Cloudflare button) must not publish releases.
+    if: github.repository == 'lixalistudio-oss/makisend'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read the version
+        id: version
+        run: |
+          set -euo pipefail
+          VERSION=$(jq -r .version package.json)
+          APP_VERSION=$(sed -nE 's/^export const APP_VERSION = "([^"]+)";$/\1/p' backend/src/core/version.ts)
+          if [ "$VERSION" != "$APP_VERSION" ]; then
+            echo "::error::package.json version ($VERSION) differs from APP_VERSION ($APP_VERSION)"
+            exit 1
+          fi
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::Not a semantic version: $VERSION"
+            exit 1
+          fi
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          if echo "$VERSION" | grep -q -- '-'; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists, nothing to do."
+            exit 0
+          fi
+          FLAGS=(--target "$GITHUB_SHA" --title "MakiSend $TAG" --generate-notes)
+          # A prerelease is never returned by releases/latest: instances are not told about it.
+          if [ "$PRERELEASE" = "true" ]; then FLAGS+=(--prerelease); else FLAGS+=(--latest); fi
+          gh release create "$TAG" "${FLAGS[@]}"
+          echo "### Released $TAG" >> "$GITHUB_STEP_SUMMARY"
