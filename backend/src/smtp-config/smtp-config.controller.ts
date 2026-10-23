@@ -4,7 +4,7 @@ import { z } from "zod";
 import { pinoLogger } from "@/core/logger";
 import { MAX_ID_LENGTH } from "@/core/validation";
 import type { Bindings, UserInfoVariables } from "@/index";
-import { CreateSmtpConfigDto, TestSendDto, UpdateSmtpConfigDto } from "./smtp-config.dto";
+import { CreateSmtpConfigDto, TestSendDto, UpdateSmtpConfigDto, toTestEmail } from "./smtp-config.dto";
 import { toPublicSmtpConfig } from "./smtp-config.types";
 import type { SmtpConfigService } from "./smtp-config.service";
 
@@ -112,8 +112,8 @@ export function createSmtpConfigController(
     async (c) => {
       const userId = c.get("userId");
       const { id } = c.req.valid("param");
-      const email = c.req.valid("json");
-      pinoLogger.info({ userId, id }, "POST /smtp-config/:id/test-send");
+      const email = toTestEmail(c.req.valid("json"));
+      pinoLogger.info({ userId, id, attachments: email.attachments?.length ?? 0 }, "POST /smtp-config/:id/test-send");
       const result = await getService().sendTest(id, userId, email);
       return c.json(result, 200);
     },

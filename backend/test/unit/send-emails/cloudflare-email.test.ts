@@ -53,6 +53,35 @@ describe("CloudflareEmailTransport", () => {
     ]);
   });
 
+  it("C4 hands the attachments to the binding, as attachments, in order", async () => {
+    const binding = new RecordingBinding();
+    const pdf = new Uint8Array([37, 80, 68, 70, 0, 255]);
+    await new CloudflareEmailTransport(binding, "noreply@getitaja.com").send({
+      to: "dest@example.com",
+      subject: "Hi",
+      text: "plain",
+      html: "<p>rich</p>",
+      attachments: [
+        { filename: "a.pdf", contentType: "application/pdf", content: pdf },
+        { filename: "b.csv", contentType: "application/octet-stream", content: new Uint8Array([1]) },
+      ],
+    });
+
+    expect(binding.sent[0]?.attachments).toEqual([
+      { disposition: "attachment", filename: "a.pdf", type: "application/pdf", content: pdf },
+      { disposition: "attachment", filename: "b.csv", type: "application/octet-stream", content: new Uint8Array([1]) },
+    ]);
+  });
+
+  it("C4 a test send through the binding keeps its attachments", async () => {
+    const binding = new RecordingBinding();
+    const file = { filename: "a.pdf", contentType: "application/pdf", content: new Uint8Array([1, 2, 3]) };
+    await sendTestViaCloudflare(binding, "noreply@getitaja.com", { to: "dest@example.com", subject: "Probe", text: "x", attachments: [file] });
+    expect(binding.sent[0]?.attachments).toEqual([
+      { disposition: "attachment", filename: "a.pdf", type: "application/pdf", content: file.content },
+    ]);
+  });
+
   it("C3 rejects when the Worker has no binding", async () => {
     const transport = new CloudflareEmailTransport(undefined, "noreply@getitaja.com");
     await expect(transport.send({ to: "a@b.co", subject: "s", text: "t", html: "h" })).rejects.toThrow(/binding/);

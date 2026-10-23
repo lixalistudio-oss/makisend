@@ -234,7 +234,7 @@ Request schemas are generated from the Zod DTOs so they stay aligned with the ac
 | `GET/PUT/DELETE` | `/smtp-config/{id}` | Session | Reads / updates / deletes a configuration |
 | `POST` | `/smtp-config/check` | Session | Tests unsaved credentials |
 | `POST` | `/smtp-config/{id}/check` | Session | Tests a saved configuration |
-| `POST` | `/smtp-config/{id}/test-send` | Session | Sends a test email (logged with `source: "test"`, never counted in the dashboard totals) |
+| `POST` | `/smtp-config/{id}/test-send` | Session | Sends a test email (logged with `source: "test"`, never counted in the dashboard totals); takes the same optional `attachments` as `/send-email` |
 | `GET/POST` | `/api-keys` | Session | Lists / creates an API key linked to a configuration (several keys can share one) |
 | `DELETE` | `/api-keys/{id}` | Session | Revokes an API key |
 | `GET` | `/email-logs` | Session | Paginated logs (filters `status`, `smtpConfigId`, `apiKeyId`, `to`) |

@@ -232,6 +232,22 @@ describe("SMTP config HTTP", () => {
     expect(res.status).toBe(400);
   });
 
+  it("refuses a test-send attachment that is not base64, and names the field", async () => {
+    const res = await app.request(
+      "/smtp-config/does-not-exist/test-send",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Origin: ORIGIN, Cookie: cookie },
+        body: json({ to: "dest@example.com", attachments: [{ filename: "a.pdf", content: "not base64!!" }] }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { details: { fieldErrors: Record<string, string[]> } };
+    expect(body.details.fieldErrors.attachments?.[0]).toMatch(/base64/);
+  });
+
   it("returns 404 for test-send on an unknown configuration", async () => {
     const res = await app.request(
       "/smtp-config/does-not-exist/test-send",

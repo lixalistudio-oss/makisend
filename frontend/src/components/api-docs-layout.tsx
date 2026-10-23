@@ -96,7 +96,7 @@ const ENDPOINT_GROUPS: {
       { method: "PUT", path: "/smtp-config/{id}", description: "Update a configuration, including its active state." },
       { method: "DELETE", path: "/smtp-config/{id}", description: "Delete a configuration and the API keys linked to it." },
       { method: "POST", path: "/smtp-config/{id}/check", description: "Test a saved configuration." },
-      { method: "POST", path: "/smtp-config/{id}/test-send", description: "Send a test email. It shows in the logs as a test, never in the dashboard totals." },
+      { method: "POST", path: "/smtp-config/{id}/test-send", description: "Send a test email, optionally with attachments (same shape as /send-email). It shows in the logs as a test, never in the dashboard totals." },
     ],
   },
   {

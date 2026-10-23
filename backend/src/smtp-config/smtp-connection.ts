@@ -4,6 +4,7 @@ import * as nodemailer from "nodemailer";
 import type { Transporter } from "nodemailer";
 import type { SmtpConfig } from "@/config/config";
 import { pinoLogger } from "@/core/logger";
+import type { EmailAttachment } from "@/send-email/attachments";
 import { DEFAULT_SMTP_PORT, type SmtpSecurity } from "./smtp-host";
 
 export const SMTP_CONNECTION_TIMEOUT_MS = 10_000;
@@ -244,6 +245,8 @@ export interface TestEmail {
   to: string;
   subject: string;
   text: string;
+  /** Decoded files, in order. Absent: a message without attachments. */
+  attachments?: EmailAttachment[];
 }
 
 export type SmtpSendResult = { ok: true; messageId: string } | Extract<SmtpCheckResult, { ok: false }>;
@@ -261,6 +264,15 @@ export async function sendTestEmail(
       to: email.to,
       subject: email.subject,
       text: email.text,
+      ...(email.attachments && email.attachments.length > 0
+        ? {
+            attachments: email.attachments.map((file) => ({
+              filename: file.filename,
+              contentType: file.contentType,
+              content: Buffer.from(file.content),
+            })),
+          }
+        : {}),
     });
     return { ok: true, messageId: info.messageId };
   } catch (err) {
