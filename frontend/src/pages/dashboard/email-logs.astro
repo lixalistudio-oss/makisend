@@ -1,0 +1,9 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import "../../styles/global.css";
+import { EmailLogsLayout } from "@/components/email-logs-layout";
+---
+
+<Layout title="Email Logs - MakiSend">
+  <EmailLogsLayout client:load />
+</Layout>

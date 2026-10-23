@@ -32,36 +32,73 @@ The project follows a **NestJS-inspired modular architecture**:
 
 ```
 src/
-├── index.ts                    # Hono entrypoint, Cloudflare bindings
+├── index.ts                    # Hono entrypoint, bindings, route wiring, DI
+├── api-keys/                   # Per-user API key module (Better Auth)
 ├── config/
 │   └── config.ts               # Typed Config object built from Bindings
 ├── core/                       # Shared kernel
 │   ├── errors.ts               # AppError and subclasses
 │   ├── logger.ts               # Edge-compatible Pino logger
 │   ├── crypto.ts               # AES-256-GCM encryption / decryption
-│   └── html-sanitizer.ts       # HTML sanitization
+│   ├── html-sanitizer.ts       # HTML sanitization
+│   └── create-user.ts          # User bootstrap helper
+├── dashboard/                  # Delivery metrics / stats endpoints
 ├── db/
-│   ├── schema.ts               # Drizzle schema (email_logs)
+│   ├── schema.ts               # Drizzle schema (users, apikeys, smtp_config, email_logs, ...)
 │   └── connection.ts           # drizzle(db) factory
+├── email-logs/                 # Email log listing with filters
+├── lib/
+│   └── auth.ts                 # Better Auth setup (API keys)
 ├── middleware/
-│   ├── api-key.middleware.ts   # API key authentication
+│   ├── api-key.middleware.ts   # API key auth (401/403, Better Auth verification)
 │   ├── config.middleware.ts    # Injects Config into Hono context
 │   ├── error.handler.ts        # Global error handler
-│   └── request-logger.middleware.ts # Request logging
-└── send-email/                 # Business module (barrel export via index.ts)
-    ├── index.ts
-    ├── send-email.module.ts    # Module factory: wires transport, repository, service
-    ├── send-email.controller.ts
-    ├── send-email.dto.ts       # Zod schemas + types
-    ├── send-email.service.ts   # Business logic
-    ├── send-email.repository.ts # Drizzle/D1 persistence
-    └── send-email.types.ts     # Interfaces / contracts
+│   ├── request-logger.middleware.ts # Request logging
+│   └── session.middleware.ts   # Session/auth middleware
+├── queue/
+│   └── send-email.consumer.ts  # Cloudflare Queue consumer → SendEmailWorkflow runs
+├── send-email/                 # Business module (barrel export via index.ts)
+│   ├── index.ts
+│   ├── send-email.controller.ts
+│   ├── send-email.dto.ts       # Zod schemas + types
+│   ├── send-email.repository.ts # Drizzle/D1 persistence
+│   ├── send-email.loader.ts    # Rebuilds + decrypts an email from D1
+│   ├── transport-resolver.ts   # Per-event SMTP transport factory
+│   ├── error-classifier.ts     # Permanent/transient verdicts + human-readable messages
+│   └── send-email.types.ts     # Interfaces / contracts
+├── idempotency/                # HTTP Idempotency-Key for POST /send-email
+├── openapi/                    # OpenAPI 3.1 document (request schemas generated from Zod DTOs)
+├── smtp-config/                # SMTP configs, TLS/port validation, connection checks
+│   ├── smtp-host.ts            # Hostname/port/security parsing and defaults
+│   ├── smtp-connection.ts      # Shared nodemailer options, check/test-send helpers
+│   └── smtp-health.ts          # Scheduled check over every stored config
+├── transports/                 # Delivery transports (SmtpEmailTransport over nodemailer)
+│   ├── index.ts                # Barrel export
+│   └── smtp-email.transport.ts # IEmailTransport implementation, one connection per send
+├── templates/                  # Email templates (legacy HTML, React Email visual editor, or pasted TSX)
+│   ├── index.ts                # Barrel export
+│   ├── templates.types.ts      # Contracts / repository interface
+│   ├── templates.dto.ts        # Create/Update/Preview Zod schemas + format/editorJson/source
+│   ├── templates.repository.ts # Drizzle/D1 persistence
+│   ├── templates.service.ts    # CRUD + ownership + format/source invariants + preview
+│   ├── templates.controller.ts # /templates routes (session auth)
+│   └── template-renderer.ts    # extractVariables / render / shared output caps
+└── workflows/                  # Cloudflare Workflows (durable async orchestration)
+    ├── index.ts                # Barrel export
+    ├── send-email.flow.ts      # Durable steps + 3 retries + dead-letter publication
+    └── send-email.workflow.ts  # SendEmailWorkflow entrypoint (id-only payload)
 
 test/
 ├── setup.ts
+├── helpers/d1-setup.ts
+├── integration/full-flow.test.ts
 └── unit/
-    ├── middleware/             # Middleware tests
-    └── send-emails/            # send-email module tests
+    ├── api-keys/ auth/ config/ dashboard/ email-logs/ openapi/
+    ├── send-email/             # error classifier, transport resolver, controller
+    ├── idempotency/            # replay / conflict / 5xx retry behaviour
+    ├── workflows/              # send flow retries, DLQ, classifier integration
+    ├── transports/             # SmtpEmailTransport (send + close)
+    ├── middleware/ queue/ send-emails/ settings/ smtp-config/
 ```
 
 ## Essential commands
@@ -98,26 +135,28 @@ Copy `.env.example` to `.env` and fill in:
 
 | Variable | Description |
 |----------|-------------|
-| `SMTP_USER` | SMTP server username |
-| `SMTP_PASSWORD` | SMTP password or app key |
-| `SENDER_EMAIL` | Sender email address displayed to recipients |
-| `HOST` | SMTP host (e.g. smtp.example.com) |
-| `PORT` | SMTP port (465, 587, etc.) |
 | `AES_256_KEY` | 64-character hex AES-256 key (`openssl rand -hex 32`) |
-| `API_KEY` | API key for securing `/send-email` (auth implementation is TODO) |
+| `BETTER_AUTH_SECRET` | Better Auth signing secret |
+| `BETTER_AUTH_URL` | Backend URL of the Worker (e.g. `http://localhost:8787`) |
+| `FRONTEND_URL` | Frontend origin allowed for CORS / redirects |
 
-These variables are mapped in `src/index.ts` via the `Bindings` type, transformed into a typed `Config` via `createConfig()`, and injected into services at runtime through module factories.
+Not environment variables anymore:
+
+- **SMTP credentials, port and TLS mode** (`SMTP_USER`, `SMTP_PASSWORD`, `SENDER_EMAIL`, `HOST`, port, `tls`/`starttls`): stored per SMTP config, credentials encrypted in D1, managed through the `smtp-config` module. Ports are limited to the submission ports a Worker can reach; port 25 is refused.
+- **`API_KEY`**: API keys are per user, created via the `api-keys` module (Better Auth), and sent as `x-api-key` or `Authorization: Bearer`.
+
+These variables are mapped in `src/index.ts` via the `Bindings` type, transformed into a typed `Config` via `createConfig()`, and injected into services at runtime.
 
 ## Target architecture inspired by NestJS
 
 Even though the runtime remains **Hono** (not NestJS), the code organization is inspired by NestJS architectural principles:
 
-- **Modules**: each business domain (e.g. `send-email`) is a cohesive module exporting its controllers, services, repositories and DTOs via an `index.ts` barrel file. A dedicated `*.module.ts` file wires the provider graph for the domain.
-- **Controllers**: `*.controller.ts` files contain only HTTP code — routing, middleware registration (auth, logging, etc.), input validation (DTO), and response formatting. A controller owns its middleware chain and resolves its own dependencies from `c.env` / `Config` so that `src/index.ts` stays minimal.
+- **Modules**: each business domain (e.g. `send-email`) is a cohesive module exporting its controllers, services, repositories and DTOs via an `index.ts` barrel file.
+- **Controllers**: `*.controller.ts` files contain only HTTP code — routing, input validation (DTO), and response formatting.
 - **Providers / Services**: business logic lives in services. They know nothing about the web framework.
 - **Repositories**: persistence is isolated behind an interface / contract (`IEmailRepository`). The concrete repository can be implemented with Drizzle/D1 today and replaced later without touching the service.
 - **DTOs / Schemas**: Zod validation schemas are extracted into `*.dto.ts` files next to the controller. They serve both as API contracts and TypeScript types (`z.infer`).
-- **Manual dependency injection**: Hono has no native IoC container. Dependencies are injected through constructors (`new Service(new Repository(...), config)`), or via simple factory functions (`createSendEmailModule(config)`). The controller receives the runtime environment and builds the module graph internally.
+- **Manual dependency injection**: Hono has no native IoC container. Dependencies are injected through constructors (`new Service(new Repository(...), config)`), or via controller factories that take lazy getters (`createSendEmailController(() => deps.emailRepository!, ...)`), wired in `src/index.ts`.
 - **Shared kernel**: cross-cutting code (logger, errors, encryption, configuration) lives in `src/core/` and depends on no business module.
 
 ### Anti-patterns to avoid
@@ -126,7 +165,6 @@ Even though the runtime remains **Hono** (not NestJS), the code organization is 
 - Do not mix SMTP / nodemailer logic with persistence logic.
 - Do not use `c.env` beyond the entrypoint and factories: transform `Bindings` into a typed `Config` as early as possible.
 - Do not import `nodemailer` or `drizzle` directly from a controller.
-- Do not wire domain-specific middleware or services in `src/index.ts`: mount the controller and let it configure itself.
 
 ## Code conventions
 
@@ -141,25 +179,30 @@ Even though the runtime remains **Hono** (not NestJS), the code organization is 
 
 ## Security
 
-- **API key authentication**: `src/middleware/api-key.middleware.ts` validates the `x-makisend-key` header against the configured `API_KEY`.
+- **API key authentication**: `src/middleware/api-key.middleware.ts` verifies per-user API keys via Better Auth (`401` missing header, `403` invalid key), with header `x-api-key: <KEY>` or `Authorization: Bearer <KEY>`. Keys are created/listed/revoked through the `api-keys` module.
 - **Encryption**: recipient email address is encrypted with AES-256-GCM before database storage.
 - **HTML sanitization**: HTML content is cleaned with `sanitize-html` before sending.
+- **Template ownership**: the `templateId` branch of `POST /send-email` checks that the template belongs to the API key's user (a foreign or unknown id answers the same `404` so ids cannot be probed).
 - **Verified TLS**: SMTP connections use `rejectUnauthorized: true`.
 - **Strict validation**: payloads are validated with Zod (`strict()` blocks unexpected fields).
 
 ### Current security limitations
 
-- **No rate limiting**: a client with a valid API key could spam requests without a ceiling. Implement with Cloudflare KV, D1, or Workers Analytics Engine for distributed rate limiting.
-- **Single global API key**: no multi-key / scopes / rotation management yet.
+- **Rate limiting is coarse**: Better Auth limits sign-in attempts and API keys (10,000 requests/day by default), but there is no per-tenant configurable send quota.
 - **No webhook / signature**: no request origin verification beyond the API key.
 - **No dedicated audit logs**: only Pino application logs are present.
 
 ## Technical notes
 
+- **Per-config SMTP port/security**: `smtpPort` and `smtpSecurity` (`tls` or `starttls`) live on the SMTP config; port 465/2465 means implicit TLS, the other allowed ports require STARTTLS
+- **SMTP connection by hostname**: nodemailer receives a `getSocket` callback that opens the socket by hostname, working around workerd's implicit-TLS/IP limitation; the same options power sends and health checks
 - **Forced IPv4** in nodemailer (`family: 4`) to avoid `workerd` network warnings
+- **Workflow steps return primitives**: a `step.do` callback must never return an object — the Workflows runtime then emits a false "code had hung" cancellation right after the run (workerd#6925 / workers-sdk#14959); multi-value steps return a `JSON.stringify` string that the run parses back
 - **Verified TLS** (`rejectUnauthorized: true`) to prevent MITM attacks
 - **Encryption** of recipient email address before database storage
 - **HTML sanitization** of incoming content before sending
+- **Templates render at request time**: `templateId` payloads are resolved (load → missing-variable check → render → HTML-escape → output caps) into the same inline shape before enqueueing, so the queue, workflow and SMTP layer never learn that templates exist; missing variables fail fast with `400` and a list of names. `POST /templates/:id/preview` uses the same `renderTemplateContent` helper.
+- **React Email editor is browser-only**: visual mode mounts the full `@react-email/editor` builder (canvas, `Inspector`, Basic/Minimal themes, Export HTML) and stores `format: "react-email"`, an `editorJson` envelope (`{ version: 2, theme, content }`), and exported `html`/`text`. Legacy raw TipTap documents still load. Code mode stores `format: "react-email-code"`, `source`, and the HTML/text rendered by a browser Web Worker (Sucrase + `react-email`). The Worker never executes React Email or user-pasted TSX.
 - No Node.js `Buffer`: use `Uint8Array`, `TextEncoder` / `TextDecoder`, and Web Crypto API
 
 ## Tests
@@ -168,11 +211,18 @@ Even though the runtime remains **Hono** (not NestJS), the code organization is 
 - Config: `vitest.config.ts`
 - Global setup: `test/setup.ts`
 - Current coverage:
-  - `POST /send-email` route (validation + 201 response)
+  - `POST /send-email` route (validation + 202 response, inline and `templateId` branches: rendering, missing variables → 400, foreign template → 404, mixed payload → 400)
   - Email service (mock transport, repository, encryption)
-  - API key middleware (valid / missing / invalid key)
+  - Template renderer (`extractVariables` / `renderTemplate` / `renderHtmlTemplate` / `renderTemplateContent` with HTML escaping and output caps)
+  - Pasted TSX code templates: source round-trip, required-source validation, code-mode UI preview
+  - Template editor storage and preview (DTO format/editorJson/source, repository round-trip, service invariants, preview route)
+  - Retry pipeline: error classifier, workflow retries, DLQ publication, queue consumer dedup
+  - HTTP idempotency: replay, body-mismatch conflict, in-progress conflict, 5xx retry
+  - API key middleware (401/403 + context wiring, inactive SMTP config refusal)
+  - SMTP host/port validation, transport options, error classification
+  - SMTP check/test-send endpoints and per-config transport resolution
 - Mocks are reset in `beforeEach`
-- Run `npm run test:run` before committing
+- Run `pnpm test:run` before committing
 
 ## Database and migrations
 
@@ -182,13 +232,17 @@ Even though the runtime remains **Hono** (not NestJS), the code organization is 
 - Config: `drizzle.config.ts`
 - Migrations: managed in the `drizzle/` folder
 - Wrangler binding: `makisend_db`
+- Email bodies live in `email_contents` (encrypted, keyed by `email_logs.internalId`); templates store visual-builder JSON (theme + TipTap content) or pasted TSX source alongside exported HTML/text;
+  queue/workflow payloads carry only `emailId`
+- HTTP idempotency reservations/responses live in `idempotency_keys` (24h TTL)
 
 ## Deployment
 
 Deployment is done via Wrangler:
 
 ```bash
-pnpm deploy
+pnpm --filter frontend build   # required first: the Worker serves frontend/dist
+pnpm deploy                    # backend/ — uploads Worker + static assets
 ```
 
 Config: `wrangler.jsonc`
@@ -198,39 +252,65 @@ Config: `wrangler.jsonc`
 - Compatibility: `2026-07-10` with `nodejs_compat` flag
 - Observability: logs enabled
 - D1 binding: `makisend_db`
+- Cron: `17 3 * * *` runs the SMTP health check (`src/smtp-config/smtp-health.ts`)
+- Static assets: `../frontend/dist` (Astro build output) — the Worker serves the
+  frontend and the API on the **same origin**, so there is no Cloudflare Pages
+  project and no CORS between UI and API
+
+## API documentation
+
+The Worker serves its own reference:
+
+- `GET /dashboard/api-docs` — guided in-app reference (signed-in dashboard users)
+- `GET /docs` — Scalar UI (CDN script, nonce-based CSP)
+- `GET /openapi.json` — OpenAPI 3.1 document
+
+`src/openapi/openapi.ts` is hand-written for responses and paths, but request
+schemas come from the runtime Zod DTOs via `z.toJSONSchema(...)` (input mode).
+When a DTO changes, the spec follows automatically; the test suite also verifies
+that every `$ref` resolves and every operation has responses. SMTP config
+responses intentionally omit `smtpPassword`.
 
 ## CI / GitHub Actions
 
-The workflow `.github/workflows/ci.yml` triggers on every pull request to `main` or `dev`.
+The workflow `.github/workflows/ci.yml` triggers on pushes and pull requests targeting `main` or `dev`.
 
 Steps run:
 
 1. Checkout code
 2. Setup pnpm and Node.js 22
 3. `pnpm install --frozen-lockfile`
-4. `pnpm lint`
-5. `pnpm test:run`
+4. `pnpm lint` (backend)
+5. `pnpm exec tsc --noEmit` (backend)
+6. `pnpm test:run` (backend)
+7. `pnpm --filter frontend build`
 
 ## Roadmap (from Excalidraw design)
 
 ### POC (current)
 
-- `POST /send-email` endpoint (API key auth is TODO)
+- `POST /send-email` endpoint with per-user API key auth (Better Auth)
+- Email templates: `/templates` CRUD (session auth) + `templateId`/`variables` branch on `POST /send-email` (API key auth), rendered at request time before enqueueing; frontend page at `/dashboard/templates` with full visual builder (inspector, themes, export), pasted-TSX code mode, and live preview
+- Async delivery pipeline: Cloudflare Queues → SendEmailWorkflow → SMTP
 - Delivery via nodemailer + raw SMTP
-- Encrypted logs stored in D1
+- Retry loop: one initial SMTP attempt + 3 retries 30 s apart inside the same workflow; permanent failures stop immediately, and an exhausted budget writes `failed` and dead-letters the email. The Queue consumer retries only workflow startup with exponential backoff before the DLQ
+- Encrypted logs + encrypted email bodies stored in D1
+- Per-config SMTP port/TLS mode, connection check and test-send endpoints; a daily cron checks every config and stores `lastCheckAt`/`lastCheckOk`/`lastCheckError`
+- OpenAPI 3.1 document + Scalar UI at `/docs`; request schemas generated from the Zod DTOs
+- `Idempotency-Key` support on `POST /send-email` (24h replay window)
 - Unit tests for route / service / middleware
-- GitHub Actions CI (lint + tests) on PRs to `main` and `dev`
+- GitHub Actions CI (lint, typecheck, tests, frontend build) on pushes/PRs to `main` and `dev`
 - Deployment test on Cloudflare Workers
 
 ### Internal MVP
 
-- Endpoint security
-- SMTP credentials management via D1 / seeding
-- Monitoring and delivery metrics
+- ~~Endpoint security~~ (done: per-user API keys via Better Auth)
+- ~~SMTP credentials management via D1 / seeding~~ (done: `smtp-config` module, encrypted at rest)
+- ~~Monitoring and delivery metrics~~ (done: `dashboard` + `email-logs` modules)
 
 ### Public Beta MVP
 
-- Message and job queues (Inngest or Cloudflare Queues)
+- **Message and job queues**: Cloudflare Queues + Workflows are already in place (see POC); remaining work is scale/throughput tuning
 - Scale and throughput management
 - Deliverability improvements (anti-spam, SPF/DKIM/DMARC)
 
@@ -245,10 +325,10 @@ Steps run:
 
 ### POC-related
 
-- **Synchronous sending only**: the caller waits for the email to be sent before getting a response. No queue / retry yet.
-- **Single SMTP provider**: SMTP credentials are global (`SMTP_USER`, `SMTP_PASSWORD`). No multi-provider or failover.
-- **No rate limiting**: see Security section.
-- **No retry**: if the SMTP server temporarily refuses the send, the call fails without retry.
+- **Asynchronous sending only**: the caller gets `202 Accepted` when the email is queued; the actual delivery happens later (Queues → SendEmailWorkflow → SMTP) and is only visible through the D1 logs.
+- **Single SMTP provider**: credentials are stored per user in D1 (encrypted), but there is no multi-provider routing or failover.
+- **Coarse rate limiting**: Better Auth's per-key limit is not a configurable tenant quota.
+- **Bounded retry, not unlimited**: each email gets **1 initial SMTP attempt + 3 retries** 30 seconds apart. Transient failures are retried inside the same workflow instance and dead-lettered when the budget is exhausted; permanent failures (auth, TLS, DNS, config, 5xx) stop immediately with a human-readable reason in D1. A hung attempt is bounded by the SMTP socket timeouts and the 2-minute step timeout.
 - **No bounce / open / click tracking**: only send logs are stored.
 - **D1 is a serverless SQLite database**: possible latency, not ideal for very high volumes without caching.
 - **Deliverability**: SPF, DKIM, DMARC and IP reputation are not handled by the code; they depend on the SMTP provider and sender domain.

@@ -1,0 +1,51 @@
+# Local development stack: backend (wrangler dev / workerd) + frontend (astro dev).
+# Usage:  docker compose up -d   → http://localhost:8787 (API)  http://localhost:4321 (UI)
+# Do NOT run `pnpm dev` on the host at the same time (port 8787 conflict).
+
+name: makisend
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    init: true
+    working_dir: /workspace/backend
+    # --ip 0.0.0.0 is required so the host can reach workerd inside the container.
+    command: pnpm exec wrangler dev --local --ip 0.0.0.0
+    ports:
+      - "8787:8787"
+    volumes:
+      # :z = SELinux shared relabel, required on Fedora/RHEL so containers can
+      # read the bind mount (same host dir is mounted by both services).
+      - .:/workspace:z
+      # Keep container-installed linux binaries (workerd, esbuild, better-sqlite3)
+      # instead of whatever is on the host mount:
+      - backend-node-modules:/workspace/backend/node_modules
+      - root-node-modules:/workspace/node_modules
+    # .env / .dev.vars are read by wrangler itself from the working directory
+    # (bind-mounted) — same behavior as running on the host. No env_file here,
+    # so secrets never enter the container environment.
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    init: true
+    working_dir: /workspace/frontend
+    command: pnpm exec astro dev --host
+    environment:
+      BACKEND_URL: http://backend:8787
+    ports:
+      - "4321:4321"
+    volumes:
+      - .:/workspace:z
+      - frontend-node-modules:/workspace/frontend/node_modules
+      - root-node-modules:/workspace/node_modules
+    depends_on:
+      - backend
+
+volumes:
+  backend-node-modules:
+  frontend-node-modules:
+  root-node-modules:

@@ -1,0 +1,9 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import "../../styles/global.css";
+import { DashboardLayout } from "@/components/dashboard-layout";
+---
+
+<Layout title="Dashboard - MakiSend">
+  <DashboardLayout client:load />
+</Layout>

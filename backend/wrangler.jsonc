@@ -1,0 +1,120 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "makisend-poc",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-07-10",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	// The Worker also serves the Astro frontend: matching static files are served
+	// from this directory first, everything else falls through to the Hono API.
+	// One deployment = one URL, no Cloudflare Pages. Inherited by env.preview.
+	// Build the frontend BEFORE deploying: pnpm --filter frontend build
+	"assets": {
+		"directory": "../frontend/dist",
+		"binding": "ASSETS"
+	},
+	"observability": {
+		"logs": {
+			"enabled": true,
+			"invocation_logs": true
+		},
+		"traces": {
+			"enabled": false
+		}
+	},
+	"d1_databases": [
+		{
+			"binding": "makisend_db",
+			"database_name": "makisend-db",
+			"database_id": "fb679c0f-7a52-46c3-a859-0035767c06d2",
+			"migrations_dir": "./drizzle",
+			"migrations_pattern": "drizzle/*.sql"
+		}
+	],
+	// HTTP -> Queue -> Workflow. The queue buffers bursts at the edge; the consumer
+	// creates a SendEmailWorkflow instance per message (instance id = emailId for
+	// idempotency; only [a-zA-Z0-9-_] allowed). The workflow's steps own the SMTP
+	// delivery attempts, retries and dead-letter publication.
+	"queues": {
+		"producers": [
+			{
+				"binding": "SEND_EMAIL_QUEUE",
+				"queue": "makisend-send-email"
+			},
+			{
+				"binding": "SEND_EMAIL_DLQ",
+				"queue": "makisend-send-email-dlq"
+			}
+		],
+		"consumers": [
+			{
+				"queue": "makisend-send-email",
+				"max_batch_size": 10,
+				"max_batch_timeout": 5,
+				"max_retries": 3,
+				"retry_delay": 30,
+				"dead_letter_queue": "makisend-send-email-dlq"
+			}
+		]
+	},
+	"workflows": [
+		{
+			"name": "makisend-send-email",
+			"binding": "SEND_EMAIL_WORKFLOW",
+			"class_name": "SendEmailWorkflow"
+		}
+	],
+	// Daily credential/connection check for every SMTP configuration. Results
+	// are stored on the row; checks never deactivate a configuration by themselves.
+	"triggers": {
+		"crons": ["17 3 * * *"]
+	},
+	"env": {
+		"preview": {
+			"name": "makisend-poc-preview",
+			"d1_databases": [
+				{
+					"binding": "makisend_db",
+					"database_name": "makisend-db-preview",
+					"database_id": "PREVIEW_DB_ID_PLACEHOLDER",
+					"migrations_dir": "./drizzle",
+					"migrations_pattern": "drizzle/*.sql"
+				}
+			],
+			// Separate queue names so preview traffic can never be consumed by the
+			// production worker (which would deliver real emails).
+			"queues": {
+				"producers": [
+					{
+						"binding": "SEND_EMAIL_QUEUE",
+						"queue": "makisend-send-email-preview"
+					},
+					{
+						"binding": "SEND_EMAIL_DLQ",
+						"queue": "makisend-send-email-dlq-preview"
+					}
+				],
+				"consumers": [
+					{
+						"queue": "makisend-send-email-preview",
+						"max_batch_size": 10,
+						"max_batch_timeout": 5,
+						"max_retries": 3,
+						"retry_delay": 30,
+						"dead_letter_queue": "makisend-send-email-dlq-preview"
+					}
+				]
+			},
+			// Separate workflow name so preview instances are never confused with
+			// production ones.
+			"workflows": [
+				{
+					"name": "makisend-send-email-preview",
+					"binding": "SEND_EMAIL_WORKFLOW",
+					"class_name": "SendEmailWorkflow"
+				}
+			]
+		}
+	}
+}

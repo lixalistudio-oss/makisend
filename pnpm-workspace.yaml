@@ -1,0 +1,14 @@
+packages:
+  - "backend"
+  - "frontend"
+
+allowBuilds:
+  better-sqlite3: true
+  esbuild: true
+  protobufjs: true
+  sharp: true
+  workerd: true
+
+peerDependencyRules:
+  allowedVersions:
+    drizzle-orm: ">=0.45.0"

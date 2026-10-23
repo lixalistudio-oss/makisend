@@ -1,10 +1,6 @@
 # prod
 dist/
 
-#Storing smtp password and username
-.dev.vars
-#prisma 
-dev.db
 # dev
 .yarn/
 !.yarn/releases
@@ -38,7 +34,6 @@ lerna-debug.log*
 
 #database
 .sql
-/src/generated/prisma
 
 # Ignore local development logs
 local-logs.txt
