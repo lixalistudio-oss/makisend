@@ -10,6 +10,7 @@ import templates from "./templates"
 import settings from "./settings"
 import updates from "./updates"
 import apiDocs from "./apiDocs"
+import star from "./star"
 
 export default {
   ...common,
@@ -24,4 +25,5 @@ export default {
   ...settings,
   ...updates,
   ...apiDocs,
+  ...star,
 }
