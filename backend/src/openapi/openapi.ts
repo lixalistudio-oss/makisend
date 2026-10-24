@@ -133,7 +133,7 @@ export const openApiDocument = {
   openapi: "3.1.0",
   info: {
     title: "MakiSend API",
-    version: "0.1.0",
+    version: "0.2.0",
     summary: "Serverless transactional email API on Cloudflare Workers.",
     description: [
       "MakiSend accepts transactional emails over HTTP, stores their content encrypted in D1, and delivers them asynchronously through Cloudflare Queues, Workflows, and SMTP.",
