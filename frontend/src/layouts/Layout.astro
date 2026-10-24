@@ -1,5 +1,6 @@
 ---
 import { DEFAULT_LANGUAGE, LANGUAGES, LANGUAGE_STORAGE_KEY } from "@/i18n/config";
+import { THEME_STORAGE_KEY } from "@/lib/theme-config";
 
 const languageCodes = LANGUAGES.map((lang) => lang.code);
 
@@ -26,6 +27,27 @@ const { title = "MakiSend" } = Astro.props;
 				var match = tags.map(function (tag) { return (tag || "").toLowerCase().split("-")[0]; }).find(function (code) { return codes.indexOf(code) !== -1; });
 				document.documentElement.lang = match || fallback;
 			} catch (e) {}
+		</script>
+		<!-- Applies the theme before the first paint: the saved choice, otherwise the device setting. -->
+		<script is:inline define:vars={{ themeKey: THEME_STORAGE_KEY }}>
+			(function () {
+				var theme = "light";
+				try {
+					var saved = localStorage.getItem(themeKey);
+					if (saved === "light" || saved === "dark") {
+						theme = saved;
+					} else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+						theme = "dark";
+					}
+				} catch (e) {
+					try {
+						if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) theme = "dark";
+					} catch (e2) {}
+				}
+				document.documentElement.classList.toggle("dark", theme === "dark");
+				document.documentElement.dataset.theme = theme;
+				document.documentElement.style.colorScheme = theme;
+			})();
 		</script>
 	</head>
 	<body>

@@ -12,6 +12,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useDocumentTitle, useTranslation } from "@/i18n";
 import { LanguageSwitcher } from "@/components/language-switcher";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 /**
  * - "password": email + password; when two-factor is on, the server answers `twoFactorRedirect`
@@ -122,7 +123,8 @@ export function LoginForm({
 
   return (
     <div className={cn("w-full max-w-md", className)} {...props}>
-      <div className="mb-3 flex justify-end">
+      <div className="mb-3 flex justify-end gap-1">
+        <ThemeToggle />
         <LanguageSwitcher />
       </div>
       <Card className="p-0">

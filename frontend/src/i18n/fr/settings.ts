@@ -3,6 +3,9 @@ import type en from "../en/settings"
 export default {
   "settings.title": "Paramètres",
   "settings.subtitle": "Gérez les paramètres et préférences de votre compte.",
+  "settings.appearanceTitle": "Apparence",
+  "settings.appearanceDescription": "Choisissez l'apparence de MakiSend. Système suit le mode clair ou sombre de votre appareil.",
+  "settings.appearanceHint": "Enregistré dans ce navigateur. Système suit automatiquement votre appareil.",
   "settings.emailTitle": "E-mail",
   "settings.emailDescription": "L'adresse e-mail avec laquelle vous vous connectez. Attend une adresse e-mail.",
   "settings.emailLabel": "Adresse e-mail",

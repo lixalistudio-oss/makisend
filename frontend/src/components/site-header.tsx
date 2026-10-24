@@ -1,6 +1,7 @@
 import { Separator } from "@/components/ui/separator"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { LanguageSwitcher } from "@/components/language-switcher"
+import { ThemeToggle } from "@/components/theme-toggle"
 import { useDocumentTitle, useTranslation, type UiKey } from "@/i18n"
 
 const DOCUMENT_TITLES: Partial<Record<UiKey, UiKey>> = {
@@ -26,7 +27,10 @@ export function SiteHeader({ titleKey = "nav.dashboard" }: { titleKey?: UiKey })
           className="mx-2 h-4 data-vertical:self-auto"
         />
         <h1 className="text-base font-medium">{t(titleKey)}</h1>
-        <LanguageSwitcher className="ml-auto" />
+        <div className="ml-auto flex items-center gap-1">
+          <ThemeToggle />
+          <LanguageSwitcher />
+        </div>
       </div>
     </header>
   )
