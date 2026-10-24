@@ -11,6 +11,8 @@ MakiSend is a self-hosted, serverless email API on **Cloudflare Workers**. Your 
 - **No server to run.** One Worker serves the API and the dashboard; Queues and Workflows handle delivery.
 - **Bring your own SMTP.** Zoho, Gmail, Microsoft 365, Resend, SendGrid, Mailgun or Cloudflare Email Service. You keep your sender domain and reputation.
 - **Reliable delivery.** `202` right away, then a durable Workflow with bounded retries and a dead-letter queue.
+- **Inbox, not spam.** In our tests, MakiSend emails land in the inbox, not the spam folder, once SPF, DKIM and DMARC are set on the sender domain.
+- **Fast enough to feel instant.** Once queued, an email reaches the SMTP provider in 300–400 ms in the best cases and about 2 seconds in the worst. Most of that time is SMTP itself (see [Delivery speed](#delivery-speed)).
 - **Private by default.** Recipients, bodies, attachments and SMTP credentials are encrypted with AES-256-GCM before they reach D1.
 - **Built for teams of one.** Per-user API keys, optional per-key send quota, idempotency keys, 2FA, and a dashboard with logs, metrics and templates.
 - **Resend-shaped API.** Same `attachments` format, so a client written for Resend sends the same JSON.
@@ -391,6 +393,19 @@ Releases are cut by bumping `version` in the root `package.json` and `APP_VERSIO
 - No dedicated audit logs beyond the Pino application logs.
 
 ---
+
+## Delivery speed
+
+`POST /send-email` answers `202` in milliseconds; the send itself happens right after, in the Workflow. Measured from there to the provider accepting the message:
+
+| Case | Time to the SMTP provider |
+|------|---------------------------|
+| Best case | 300–400 ms |
+| Worst case | about 2 s |
+
+Most of that time is the SMTP protocol, not MakiSend. SMTP waits for a reply to each command before sending the next one ([RFC 5321](https://www.rfc-editor.org/rfc/rfc5321)), and [RFC 2920](https://www.rfc-editor.org/rfc/rfc2920) notes that on high-latency links this turnaround time dominates the connection. One send is a chain of round trips: TCP connect, TLS handshake, `EHLO`, `AUTH`, `MAIL FROM`, `RCPT TO`, `DATA`, the message, then `QUIT`. Commonly cited figures put an SMTP send at 200 ms to 1 s per email, often more on a slow provider or a distant server, against roughly 100–500 ms for an HTTP email API ([comparison](https://resources.mailertogo.com/comparisons/smtp-relay-vs-email-api-developers-complete-comparison)). A Worker opens a fresh connection for every email, so each send pays the full handshake.
+
+Delivery to the recipient's inbox comes after that and depends on the receiving server.
 
 ## Known limitations and constraints
 
