@@ -1,4 +1,5 @@
 import { LanguageSwitcher } from "@/components/language-switcher"
+import { ThemeToggle } from "@/components/theme-toggle"
 import { useDocumentTitle, useTranslation } from "@/i18n"
 
 export function HomePage() {
@@ -6,7 +7,10 @@ export function HomePage() {
   useDocumentTitle("nav.title.home")
   return (
     <main className="relative flex min-h-screen items-center justify-center">
-      <LanguageSwitcher className="absolute top-4 right-4" />
+      <div className="absolute top-4 right-4 flex items-center gap-1">
+        <ThemeToggle />
+        <LanguageSwitcher />
+      </div>
       <div className="text-center">
         <h1 className="text-4xl font-medium mb-4">MakiSend</h1>
         <p className="text-muted-foreground mb-6">{t("home.tagline")}</p>

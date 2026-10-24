@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
-import { Toaster } from "sonner"
 import { toast } from "sonner"
+import { Toaster } from "@/components/ui/sonner"
 import { AppSidebar } from "@/components/app-sidebar"
 import { SiteHeader } from "@/components/site-header"
 import { SessionGuard } from "@/components/session-guard"
@@ -26,6 +26,9 @@ import {
 } from "@/components/ui/dialog"
 import { KeyIcon } from "lucide-react"
 import { fetchApi } from "@/lib/api"
+import { cn } from "@/lib/utils"
+import { useTheme } from "@/lib/theme"
+import { THEME_OPTIONS } from "@/components/theme-options"
 import { TwoFactorCard } from "@/components/two-factor-card"
 import { VersionCard } from "@/components/update-banner"
 import { useTranslation } from "@/i18n"
@@ -39,6 +42,7 @@ async function readErrorMessage(res: Response, fallback: string): Promise<string
 
 export function SettingsLayout() {
   const { t } = useTranslation()
+  const { theme, setTheme } = useTheme()
   const [email, setEmail] = useState("")
   const [currentPassword, setCurrentPassword] = useState("")
   const [newPassword, setNewPassword] = useState("")
@@ -170,6 +174,44 @@ export function SettingsLayout() {
               {t("settings.subtitle")}
             </p>
           </div>
+
+          <Card>
+            <CardHeader>
+              <div>
+                <CardTitle>{t("settings.appearanceTitle")}</CardTitle>
+                <CardDescription>
+                  {t("settings.appearanceDescription")}
+                </CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {THEME_OPTIONS.map((option) => {
+                  const Icon = option.icon
+                  const active = theme === option.value
+                  return (
+                    <Button
+                      key={option.value}
+                      type="button"
+                      variant="outline"
+                      aria-pressed={active}
+                      onClick={() => setTheme(option.value)}
+                      className={cn(
+                        "h-11 justify-start gap-2",
+                        active && "border-brand/40 bg-brand-subtle text-brand-strong hover:bg-brand-subtle dark:border-brand/40 dark:bg-brand-subtle dark:hover:bg-brand-subtle",
+                      )}
+                    >
+                      <Icon />
+                      {t(option.labelKey)}
+                    </Button>
+                  )
+                })}
+              </div>
+              <p className="mt-3 text-sm text-muted-foreground">
+                {t("settings.appearanceHint")}
+              </p>
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader>

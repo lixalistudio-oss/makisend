@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
-import { Toaster } from "sonner"
 import { toast } from "sonner"
+import { Toaster } from "@/components/ui/sonner"
 import { AppSidebar } from "@/components/app-sidebar"
 import { SiteHeader } from "@/components/site-header"
 import { SessionGuard } from "@/components/session-guard"

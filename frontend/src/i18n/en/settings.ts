@@ -2,6 +2,9 @@
 export default {
   "settings.title": "Settings",
   "settings.subtitle": "Manage your account settings and preferences.",
+  "settings.appearanceTitle": "Appearance",
+  "settings.appearanceDescription": "Choose how MakiSend looks. System follows the light or dark setting of the device you are on.",
+  "settings.appearanceHint": "Saved in this browser. System follows your device automatically.",
   "settings.emailTitle": "Email",
   "settings.emailDescription": "The email address you sign in with. Expects an email address.",
   "settings.emailLabel": "Email address",

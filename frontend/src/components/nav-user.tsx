@@ -21,6 +21,7 @@ import {
 import { EllipsisVerticalIcon, CircleUserRoundIcon, BellIcon, LogOutIcon } from "lucide-react"
 import { fetchApi } from "@/lib/api"
 import { useTranslation } from "@/i18n"
+import { ThemeMenuItems } from "@/components/theme-toggle"
 
 export function NavUser() {
   const { isMobile } = useSidebar()
@@ -100,6 +101,9 @@ export function NavUser() {
                 {t("nav.notifications")}
               </DropdownMenuItem>
             </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>{t("common.theme")}</DropdownMenuLabel>
+            <ThemeMenuItems />
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleLogout}>
               <LogOutIcon />
