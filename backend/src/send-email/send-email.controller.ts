@@ -82,7 +82,7 @@ export function createSendEmailController(
       if (suppressed) {
         throw new AppError(
           422,
-          `The recipient is on the suppression list (${suppressed.reason}). Remove it under Suppressions in the dashboard to send to it again.`,
+          `The recipient is on the suppression list (${suppressed.reason}). Remove it from the suppression list (dashboard Settings) to send to it again.`,
         );
       }
 

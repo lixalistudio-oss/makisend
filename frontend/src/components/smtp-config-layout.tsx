@@ -30,11 +30,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { MailIcon, PlusIcon, EllipsisVerticalIcon, PencilIcon, TrashIcon, CheckCircleIcon, XCircleIcon, LoaderIcon, SendIcon, ActivityIcon } from "lucide-react"
+import { MailIcon, PlusIcon, EllipsisVerticalIcon, PencilIcon, TrashIcon, CheckCircleIcon, XCircleIcon, LoaderIcon, SendIcon, ActivityIcon, GlobeIcon } from "lucide-react"
 import { fetchApi } from "@/lib/api"
 import { useTranslation } from "@/i18n"
 import { SmtpConfigForm, type SmtpConfigValues } from "@/components/smtp-config-form"
 import { SmtpTestSendDialog } from "@/components/smtp-test-send-dialog"
+import { SmtpDnsCheckDialog } from "@/components/smtp-dns-check-dialog"
 import { DEFAULT_PORT, type SmtpSecurity } from "@/lib/smtp-form"
 
 interface SmtpConfig {
@@ -63,6 +64,7 @@ export function SmtpConfigLayout() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [initial, setInitial] = useState<SmtpConfigValues>(EMPTY)
   const [testing, setTesting] = useState<SmtpConfig | null>(null)
+  const [dnsChecking, setDnsChecking] = useState<SmtpConfig | null>(null)
 
   const fetchConfigs = async () => {
     try {
@@ -211,6 +213,10 @@ export function SmtpConfigLayout() {
                           <ActivityIcon />
                           {t("smtp.checkConnection")}
                         </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setDnsChecking(config)}>
+                          <GlobeIcon />
+                          {t("deliverability.checkDns")}
+                        </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => openEdit(config)}>
                           <PencilIcon />
                           {t("smtp.edit")}
@@ -234,6 +240,7 @@ export function SmtpConfigLayout() {
         </div>
         </SessionGuard>
         <SmtpTestSendDialog config={testing} onClose={() => setTesting(null)} />
+        <SmtpDnsCheckDialog config={dnsChecking} onClose={() => setDnsChecking(null)} />
       </SidebarInset>
     </SidebarProvider>
   )

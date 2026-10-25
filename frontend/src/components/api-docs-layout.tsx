@@ -96,6 +96,7 @@ const ENDPOINT_GROUPS: {
       { method: "DELETE", path: "/smtp-config/{id}", descriptionKey: "apiDocs.endpoints.smtpDelete" },
       { method: "POST", path: "/smtp-config/{id}/check", descriptionKey: "apiDocs.endpoints.smtpCheckSaved" },
       { method: "POST", path: "/smtp-config/{id}/test-send", descriptionKey: "apiDocs.endpoints.smtpTestSend" },
+      { method: "GET", path: "/smtp-config/{id}/dns-check", descriptionKey: "apiDocs.endpoints.smtpDnsCheck" },
     ],
   },
   {
@@ -119,6 +120,16 @@ const ENDPOINT_GROUPS: {
       { method: "PUT", path: "/templates/{id}", descriptionKey: "apiDocs.endpoints.templatesUpdate" },
       { method: "DELETE", path: "/templates/{id}", descriptionKey: "apiDocs.endpoints.templatesDelete" },
       { method: "POST", path: "/templates/{id}/preview", descriptionKey: "apiDocs.endpoints.templatesPreview" },
+    ],
+  },
+  {
+    titleKey: "apiDocs.endpoints.suppressionsTitle",
+    authKey: "apiDocs.auth.session",
+    descriptionKey: "apiDocs.endpoints.suppressionsDescription",
+    endpoints: [
+      { method: "GET", path: "/suppressions", descriptionKey: "apiDocs.endpoints.suppressionsList" },
+      { method: "POST", path: "/suppressions", descriptionKey: "apiDocs.endpoints.suppressionsAdd" },
+      { method: "DELETE", path: "/suppressions/{id}", descriptionKey: "apiDocs.endpoints.suppressionsRemove" },
     ],
   },
   {
@@ -160,6 +171,7 @@ const ERROR_ROWS: { status: string; meaningKey: UiKey; detailKey: UiKey }[] = [
   { status: "403", meaningKey: "apiDocs.errors.403Meaning", detailKey: "apiDocs.errors.403Detail" },
   { status: "404", meaningKey: "apiDocs.errors.404Meaning", detailKey: "apiDocs.errors.404Detail" },
   { status: "409", meaningKey: "apiDocs.errors.409Meaning", detailKey: "apiDocs.errors.409Detail" },
+  { status: "422", meaningKey: "apiDocs.errors.422Meaning", detailKey: "apiDocs.errors.422Detail" },
   { status: "500", meaningKey: "apiDocs.errors.500Meaning", detailKey: "apiDocs.errors.500Detail" },
 ]
 
@@ -170,6 +182,8 @@ const LIMITS: { item?: string; itemKey?: UiKey; limitKey: UiKey }[] = [
   { itemKey: "apiDocs.limits.plainText", limitKey: "apiDocs.limits.plainTextLimit" },
   { itemKey: "apiDocs.limits.html", limitKey: "apiDocs.limits.htmlLimit" },
   { itemKey: "apiDocs.limits.attachments", limitKey: "apiDocs.limits.attachmentsLimit" },
+  { item: "reply_to", limitKey: "apiDocs.limits.replyToLimit" },
+  { item: "headers", limitKey: "apiDocs.limits.headersLimit" },
   { itemKey: "apiDocs.limits.templateVariables", limitKey: "apiDocs.limits.templateVariablesLimit" },
   { itemKey: "apiDocs.limits.tsxSource", limitKey: "apiDocs.limits.tsxSourceLimit" },
   { item: "Idempotency-Key", limitKey: "apiDocs.limits.idempotencyKeyLimit" },
