@@ -96,6 +96,8 @@ const ENDPOINT_GROUPS: {
       { method: "DELETE", path: "/smtp-config/{id}", descriptionKey: "apiDocs.endpoints.smtpDelete" },
       { method: "POST", path: "/smtp-config/{id}/check", descriptionKey: "apiDocs.endpoints.smtpCheckSaved" },
       { method: "POST", path: "/smtp-config/{id}/test-send", descriptionKey: "apiDocs.endpoints.smtpTestSend" },
+      { method: "PUT", path: "/smtp-config/{id}/bounce-webhook", descriptionKey: "apiDocs.endpoints.smtpBounceWebhookSet" },
+      { method: "DELETE", path: "/smtp-config/{id}/bounce-webhook", descriptionKey: "apiDocs.endpoints.smtpBounceWebhookRemove" },
       { method: "GET", path: "/smtp-config/{id}/dns-check", descriptionKey: "apiDocs.endpoints.smtpDnsCheck" },
     ],
   },
@@ -130,6 +132,14 @@ const ENDPOINT_GROUPS: {
       { method: "GET", path: "/suppressions", descriptionKey: "apiDocs.endpoints.suppressionsList" },
       { method: "POST", path: "/suppressions", descriptionKey: "apiDocs.endpoints.suppressionsAdd" },
       { method: "DELETE", path: "/suppressions/{id}", descriptionKey: "apiDocs.endpoints.suppressionsRemove" },
+    ],
+  },
+  {
+    titleKey: "apiDocs.endpoints.webhooksTitle",
+    authKey: "apiDocs.auth.providerSignature",
+    descriptionKey: "apiDocs.endpoints.webhooksDescription",
+    endpoints: [
+      { method: "POST", path: "/webhooks/bounces/{smtpConfigId}", descriptionKey: "apiDocs.endpoints.webhooksReceive" },
     ],
   },
   {

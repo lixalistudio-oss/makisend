@@ -47,5 +47,8 @@ export default {
   "dashboard.status.delivered": "delivered",
   "dashboard.status.attemptFailed": "attempt_failed",
   "dashboard.status.failed": "failed",
+  "dashboard.status.deferred": "delayed",
+  "dashboard.status.bounced": "bounced",
+  "dashboard.status.complained": "spam complaint",
   "dashboard.status.unknown": "unknown",
 }

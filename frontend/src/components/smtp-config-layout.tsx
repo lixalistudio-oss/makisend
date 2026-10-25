@@ -30,12 +30,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { MailIcon, PlusIcon, EllipsisVerticalIcon, PencilIcon, TrashIcon, CheckCircleIcon, XCircleIcon, LoaderIcon, SendIcon, ActivityIcon, GlobeIcon } from "lucide-react"
+import { MailIcon, PlusIcon, EllipsisVerticalIcon, PencilIcon, TrashIcon, CheckCircleIcon, XCircleIcon, LoaderIcon, SendIcon, ActivityIcon, GlobeIcon, WebhookIcon } from "lucide-react"
 import { fetchApi } from "@/lib/api"
 import { useTranslation } from "@/i18n"
 import { SmtpConfigForm, type SmtpConfigValues } from "@/components/smtp-config-form"
 import { SmtpTestSendDialog } from "@/components/smtp-test-send-dialog"
 import { SmtpDnsCheckDialog } from "@/components/smtp-dns-check-dialog"
+import { SmtpBounceWebhookDialog } from "@/components/smtp-bounce-webhook-dialog"
+import { supportsBounceWebhook, webhookProvider, type WebhookProviderId } from "@/lib/deliverability"
 import { DEFAULT_PORT, type SmtpSecurity } from "@/lib/smtp-form"
 
 interface SmtpConfig {
@@ -46,6 +48,7 @@ interface SmtpConfig {
   smtpUsername: string
   senderEmail: string
   isActive: boolean
+  bounceWebhookProvider: WebhookProviderId | null
 }
 
 const EMPTY: SmtpConfigValues = {
@@ -65,6 +68,7 @@ export function SmtpConfigLayout() {
   const [initial, setInitial] = useState<SmtpConfigValues>(EMPTY)
   const [testing, setTesting] = useState<SmtpConfig | null>(null)
   const [dnsChecking, setDnsChecking] = useState<SmtpConfig | null>(null)
+  const [webhookConfig, setWebhookConfig] = useState<SmtpConfig | null>(null)
 
   const fetchConfigs = async () => {
     try {
@@ -192,6 +196,8 @@ export function SmtpConfigLayout() {
                     <ItemTitle className="text-base">{config.smtpHostname}</ItemTitle>
                     <ItemDescription>
                       {config.senderEmail} · {config.smtpPort} · {config.smtpSecurity === "tls" ? "TLS" : "STARTTLS"}
+                      {webhookProvider(config.bounceWebhookProvider) &&
+                        ` · ${t("deliverability.webhookBadge", { provider: webhookProvider(config.bounceWebhookProvider)!.label })}`}
                     </ItemDescription>
                   </ItemContent>
                   <ItemActions>
@@ -217,6 +223,12 @@ export function SmtpConfigLayout() {
                           <GlobeIcon />
                           {t("deliverability.checkDns")}
                         </DropdownMenuItem>
+                        {supportsBounceWebhook(config.smtpHostname) && (
+                          <DropdownMenuItem onClick={() => setWebhookConfig(config)}>
+                            <WebhookIcon />
+                            {t("deliverability.webhookMenu")}
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem onClick={() => openEdit(config)}>
                           <PencilIcon />
                           {t("smtp.edit")}
@@ -241,6 +253,13 @@ export function SmtpConfigLayout() {
         </SessionGuard>
         <SmtpTestSendDialog config={testing} onClose={() => setTesting(null)} />
         <SmtpDnsCheckDialog config={dnsChecking} onClose={() => setDnsChecking(null)} />
+        <SmtpBounceWebhookDialog
+          config={webhookConfig}
+          onClose={() => setWebhookConfig(null)}
+          onChanged={(id, provider) =>
+            setConfigs((current) => current.map((c) => (c.id === id ? { ...c, bounceWebhookProvider: provider } : c)))
+          }
+        />
       </SidebarInset>
     </SidebarProvider>
   )

@@ -136,8 +136,12 @@ export function SuppressionsCard() {
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="min-w-0 truncate font-mono text-sm">{entry.email}</span>
-                    <Badge variant="outline" className={entry.source === "bounce" ? "text-warning" : "text-muted-foreground"}>
-                      {entry.source === "bounce" ? t("deliverability.sourceBounce") : t("deliverability.sourceManual")}
+                    <Badge variant="outline" className={entry.source === "manual" ? "text-muted-foreground" : "text-warning"}>
+                      {entry.source === "bounce"
+                        ? t("deliverability.sourceBounce")
+                        : entry.source === "complaint"
+                          ? t("deliverability.sourceComplaint")
+                          : t("deliverability.sourceManual")}
                     </Badge>
                   </div>
                   <p className="text-sm text-muted-foreground">{describeSuppression(entry, t)}</p>
