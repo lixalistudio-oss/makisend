@@ -4,7 +4,7 @@ import { z } from "zod";
 import { pinoLogger } from "@/core/logger";
 import { MAX_ID_LENGTH } from "@/core/validation";
 import type { Bindings, UserInfoVariables } from "@/index";
-import { CreateSmtpConfigDto, DnsCheckQueryDto, TestSendDto, UpdateSmtpConfigDto } from "./smtp-config.dto";
+import { CreateSmtpConfigDto, DnsCheckQueryDto, SetBounceWebhookDto, TestSendDto, UpdateSmtpConfigDto } from "./smtp-config.dto";
 import { toPublicSmtpConfig } from "./smtp-config.types";
 import type { SmtpConfigService } from "./smtp-config.service";
 import { toEmailAttachment } from "@/send-email/attachments";
@@ -216,6 +216,47 @@ export function createSmtpConfigController(
       await service.delete(id, userId);
       pinoLogger.info({ userId, id }, "DELETE /smtp-config/:id - config deleted");
       return c.json({ success: true }, 200);
+    },
+  );
+
+  // Bounce webhook: the provider posts delivery events to POST /webhooks/bounces/:id.
+  controller.put(
+    "/:id/bounce-webhook",
+    zValidator("param", z.object({ id: z.string().min(1).max(MAX_ID_LENGTH) })),
+    zValidator("json", SetBounceWebhookDto, (result, c) => {
+      if (!result.success) {
+        const errors = z.flattenError(result.error);
+        return c.json(
+          {
+            error: "Validation failed",
+            details: {
+              fieldErrors: errors.fieldErrors,
+              formErrors: errors.formErrors,
+            },
+          },
+          400,
+        );
+      }
+    }),
+    async (c) => {
+      const userId = c.get("userId");
+      const { id } = c.req.valid("param");
+      const body = c.req.valid("json");
+      pinoLogger.info({ userId, id, provider: body.provider }, "PUT /smtp-config/:id/bounce-webhook");
+      const config = await getService().setBounceWebhook(id, userId, body);
+      return c.json({ config: toPublicSmtpConfig(config) }, 200);
+    },
+  );
+
+  controller.delete(
+    "/:id/bounce-webhook",
+    zValidator("param", z.object({ id: z.string().min(1).max(MAX_ID_LENGTH) })),
+    async (c) => {
+      const userId = c.get("userId");
+      const { id } = c.req.valid("param");
+      pinoLogger.info({ userId, id }, "DELETE /smtp-config/:id/bounce-webhook");
+      const config = await getService().removeBounceWebhook(id, userId);
+      return c.json({ config: toPublicSmtpConfig(config) }, 200);
     },
   );
 

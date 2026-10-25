@@ -271,6 +271,13 @@ export const smtpConfig = sqliteTable(
     lastCheckAt: integer("last_check_at", { mode: "timestamp_ms" }),
     lastCheckOk: integer("last_check_ok", { mode: "boolean" }),
     lastCheckError: text("last_check_error"),
+    // Bounce webhook (src/bounce-webhooks): the provider whose delivery events
+    // POST /webhooks/bounces/:id accepts, and the secret its requests are verified with
+    // (AES-GCM encrypted). Both NULL until the owner connects a webhook.
+    bounceWebhookProvider: text("bounce_webhook_provider", {
+      enum: ["resend", "sendgrid", "mailgun", "postmark"],
+    }),
+    bounceWebhookSecret: text("bounce_webhook_secret"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
       .notNull(),
@@ -379,8 +386,10 @@ export const suppressions = sqliteTable(
     recipient: text("recipient").notNull(),
     recipientHash: text("recipient_hash").notNull(),
     hashKid: text("hash_kid").notNull(),
-    // "bounce": rejected by the recipient's server. "manual": added from the dashboard.
-    source: text("source", { enum: ["bounce", "manual"] }).notNull(),
+    // "bounce": rejected by the recipient's server (at send time or reported by the provider's
+    // webhook). "complaint": the recipient marked an email as spam (provider webhook).
+    // "manual": added from the dashboard.
+    source: text("source", { enum: ["bounce", "complaint", "manual"] }).notNull(),
     reason: text("reason").notNull(),
     // The send that bounced. Not a foreign key: deleting logs keeps the suppression.
     emailId: text("email_id"),
@@ -389,6 +398,29 @@ export const suppressions = sqliteTable(
   (table) => [
     uniqueIndex("suppressions_userId_recipientHash_unique").on(table.userId, table.recipientHash),
     index("suppressions_hashKid_idx").on(table.hashKid),
+  ],
+);
+
+// Delivery events reported by an SMTP provider's webhook (src/bounce-webhooks): one row per
+// event, so a provider retrying a delivery is applied once (unique on config + the provider's
+// event id). Holds no address: the email it concerns (when it could be matched) and what
+// happened. Rows older than 30 days are deleted by the daily cron.
+export const deliveryEvents = sqliteTable(
+  "delivery_events",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    // Not a foreign key, like email_logs.smtp_config_id: deleting a configuration keeps the trail.
+    smtpConfigId: text("smtp_config_id").notNull(),
+    provider: text("provider", { enum: ["resend", "sendgrid", "mailgun", "postmark"] }).notNull(),
+    eventKey: text("event_key").notNull(),
+    kind: text("kind", { enum: ["delivered", "deferred", "bounced", "complained"] }).notNull(),
+    // NULL when the event could not be tied to an email MakiSend sent.
+    emailId: text("email_id"),
+    createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
+  },
+  (table) => [
+    uniqueIndex("deliveryEvents_smtpConfigId_eventKey_unique").on(table.smtpConfigId, table.eventKey),
+    index("deliveryEvents_createdAt_idx").on(table.createdAt),
   ],
 );
 

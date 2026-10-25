@@ -3,9 +3,11 @@ import { CreateApiKeyDto } from "@/api-keys/api-keys.dto";
 import { SendEmailPayloadDto } from "@/send-email/send-email.dto";
 import {
   CreateSmtpConfigDto,
+  SetBounceWebhookDto,
   TestSendDto,
   UpdateSmtpConfigDto,
 } from "@/smtp-config/smtp-config.dto";
+import { BOUNCE_WEBHOOK_PROVIDERS } from "@/bounce-webhooks/bounce-webhooks.types";
 import { SMTP_PORTS } from "@/smtp-config/smtp-host";
 import { AddSuppressionDto } from "@/suppressions/suppressions.dto";
 import {
@@ -159,6 +161,7 @@ export const openApiDocument = {
     { name: "Dashboard", description: "Aggregated delivery metrics." },
     { name: "Templates", description: "Reusable email templates with variables." },
     { name: "Suppressions", description: "Addresses POST /send-email refuses to send to." },
+    { name: "Webhooks", description: "Delivery events posted by your SMTP provider (bounces, complaints)." },
     { name: "Updates", description: "Whether a newer MakiSend release is published." },
     { name: "Meta", description: "API documentation and schema discovery." },
   ],
@@ -404,6 +407,71 @@ export const openApiDocument = {
         },
       },
     },
+    "/smtp-config/{id}/bounce-webhook": {
+      put: {
+        tags: ["SMTP Config"],
+        summary: "Connect the provider's bounce webhook",
+        operationId: "setSmtpConfigBounceWebhook",
+        description:
+          "Point the provider's webhook at `POST /webhooks/bounces/{id}`, then save its secret here. From now on, sends through this configuration carry the provider's correlation tag, and its delivery, delay, bounce and complaint events update the email logs; hard bounces and complaints add the address to the suppression list. Replaces any webhook already connected.",
+        security: sessionSecurity,
+        parameters: [idParameter],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: schemaRef("SetBounceWebhook") } },
+        },
+        responses: {
+          200: jsonResponse("Webhook connected.", "SmtpConfigEnvelope"),
+          400: responseRef("ValidationError"),
+          ...sessionErrors,
+          404: responseRef("NotFound"),
+        },
+      },
+      delete: {
+        tags: ["SMTP Config"],
+        summary: "Disconnect the bounce webhook",
+        operationId: "removeSmtpConfigBounceWebhook",
+        description: "Its requests are refused from now on.",
+        security: sessionSecurity,
+        parameters: [idParameter],
+        responses: {
+          200: jsonResponse("Webhook disconnected.", "SmtpConfigEnvelope"),
+          ...sessionErrors,
+          404: responseRef("NotFound"),
+        },
+      },
+    },
+    "/webhooks/bounces/{smtpConfigId}": {
+      post: {
+        tags: ["Webhooks"],
+        summary: "Receive the provider's delivery events",
+        operationId: "receiveBounceWebhook",
+        description:
+          "Called by the SMTP provider, not by your application. Authenticated by the configuration's webhook secret: Svix signature (Resend), Signed Event Webhook (SendGrid), signing key (Mailgun) or Basic auth (Postmark). Each event is applied once, matched to the email through the provider's correlation tag or the Message-ID `<emailId@sender-domain>` MakiSend sets. An unknown configuration, one without a webhook and a bad signature all answer 401.",
+        security: [],
+        parameters: [
+          {
+            name: "smtpConfigId",
+            in: "path",
+            required: true,
+            description: "The SMTP configuration whose webhook receives the events.",
+            schema: { type: "string", minLength: 1, maxLength: 128 },
+          },
+        ],
+        requestBody: {
+          required: true,
+          description: "The provider's own payload, unchanged.",
+          content: { "application/json": { schema: {} } },
+        },
+        responses: {
+          200: jsonResponse("Events applied.", "WebhookReport"),
+          400: { description: "The body is not JSON." },
+          401: { description: "Unknown configuration, no webhook connected, or invalid signature." },
+          413: { description: "Body over 2 MB or more than 1000 events." },
+          500: responseRef("ServerError"),
+        },
+      },
+    },
     "/api-keys": {
       get: {
         tags: ["API Keys"],
@@ -457,7 +525,7 @@ export const openApiDocument = {
         summary: "List suppressed addresses",
         operationId: "listSuppressions",
         description:
-          "Newest first, at most 1000. An address is added when its server rejects it as non-existent during RCPT TO (550 5.1.1 and similar), or by hand. Bounces sent back later by email are not seen.",
+          "Newest first, at most 1000. An address is added when its server rejects it as non-existent during RCPT TO (550 5.1.1 and similar), when the provider's bounce webhook reports a hard bounce or a spam complaint, or by hand.",
         security: sessionSecurity,
         responses: {
           200: jsonResponse("The suppression list.", "SuppressionList"),
@@ -527,7 +595,7 @@ export const openApiDocument = {
             in: "query",
             schema: {
               type: "string",
-              enum: ["received", "processing", "cleaned", "sent", "failed"],
+              enum: ["received", "processing", "cleaned", "sent", "failed", "delivered", "deferred", "bounced", "complained"],
             },
           },
           {
@@ -888,6 +956,7 @@ export const openApiDocument = {
           "lastCheckAt",
           "lastCheckOk",
           "lastCheckError",
+          "bounceWebhookProvider",
           "createdAt",
           "updatedAt",
         ],
@@ -916,6 +985,12 @@ export const openApiDocument = {
           lastCheckError: {
             type: ["string", "null"],
             description: "Human-readable failure reason from the last check.",
+          },
+          bounceWebhookProvider: {
+            type: ["string", "null"],
+            enum: [...BOUNCE_WEBHOOK_PROVIDERS, null],
+            description:
+              "Provider whose delivery events `POST /webhooks/bounces/{id}` accepts, or null. The webhook secret is never returned.",
           },
           createdAt: { type: "string", format: "date-time" },
           updatedAt: { type: "string", format: "date-time" },
@@ -967,15 +1042,37 @@ export const openApiDocument = {
         ],
       },
       AddSuppression: inputSchema(AddSuppressionDto, "Address to suppress, with an optional reason."),
+      SetBounceWebhook: inputSchema(
+        SetBounceWebhookDto,
+        "Provider and secret of the bounce webhook. Resend: the signing secret (`whsec_...`). SendGrid: the Signed Event Webhook verification key. Mailgun: the HTTP webhook signing key. Postmark: a password of 16+ characters, also set as the webhook's Basic auth password in Postmark.",
+      ),
+      WebhookReport: {
+        type: "object",
+        required: ["success", "received", "duplicates", "matched", "suppressed"],
+        properties: {
+          success: { type: "boolean", const: true },
+          received: { type: "integer", description: "Delivery events MakiSend tracks in this request." },
+          duplicates: { type: "integer", description: "Events already applied (provider retries)." },
+          matched: { type: "integer", description: "Events tied to an email MakiSend sent." },
+          suppressed: { type: "integer", description: "Addresses added to the suppression list." },
+        },
+      },
       Suppression: {
         type: "object",
         required: ["id", "email", "source", "reason", "emailId", "createdAt"],
         properties: {
           id: { type: "string" },
           email: { type: "string", format: "email" },
-          source: { type: "string", enum: ["bounce", "manual"] },
+          source: {
+            type: "string",
+            enum: ["bounce", "complaint", "manual"],
+            description: "`complaint`: the recipient marked an email as spam (reported by the provider's webhook).",
+          },
           reason: { type: "string" },
-          emailId: { type: ["string", "null"], description: "The send that bounced, for `bounce` entries." },
+          emailId: {
+            type: ["string", "null"],
+            description: "The send that bounced or was complained about, when it could be identified.",
+          },
           createdAt: { type: "string", format: "date-time" },
         },
       },
@@ -1095,7 +1192,7 @@ export const openApiDocument = {
           emailId: { type: "string" },
           status: {
             type: "string",
-            enum: ["received", "processing", "cleaned", "sent", "failed"],
+            enum: ["received", "processing", "cleaned", "sent", "failed", "delivered", "deferred", "bounced", "complained"],
           },
           error: { type: ["string", "null"] },
           attempts: { type: ["integer", "null"] },

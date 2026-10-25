@@ -61,6 +61,7 @@ export async function decryptSmtpRecord(
     smtpUsername,
     smtpPassword,
     senderEmail,
+    bounceWebhookProvider: record.bounceWebhookProvider,
   };
 }
 

@@ -10,6 +10,8 @@ export const ENCRYPTED_COLUMNS: readonly EncryptedColumn[] = [
   { table: "smtp_config", primaryKey: "id", column: "smtpusername" },
   { table: "smtp_config", primaryKey: "id", column: "smtppassword" },
   { table: "smtp_config", primaryKey: "id", column: "sender_email" },
+  // Bounce webhook signing secret (src/bounce-webhooks). NULL until a webhook is connected.
+  { table: "smtp_config", primaryKey: "id", column: "bounce_webhook_secret" },
   { table: "email_logs", primaryKey: "internalId", column: "to" },
   { table: "email_contents", primaryKey: "email_id", column: "text_body" },
   { table: "email_contents", primaryKey: "email_id", column: "html_body" },

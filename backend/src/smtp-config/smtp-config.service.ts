@@ -14,6 +14,16 @@ import {
   type TestEmail,
 } from "./smtp-connection";
 import { DohDnsResolver, runDnsCheck, type DnsCheckResult, type IDnsResolver } from "./dns-check";
+import { providerFor } from "@/bounce-webhooks/providers";
+import type { BounceWebhookProviderId } from "@/bounce-webhooks/bounce-webhooks.types";
+
+/** Why a secret was refused, per provider: where to find the right value. */
+export const BOUNCE_WEBHOOK_SECRET_HINTS: Readonly<Record<BounceWebhookProviderId, string>> = {
+  resend: "Paste the webhook's signing secret from Resend (it starts with whsec_).",
+  sendgrid: "Paste the verification key of SendGrid's Signed Event Webhook (a base64 P-256 public key).",
+  mailgun: "Paste Mailgun's HTTP webhook signing key (8 to 256 characters, no spaces).",
+  postmark: "Choose a password of 16 to 256 characters without spaces, and set the same one as the webhook's Basic auth password in Postmark.",
+};
 
 export interface SmtpConfigServiceOptions {
   /** Cloudflare Email Service binding: the only way a Worker reaches smtp.mx.cloudflare.net. */
@@ -166,6 +176,35 @@ export class SmtpConfigService {
     return this.decryptRecord(config);
   }
 
+  /**
+   * Connects the provider's bounce webhook: POST /webhooks/bounces/:id then accepts requests
+   * verified with `secret`, and each send through this configuration carries the provider's tag.
+   */
+  async setBounceWebhook(
+    id: string,
+    userId: string,
+    input: { provider: BounceWebhookProviderId; secret: string },
+  ): Promise<SmtpConfigRecord> {
+    await this.findByIdAndUser(id, userId);
+    const provider = providerFor(input.provider);
+    if (!(await provider.isValidSecret(input.secret))) {
+      throw new AppError(400, BOUNCE_WEBHOOK_SECRET_HINTS[input.provider]);
+    }
+    const config = await this.smtpConfigRepo.update(id, {
+      bounceWebhookProvider: input.provider,
+      bounceWebhookSecret: await encrypt(input.secret.trim(), this.aesKey),
+    });
+    pinoLogger.info({ id, provider: input.provider }, "Bounce webhook connected");
+    return this.decryptRecord(config);
+  }
+
+  /** Disconnects the bounce webhook: its requests are refused from now on. */
+  async removeBounceWebhook(id: string, userId: string): Promise<SmtpConfigRecord> {
+    await this.findByIdAndUser(id, userId);
+    const config = await this.smtpConfigRepo.update(id, { bounceWebhookProvider: null, bounceWebhookSecret: null });
+    pinoLogger.info({ id }, "Bounce webhook disconnected");
+    return this.decryptRecord(config);
+  }
 
   async checkConnection(input: {
     smtpHostname: string;

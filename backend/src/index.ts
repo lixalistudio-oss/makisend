@@ -35,6 +35,12 @@ import { runSmtpHealthChecks } from "@/smtp-config/smtp-health";
 import { openApiDocument } from "@/openapi";
 import { createUpdatesController, createUpdateService, runUpdateCheck, type UpdateService } from "@/updates";
 import { createSuppressionsController, SuppressionRepository, SuppressionService } from "@/suppressions";
+import {
+  BounceWebhookRepository,
+  BounceWebhookService,
+  createBounceWebhooksController,
+  runDeliveryEventsPrune,
+} from "@/bounce-webhooks";
 
 // --- Better Auth ---
 import { createAuth } from "@/lib/auth";
@@ -154,6 +160,7 @@ const deps = {
   idempotencyService: null as IdempotencyService | null,
   updateService: null as UpdateService | null,
   suppressionService: null as SuppressionService | null,
+  bounceWebhookService: null as BounceWebhookService | null,
   aesKey: null as EncryptionKeys | null,
   emailBinding: undefined as SendEmail | undefined,
   dbInitialized: false,
@@ -176,6 +183,11 @@ const deps = {
     this.emailBinding = env.EMAIL;
     this.updateService = createUpdateService(env);
     this.suppressionService = new SuppressionService(new SuppressionRepository(db), this.aesKey);
+    this.bounceWebhookService = new BounceWebhookService(
+      new BounceWebhookRepository(db),
+      this.suppressionService,
+      this.aesKey,
+    );
     this.dbInitialized = true;
   },
 
@@ -394,6 +406,10 @@ app.use("/suppressions*", async (c, next) => {
 });
 app.route("/suppressions", suppressionsController);
 
+// Delivery events from the SMTP provider (bounces, complaints). Public: each request is
+// verified with the configuration's webhook secret, never a session or an API key.
+app.route("/webhooks/bounces", createBounceWebhooksController(() => deps.bounceWebhookService!));
+
 // New-release check, shown as a banner on the dashboard (session auth).
 const updatesController = createUpdatesController(() => deps.updateService!);
 app.use("/updates/*", async (c, next) => {
@@ -416,7 +432,8 @@ export default {
     env: Bindings,
     ctx: ExecutionContext,
   ) => {
-    // Daily (17 3 * * *): SMTP health checks and the new-release check. Hourly (17 * * * *): key rotation, which
+    // Daily (17 3 * * *): SMTP health checks, the new-release check and the delivery-events
+    // prune. Hourly (17 * * * *): key rotation, which
     // re-encrypts values still on a previous encryption key (a no-op when nothing is stale).
     if (_controller.cron === KEY_ROTATION_CRON) {
       ctx.waitUntil(runKeyRotation(env));
@@ -424,5 +441,6 @@ export default {
     }
     ctx.waitUntil(runSmtpHealthChecks(env));
     ctx.waitUntil(runUpdateCheck(env));
+    ctx.waitUntil(runDeliveryEventsPrune(env));
   },
 };

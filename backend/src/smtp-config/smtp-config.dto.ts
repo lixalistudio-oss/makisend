@@ -16,6 +16,7 @@ import {
   parseSmtpHostname,
 } from "./smtp-host";
 import { DKIM_SELECTOR_PATTERN } from "./dns-check";
+import { BOUNCE_WEBHOOK_PROVIDERS } from "@/bounce-webhooks/bounce-webhooks.types";
 
 const smtpHostname = (emptyMessage: string) =>
   z
@@ -151,3 +152,19 @@ export const DnsCheckQueryDto = z
   .strict();
 
 export type DnsCheckQueryDto = z.infer<typeof DnsCheckQueryDto>;
+
+// PUT /smtp-config/:id/bounce-webhook. The secret's shape is checked per provider by the service.
+export const SetBounceWebhookDto = z
+  .object({
+    provider: z.enum(BOUNCE_WEBHOOK_PROVIDERS, {
+      message: `provider must be one of ${BOUNCE_WEBHOOK_PROVIDERS.join(", ")}.`,
+    }),
+    secret: z
+      .string()
+      .trim()
+      .min(1, { message: "The webhook secret is required." })
+      .max(4096, { message: "The webhook secret must be at most 4096 characters." }),
+  })
+  .strict();
+
+export type SetBounceWebhookDto = z.infer<typeof SetBounceWebhookDto>;
