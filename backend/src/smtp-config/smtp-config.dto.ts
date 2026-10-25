@@ -15,6 +15,7 @@ import {
   isAllowedSmtpPort,
   parseSmtpHostname,
 } from "./smtp-host";
+import { DKIM_SELECTOR_PATTERN } from "./dns-check";
 
 const smtpHostname = (emptyMessage: string) =>
   z
@@ -136,3 +137,17 @@ export const TestSendDto = z
   .strict();
 
 export type TestSendDto = z.infer<typeof TestSendDto>;
+
+// GET /smtp-config/:id/dns-check. Without a selector, the usual providers' selectors are tried.
+export const DnsCheckQueryDto = z
+  .object({
+    dkimSelector: z
+      .string()
+      .trim()
+      .max(253, { message: "dkimSelector must be at most 253 characters." })
+      .regex(DKIM_SELECTOR_PATTERN, { message: "dkimSelector must be a DNS label, e.g. s1 or google." })
+      .optional(),
+  })
+  .strict();
+
+export type DnsCheckQueryDto = z.infer<typeof DnsCheckQueryDto>;

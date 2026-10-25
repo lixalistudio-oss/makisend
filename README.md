@@ -17,7 +17,7 @@ MakiSend is a self-hosted, serverless email API on **Cloudflare Workers**. Your 
 - **Built for teams of one.** Per-user API keys, optional per-key send quota, idempotency keys, 2FA, and a dashboard with logs, metrics and templates.
 - **Resend-shaped API.** Same `attachments` format, so a client written for Resend sends the same JSON.
 
-> **Status: early.** The sending pipeline, dashboard and security basics work end to end. Webhooks, bounce tracking and multi-provider failover are not built yet (see [Roadmap](#roadmap) and [Known limitations](#known-limitations-and-constraints)).
+> **Status: early.** The sending pipeline, dashboard and security basics work end to end. Webhooks, asynchronous bounce processing and multi-provider failover are not built yet (see [Roadmap](#roadmap) and [Known limitations](#known-limitations-and-constraints)).
 
 For the full technical context (architecture, conventions, development workflow and limitations), see [`AGENTS.md`](./AGENTS.md) and [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
 
@@ -256,6 +256,9 @@ Request schemas are generated from the Zod DTOs so they stay aligned with the ac
 | `POST` | `/smtp-config/check` | Session | Tests unsaved credentials |
 | `POST` | `/smtp-config/{id}/check` | Session | Tests a saved configuration |
 | `POST` | `/smtp-config/{id}/test-send` | Session | Sends a test email (logged with `source: "test"`, never counted in the dashboard totals); takes the same optional `attachments` as `/send-email` |
+| `GET` | `/smtp-config/{id}/dns-check` | Session | SPF, DKIM, DMARC and MX of the sender domain, read from public DNS (`?dkimSelector=` optional) |
+| `GET/POST` | `/suppressions` | Session | Lists / adds suppressed addresses (refused by `/send-email` with `422`) |
+| `DELETE` | `/suppressions/{id}` | Session | Removes an address from the suppression list |
 | `GET/POST` | `/api-keys` | Session | Lists / creates an API key linked to a configuration (several keys can share one) |
 | `DELETE` | `/api-keys/{id}` | Session | Revokes an API key |
 | `GET` | `/email-logs` | Session | Paginated logs (filters `status`, `smtpConfigId`, `apiKeyId`, `to`) |
@@ -297,6 +300,30 @@ Sends a transactional email to the given recipient.
 | `text` | string | At least 10 characters |
 | `html` | string | Not empty, sanitized before sending |
 | `attachments` | array, optional | Resend's shape: `[{ "filename", "content", "content_type"? }]`; also accepted with `templateId` |
+| `reply_to` | string, optional | Address replies go to; also accepted with `templateId` |
+| `headers` | object, optional | Custom headers (see below); also accepted with `templateId` |
+
+A recipient on the suppression list is refused with `422` before anything is stored or queued (see [Deliverability](#deliverability)).
+
+#### Custom headers
+
+```json
+"reply_to": "support@example.com",
+"headers": {
+  "List-Unsubscribe": "<https://example.com/unsubscribe?u=42>, <mailto:unsubscribe@example.com>",
+  "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+  "X-Entity-Ref-ID": "order-1234"
+}
+```
+
+The accepted set is Cloudflare Email Service's allowlist, applied to every transport so one payload behaves the same over SMTP and the `send_email` binding:
+
+- any `X-` header (name `X-[A-Za-z0-9_-]+`, up to 100 characters);
+- `In-Reply-To`, `References`, `Thread-Index`, `Thread-Topic`;
+- `List-Unsubscribe` (`<https://…>` and/or `<mailto:…>`, plain `http` refused), `List-Unsubscribe-Post` (exactly `List-Unsubscribe=One-Click`, with an `https` unsubscribe link), `List-Id`, `List-Archive`, `List-Help`, `List-Owner`, `List-Post`, `List-Subscribe`;
+- `Precedence` (`bulk`, `list` or `junk`).
+
+`From`, `To`, `Cc`, `Bcc`, `Subject` and `Reply-To` have their own fields; `Date`, `Message-ID`, `MIME-Version`, `Content-*`, `DKIM-Signature`, `Return-Path` and `Received` are written by the transport. Values cannot contain line breaks or control characters (header injection), at most 2048 bytes each and 50 headers. `reply_to` and `headers` are stored AES-GCM encrypted (`email_contents`) and re-encrypted by the key rotation.
 
 #### Attachments
 
@@ -407,6 +434,16 @@ Most of that time is the SMTP protocol, not MakiSend. SMTP waits for a reply to 
 
 Delivery to the recipient's inbox comes after that and depends on the receiving server.
 
+## Deliverability
+
+MakiSend does not sign mail: SPF, DKIM and DMARC are published on the sender domain with the values your SMTP provider gives you. What MakiSend does:
+
+- **DNS check.** **SMTP configuration → Check DNS records** (`GET /smtp-config/{id}/dns-check`) reads the sender domain's SPF, DKIM, DMARC and MX over DNS-over-HTTPS and grades each one (OK, needs attention, problem, unknown) with the record it found and where it lives. DKIM selectors are provider-specific: without one, the usual selectors are tried, and finding none answers *unknown*, not *problem*. A subdomain sender falls back to the organizational domain's DMARC record.
+- **Suppression list.** When the recipient's server rejects the address itself during `RCPT TO` with a permanent status (`550 5.1.1` user unknown, `5.1.2`, `5.1.3`, `5.1.6`, `5.1.10`, `5.2.1`, or a 550/551/553 that says the mailbox does not exist), the workflow adds it to the list, and `POST /send-email` then answers `422` for that address. Policy refusals (`5.7.x`), full mailboxes (`5.2.2`) and temporary statuses never suppress: removing a working address is the worse mistake. Entries can be added and removed in **Settings → Suppression list** (`/suppressions`). Addresses are AES-GCM encrypted; lookups use a keyed HMAC of the lower-cased address, re-hashed by the key-rotation job.
+- **`List-Unsubscribe` and `reply_to`**: see [Custom headers](#custom-headers). Gmail and Yahoo require one-click unsubscribe for bulk senders.
+
+Limit: many providers accept every recipient at `RCPT TO` and bounce later by email. Those bounces are not seen, so the suppression list only learns from synchronous rejections.
+
 ## Known limitations and constraints
 
 ### Serverless-related
@@ -418,9 +455,9 @@ Delivery to the recipient's inbox comes after that and depends on the receiving 
 - **Asynchronous** sending: `POST /send-email` answers `202 Accepted` as soon as the email is queued; delivery (Cloudflare Queues → Workflow → SMTP) happens afterwards and is only visible in the D1 logs.
 - **One SMTP provider per configuration**: credentials are stored per user in D1 (encrypted), with no multi-provider routing or failover. Port and TLS mode are configurable per configuration.
 - **Bounded retries**: one initial SMTP attempt + **3 retries 30 s apart** within the same workflow. A permanent failure (auth, TLS, DNS, config, 5xx) stops immediately; once the budget is exhausted, the email is marked `failed` and sent to the DLQ. The Queue consumer only retries starting the workflow (exponential backoff, then DLQ).
-- **No tracking**: no bounce, open or click tracking. Only send logs are stored.
+- **No tracking**: no open or click tracking, and only synchronous bounces (rejected at `RCPT TO`) feed the suppression list; bounces sent back later by email are not processed.
 - **D1 is a serverless SQLite database**: latency is possible, and it is not suited to very high volumes without caching.
-- **Deliverability**: SPF, DKIM, DMARC and IP reputation depend on the SMTP provider and the sender domain.
+- **Deliverability**: SPF, DKIM, DMARC and IP reputation depend on the SMTP provider and the sender domain. MakiSend checks the DNS records (see [Deliverability](#deliverability)) but does not sign mail.
 
 ---
 
@@ -448,7 +485,7 @@ Delivery to the recipient's inbox comes after that and depends on the receiving 
 
 - Message queues and jobs: already in place (see Available today); scale and throughput tuning remains
 - Scale and throughput management
-- Deliverability improvements (anti-spam, SPF/DKIM/DMARC)
+- Deliverability improvements: asynchronous bounce and complaint processing (provider webhooks or a bounce mailbox) to feed the suppression list (done: DNS check, synchronous-bounce suppression list, `List-Unsubscribe` and custom headers)
 
 ---
 

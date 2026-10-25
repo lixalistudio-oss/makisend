@@ -143,6 +143,51 @@ export async function reEncrypt(encryptedJson: string, material: KeyMaterial): P
   return encrypt(await decrypt(encryptedJson, material), material);
 }
 
+const hmacSubKeyCache = new Map<string, Promise<CryptoKey>>();
+
+function importHmacKey(raw: Uint8Array): Promise<CryptoKey> {
+  return crypto.subtle.importKey("raw", raw, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+}
+
+/**
+ * HMAC-SHA256 key for one `purpose`, derived from an AES key (HMAC of the purpose label): the
+ * AES key itself is never used for anything but AES-GCM.
+ */
+function hmacSubKey(secretKeyHex: string, purpose: string): Promise<CryptoKey> {
+  const cacheKey = `${purpose}:${secretKeyHex}`;
+  let subKey = hmacSubKeyCache.get(cacheKey);
+  if (!subKey) {
+    if (!isValidKeyHex(secretKeyHex)) {
+      return Promise.reject(new Error("Invalid AES-256 key: expected 64 hexadecimal characters"));
+    }
+    subKey = importHmacKey(hexToUint8Array(secretKeyHex))
+      .then((master) => crypto.subtle.sign("HMAC", master, new TextEncoder().encode(`makisend:${purpose}:v1`)))
+      .then((derived) => importHmacKey(new Uint8Array(derived)));
+    hmacSubKeyCache.set(cacheKey, subKey);
+  }
+  return subKey;
+}
+
+/**
+ * Deterministic keyed hash (hex) of `value`: lets an encrypted column be looked up by equality
+ * without storing the value in clear or decrypting every row. Tied to the key: after a key
+ * rotation, values hashed with a previous key are found with `keyedHashes` and re-hashed.
+ */
+export async function keyedHash(value: string, secretKeyHex: string, purpose: string): Promise<string> {
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    await hmacSubKey(secretKeyHex, purpose),
+    new TextEncoder().encode(value),
+  );
+  return uint8ArrayToHex(new Uint8Array(signature));
+}
+
+/** `value`'s keyed hash under every configured key, current first. */
+export async function keyedHashes(value: string, material: KeyMaterial, purpose: string): Promise<string[]> {
+  const { current, previous } = toKeys(material);
+  return Promise.all([current, ...previous].map((key) => keyedHash(value, key, purpose)));
+}
+
 /** SQL `LIKE` prefix matching every value encrypted with `currentKey`. */
 export async function currentKeyPrefix(currentKey: string): Promise<string> {
   return `{"kid":"${await keyId(currentKey)}"%`;

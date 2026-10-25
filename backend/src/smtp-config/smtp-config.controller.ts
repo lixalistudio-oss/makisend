@@ -4,7 +4,7 @@ import { z } from "zod";
 import { pinoLogger } from "@/core/logger";
 import { MAX_ID_LENGTH } from "@/core/validation";
 import type { Bindings, UserInfoVariables } from "@/index";
-import { CreateSmtpConfigDto, TestSendDto, UpdateSmtpConfigDto } from "./smtp-config.dto";
+import { CreateSmtpConfigDto, DnsCheckQueryDto, TestSendDto, UpdateSmtpConfigDto } from "./smtp-config.dto";
 import { toPublicSmtpConfig } from "./smtp-config.types";
 import type { SmtpConfigService } from "./smtp-config.service";
 import { toEmailAttachment } from "@/send-email/attachments";
@@ -88,6 +88,34 @@ export function createSmtpConfigController(
       const { id } = c.req.valid("param");
       pinoLogger.info({ userId, id }, "POST /smtp-config/:id/check");
       const result = await getService().checkConnectionById(id, userId);
+      return c.json(result, 200);
+    },
+  );
+
+  controller.get(
+    "/:id/dns-check",
+    zValidator("param", z.object({ id: z.string().min(1).max(MAX_ID_LENGTH) })),
+    zValidator("query", DnsCheckQueryDto, (result, c) => {
+      if (!result.success) {
+        const errors = z.flattenError(result.error);
+        return c.json(
+          {
+            error: "Validation failed",
+            details: {
+              fieldErrors: errors.fieldErrors,
+              formErrors: errors.formErrors,
+            },
+          },
+          400,
+        );
+      }
+    }),
+    async (c) => {
+      const userId = c.get("userId");
+      const { id } = c.req.valid("param");
+      const { dkimSelector } = c.req.valid("query");
+      pinoLogger.info({ userId, id, dkimSelector }, "GET /smtp-config/:id/dns-check");
+      const result = await getService().checkDnsById(id, userId, dkimSelector);
       return c.json(result, 200);
     },
   );

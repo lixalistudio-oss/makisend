@@ -13,12 +13,15 @@ import {
   type SmtpSendResult,
   type TestEmail,
 } from "./smtp-connection";
+import { DohDnsResolver, runDnsCheck, type DnsCheckResult, type IDnsResolver } from "./dns-check";
 
 export interface SmtpConfigServiceOptions {
   /** Cloudflare Email Service binding: the only way a Worker reaches smtp.mx.cloudflare.net. */
   emailBinding?: SendEmail;
   /** Where test sends are recorded (source "test"). Without it, tests are not logged. */
   emailLogs?: IEmailRepository;
+  /** Reads the sender domain's records for the DNS check. Default: DNS-over-HTTPS. */
+  dnsResolver?: IDnsResolver;
 }
 
 /** A failure to write the log must not hide the result of the send the person asked for. */
@@ -228,6 +231,13 @@ export class SmtpConfigService {
       });
     }
     return result;
+  }
+
+  /** SPF, DKIM, DMARC and MX of the configuration's sender domain (public DNS only). */
+  async checkDnsById(id: string, userId: string, dkimSelector?: string): Promise<DnsCheckResult> {
+    const config = await this.findByIdAndUser(id, userId);
+    const resolver = this.options.dnsResolver ?? new DohDnsResolver();
+    return runDnsCheck(resolver, config.senderEmail, dkimSelector ? { dkimSelector } : {});
   }
 
   async checkAll(): Promise<{ checked: number; healthy: number }> {

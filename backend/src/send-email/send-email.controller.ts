@@ -8,6 +8,7 @@ import { DEFAULT_ATTACHMENT_CONTENT_TYPE } from "./attachments";
 import type { SendEmailDto, SendTemplateEmailDto } from "./send-email.dto";
 import type { SendEmailQueueMessage, IEmailRepository } from "./send-email.types";
 import type { ITemplateRepository } from "@/templates/templates.types";
+import type { ISuppressionLookup } from "@/suppressions/suppressions.types";
 import { renderTemplateContent } from "@/templates/template-renderer";
 import { AppError } from "@/core/errors";
 import { encrypt } from "@/core/crypto";
@@ -39,12 +40,15 @@ async function resolveTemplatePayload(
     html: rendered.html,
     text: rendered.text,
     ...(payload.attachments ? { attachments: payload.attachments } : {}),
+    ...(payload.reply_to ? { reply_to: payload.reply_to } : {}),
+    ...(payload.headers ? { headers: payload.headers } : {}),
   };
 }
 
 export function createSendEmailController(
   getEmailRepository: () => IEmailRepository,
   getTemplateRepository: () => ITemplateRepository,
+  getSuppressions?: () => ISuppressionLookup,
 ): Hono<{ Bindings: Bindings; Variables: UserInfoVariables }> {
   const controller = new Hono<{ Bindings: Bindings; Variables: UserInfoVariables }>();
 
@@ -72,6 +76,16 @@ export function createSendEmailController(
       const smtpConfigId = c.get("smtpConfigId");
       const emailId = createId();
 
+      // A suppressed address is refused before anything is stored or queued: sending to an
+      // address its server already rejected only hurts the sender's reputation.
+      const suppressed = getSuppressions ? await getSuppressions().findSuppression(userId, payload.to) : null;
+      if (suppressed) {
+        throw new AppError(
+          422,
+          `The recipient is on the suppression list (${suppressed.reason}). Remove it from the suppression list (dashboard Settings) to send to it again.`,
+        );
+      }
+
       // Template branch renders to the inline shape; inline payloads pass through.
       const data: SendEmailDto =
         "templateId" in payload
@@ -82,10 +96,13 @@ export function createSendEmailController(
 
       // Pending log row first, so the email is visible on the dashboard from the
       // moment it is accepted — even if every later stage fails.
-      const [encryptedTo, encryptedText, encryptedHtml] = await Promise.all([
+      const hasHeaders = data.headers !== undefined && Object.keys(data.headers).length > 0;
+      const [encryptedTo, encryptedText, encryptedHtml, encryptedReplyTo, encryptedHeaders] = await Promise.all([
         encrypt(data.to, resolveEncryptionKeys(c.env)),
         encrypt(data.text, resolveEncryptionKeys(c.env)),
         encrypt(data.html, resolveEncryptionKeys(c.env)),
+        data.reply_to ? encrypt(data.reply_to, resolveEncryptionKeys(c.env)) : Promise.resolve(null),
+        hasHeaders ? encrypt(JSON.stringify(data.headers), resolveEncryptionKeys(c.env)) : Promise.resolve(null),
       ]);
       await repository.createPendingEmailLog(emailId, userId, encryptedTo, data.subject, apiKeyId);
 
@@ -96,6 +113,8 @@ export function createSendEmailController(
           text: encryptedText,
           html: encryptedHtml,
           smtpConfigId,
+          replyTo: encryptedReplyTo,
+          headers: encryptedHeaders,
         });
 
         // Attachments: base64 as received, encrypted, one row each (never in the queue).

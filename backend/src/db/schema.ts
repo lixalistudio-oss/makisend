@@ -54,6 +54,10 @@ export const emailContents = sqliteTable("email_contents", {
   // No FK: deleting an SMTP config must not erase the content of emails already
   // queued with it; sending then fails with a permanent "config not found".
   smtpConfigId: text("smtp_config_id"),
+  // POST /send-email `reply_to` (an address) and `headers` (a JSON object), both AES-GCM
+  // encrypted like the bodies. NULL when the caller did not set them.
+  replyTo: text("reply_to"),
+  headers: text("headers"),
   createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
 });
 
@@ -359,6 +363,34 @@ export const sendRateLimit = sqliteTable("send_rate_limit", {
   windowStart: integer("window_start").notNull(),
   count: integer("count").notNull(),
 });
+
+// Addresses POST /send-email refuses to send to (src/suppressions): added when an SMTP server
+// rejects the recipient as non-existent, or by hand from the dashboard. `recipient` is AES-GCM
+// encrypted; `recipient_hash` is a keyed HMAC of the lower-cased address (core/crypto
+// keyedHash) so a send can be checked without decrypting the table, and `hash_kid` is the key
+// it was computed with (re-hashed by the key-rotation job). Deleting the user deletes the list.
+export const suppressions = sqliteTable(
+  "suppressions",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    recipient: text("recipient").notNull(),
+    recipientHash: text("recipient_hash").notNull(),
+    hashKid: text("hash_kid").notNull(),
+    // "bounce": rejected by the recipient's server. "manual": added from the dashboard.
+    source: text("source", { enum: ["bounce", "manual"] }).notNull(),
+    reason: text("reason").notNull(),
+    // The send that bounced. Not a foreign key: deleting logs keeps the suppression.
+    emailId: text("email_id"),
+    createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
+  },
+  (table) => [
+    uniqueIndex("suppressions_userId_recipientHash_unique").on(table.userId, table.recipientHash),
+    index("suppressions_hashKid_idx").on(table.hashKid),
+  ],
+);
 
 // Result of the last "is a newer MakiSend release published?" check (src/updates). A single
 // row (id = "latest"): the daily cron or the dashboard overwrites it. Only the latest

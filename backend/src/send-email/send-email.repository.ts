@@ -67,6 +67,8 @@ export class SendEmailRepository implements IEmailRepository {
       textBody: content.text,
       htmlBody: content.html,
       smtpConfigId: content.smtpConfigId ?? null,
+      replyTo: content.replyTo ?? null,
+      headers: content.headers ?? null,
     });
   }
 
@@ -78,6 +80,8 @@ export class SendEmailRepository implements IEmailRepository {
         text: emailContents.textBody,
         html: emailContents.htmlBody,
         smtpConfigId: emailContents.smtpConfigId,
+        replyTo: emailContents.replyTo,
+        headers: emailContents.headers,
       })
       .from(emailContents)
       .innerJoin(emailLogs, eq(emailLogs.internalId, emailContents.emailId))

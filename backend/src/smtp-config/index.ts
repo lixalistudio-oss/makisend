@@ -12,6 +12,12 @@ export {
 } from "./smtp-host";
 export type { SmtpSecurity } from "./smtp-host";
 export {
+  COMMON_DKIM_SELECTORS,
+  DohDnsResolver,
+  runDnsCheck,
+} from "./dns-check";
+export type { DnsCheckItem, DnsCheckResult, DnsCheckStatus, IDnsResolver } from "./dns-check";
+export {
   SMTP_CONNECTION_TIMEOUT_MS,
   SMTP_GREETING_TIMEOUT_MS,
   SMTP_SOCKET_TIMEOUT_MS,

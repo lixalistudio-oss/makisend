@@ -9,6 +9,14 @@ import {
 } from "@/core/validation";
 import { TemplateVariablesDto } from "@/templates/templates.dto";
 import { AttachmentsDto } from "./attachments";
+import { CustomHeadersDto } from "./custom-headers";
+
+// Where replies go when it is not the sender address (support inbox, the account owner...).
+const ReplyToDto = z
+  .email({ message: "reply_to must be a valid email address." })
+  .trim()
+  .max(MAX_EMAIL_LENGTH, { message: `reply_to must be at most ${MAX_EMAIL_LENGTH} characters.` })
+  .describe("Address replies go to (Reply-To). Absent: replies go to the sender address.");
 
 export const SendEmailDto = z
   .object({
@@ -50,6 +58,11 @@ export const SendEmailDto = z
 
     // Resend's shape: `[{ filename, content (base64), content_type? }]`. See attachments.ts.
     attachments: AttachmentsDto.optional(),
+
+    reply_to: ReplyToDto.optional(),
+
+    // X- headers, threading and List-* headers (List-Unsubscribe...). See custom-headers.ts.
+    headers: CustomHeadersDto.optional(),
   })
   .strict();
 
@@ -77,8 +90,10 @@ export const SendTemplateEmailDto = z
     // Optional: templates without placeholders send with no variables at all.
     variables: TemplateVariablesDto.optional(),
 
-    // Same as the inline shape: a templated email can carry files too.
+    // Same as the inline shape: a templated email can carry files, a reply-to and headers too.
     attachments: AttachmentsDto.optional(),
+    reply_to: ReplyToDto.optional(),
+    headers: CustomHeadersDto.optional(),
   })
   .strict();
 

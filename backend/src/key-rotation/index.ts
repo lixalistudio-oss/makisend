@@ -3,6 +3,8 @@ import { pinoLogger } from "@/core/logger";
 import type { Bindings } from "@/index";
 import { ENCRYPTED_COLUMNS, KeyRotationRepository } from "./key-rotation.repository";
 import { KeyRotationService } from "./key-rotation.service";
+import { createDatabase } from "@/db/connection";
+import { SuppressionRepository, SuppressionService } from "@/suppressions";
 
 export { ENCRYPTED_COLUMNS, KeyRotationRepository } from "./key-rotation.repository";
 export { KeyRotationService, DEFAULT_BATCH_SIZE } from "./key-rotation.service";
@@ -17,12 +19,16 @@ export type * from "./key-rotation.types";
  * AES_256_KEY) can be deleted from the Worker.
  */
 export async function runKeyRotation(env: Bindings): Promise<void> {
-  const service = new KeyRotationService(
-    new KeyRotationRepository(env.makisend_db),
-    resolveEncryptionKeys(env),
-    ENCRYPTED_COLUMNS,
-  );
-  const report = await service.run();
+  const keys = resolveEncryptionKeys(env);
+  const service = new KeyRotationService(new KeyRotationRepository(env.makisend_db), keys, ENCRYPTED_COLUMNS);
+  const encrypted = await service.run();
+  // Lookup hashes of the suppression list are tied to the key too (core/crypto keyedHash).
+  const hashes = await new SuppressionService(new SuppressionRepository(createDatabase(env.makisend_db)), keys).rehashStale();
+  const report = {
+    reEncrypted: encrypted.reEncrypted + hashes.rehashed,
+    failed: encrypted.failed + hashes.failed,
+    remaining: encrypted.remaining + hashes.remaining,
+  };
   if (report.failed > 0) {
     pinoLogger.error(report, "key-rotation: some values could not be decrypted with any configured key");
   } else {

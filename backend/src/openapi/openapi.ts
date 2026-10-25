@@ -7,6 +7,7 @@ import {
   UpdateSmtpConfigDto,
 } from "@/smtp-config/smtp-config.dto";
 import { SMTP_PORTS } from "@/smtp-config/smtp-host";
+import { AddSuppressionDto } from "@/suppressions/suppressions.dto";
 import {
   CreateTemplateDto,
   PreviewTemplateDto,
@@ -157,6 +158,7 @@ export const openApiDocument = {
     { name: "Email Logs", description: "Inspect delivery logs and history." },
     { name: "Dashboard", description: "Aggregated delivery metrics." },
     { name: "Templates", description: "Reusable email templates with variables." },
+    { name: "Suppressions", description: "Addresses POST /send-email refuses to send to." },
     { name: "Updates", description: "Whether a newer MakiSend release is published." },
     { name: "Meta", description: "API documentation and schema discovery." },
   ],
@@ -206,6 +208,10 @@ export const openApiDocument = {
             },
           },
           409: responseRef("Conflict"),
+          422: jsonResponse(
+            "The recipient is on the suppression list (rejected as non-existent by its server, or added from the dashboard). Nothing was stored or queued.",
+            "Error",
+          ),
           429: {
             description:
               "Only when the instance sets `SEND_RATE_LIMIT`: this API key reached its send quota. `Retry-After` gives the seconds until the window restarts.",
@@ -344,6 +350,32 @@ export const openApiDocument = {
         },
       },
     },
+    "/smtp-config/{id}/dns-check": {
+      get: {
+        tags: ["SMTP Config"],
+        summary: "Check the sender domain's DNS (SPF, DKIM, DMARC, MX)",
+        operationId: "checkSmtpConfigDns",
+        description:
+          "Reads the public DNS records of the configuration's sender domain over DNS-over-HTTPS and grades each one. MakiSend does not sign mail itself: these records are published with your SMTP provider's values. Without `dkimSelector`, the usual providers' selectors are tried, and not finding one answers `unknown`, not `fail`.",
+        security: sessionSecurity,
+        parameters: [
+          idParameter,
+          {
+            name: "dkimSelector",
+            in: "query",
+            required: false,
+            description: "DKIM selector to check (the `s=` value of the DKIM-Signature header), e.g. `s1` or `google`.",
+            schema: { type: "string", maxLength: 253 },
+          },
+        ],
+        responses: {
+          200: jsonResponse("DNS check result; lookups that fail answer `unknown`.", "DnsCheckResult"),
+          400: responseRef("ValidationError"),
+          ...sessionErrors,
+          404: responseRef("NotFound"),
+        },
+      },
+    },
     "/smtp-config/{id}/test-send": {
       post: {
         tags: ["SMTP Config"],
@@ -414,6 +446,50 @@ export const openApiDocument = {
         parameters: [idParameter],
         responses: {
           200: jsonResponse("API key revoked.", "SuccessResponse"),
+          ...sessionErrors,
+          404: responseRef("NotFound"),
+        },
+      },
+    },
+    "/suppressions": {
+      get: {
+        tags: ["Suppressions"],
+        summary: "List suppressed addresses",
+        operationId: "listSuppressions",
+        description:
+          "Newest first, at most 1000. An address is added when its server rejects it as non-existent during RCPT TO (550 5.1.1 and similar), or by hand. Bounces sent back later by email are not seen.",
+        security: sessionSecurity,
+        responses: {
+          200: jsonResponse("The suppression list.", "SuppressionList"),
+          ...sessionErrors,
+        },
+      },
+      post: {
+        tags: ["Suppressions"],
+        summary: "Suppress an address",
+        operationId: "addSuppression",
+        security: sessionSecurity,
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: schemaRef("AddSuppression") } },
+        },
+        responses: {
+          201: jsonResponse("Address added.", "SuppressionAdded"),
+          200: jsonResponse("Address was already suppressed; the first reason is kept.", "SuppressionAdded"),
+          400: responseRef("ValidationError"),
+          ...sessionErrors,
+        },
+      },
+    },
+    "/suppressions/{id}": {
+      delete: {
+        tags: ["Suppressions"],
+        summary: "Remove an address from the suppression list",
+        operationId: "deleteSuppression",
+        security: sessionSecurity,
+        parameters: [idParameter],
+        responses: {
+          200: jsonResponse("Removed: the address can be sent to again.", "SuccessResponse"),
           ...sessionErrors,
           404: responseRef("NotFound"),
         },
@@ -889,6 +965,73 @@ export const openApiDocument = {
           },
           schemaRef("SmtpCheckFailure"),
         ],
+      },
+      AddSuppression: inputSchema(AddSuppressionDto, "Address to suppress, with an optional reason."),
+      Suppression: {
+        type: "object",
+        required: ["id", "email", "source", "reason", "emailId", "createdAt"],
+        properties: {
+          id: { type: "string" },
+          email: { type: "string", format: "email" },
+          source: { type: "string", enum: ["bounce", "manual"] },
+          reason: { type: "string" },
+          emailId: { type: ["string", "null"], description: "The send that bounced, for `bounce` entries." },
+          createdAt: { type: "string", format: "date-time" },
+        },
+      },
+      SuppressionList: {
+        type: "object",
+        required: ["suppressions"],
+        properties: { suppressions: { type: "array", items: schemaRef("Suppression") } },
+      },
+      SuppressionAdded: {
+        type: "object",
+        required: ["success", "created"],
+        properties: {
+          success: { type: "boolean", const: true },
+          created: { type: "boolean", description: "False when the address was already on the list." },
+        },
+      },
+      DnsCheckItem: {
+        type: "object",
+        required: ["status", "code", "message"],
+        properties: {
+          status: { type: "string", enum: ["pass", "warn", "fail", "unknown"] },
+          code: {
+            type: "string",
+            description: "Stable outcome id, e.g. `spf_missing`, `dkim_selector_unknown`, `dmarc_monitoring`, `lookup_failed`.",
+          },
+          message: { type: "string", description: "English explanation." },
+          record: { type: "string", description: "The record that was evaluated." },
+        },
+      },
+      DnsCheckResult: {
+        type: "object",
+        required: ["domain", "spf", "dkim", "dmarc", "mx", "checkedAt"],
+        properties: {
+          domain: { type: "string" },
+          spf: schemaRef("DnsCheckItem"),
+          dkim: {
+            allOf: [
+              schemaRef("DnsCheckItem"),
+              { type: "object", properties: { selector: { type: "string" } } },
+            ],
+          },
+          dmarc: {
+            allOf: [
+              schemaRef("DnsCheckItem"),
+              {
+                type: "object",
+                properties: {
+                  policy: { type: "string", enum: ["none", "quarantine", "reject"] },
+                  recordDomain: { type: "string", description: "Domain the record was found on (the organizational domain for a subdomain sender)." },
+                },
+              },
+            ],
+          },
+          mx: schemaRef("DnsCheckItem"),
+          checkedAt: { type: "string", format: "date-time" },
+        },
       },
       SmtpSendResult: {
         oneOf: [

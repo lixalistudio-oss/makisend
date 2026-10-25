@@ -5,6 +5,8 @@ import { cleanHtml } from "@/core/html-sanitizer";
 import {
   classifyEmailError,
   friendlyErrorMessage,
+  isRecipientHardBounce,
+  recipientRejectionReason,
 } from "@/send-email/error-classifier";
 import type { ClassifiableError } from "@/send-email/error-classifier";
 import type {
@@ -28,6 +30,8 @@ export interface SendEmailFlowDeps {
   loadEmail: (emailId: string) => Promise<EmailToSend>;
   resolveTransport: (smtpConfigId: string | null) => Promise<IEmailTransport>;
   deadLetterQueue?: Queue<SendEmailQueueMessage>;
+  /** Adds the email's recipient to the suppression list after a hard bounce at RCPT TO. */
+  suppressRecipient?: (emailId: string, reason: string) => Promise<unknown>;
 }
 
 export type SendEmailFlowOutcome =
@@ -55,6 +59,8 @@ interface SendReceipt {
   durationMs?: number;
   reason?: string;
   attempt: number;
+  /** Set when the recipient's server rejected the address itself: why it gets suppressed. */
+  suppressionReason?: string;
 }
 
 function toClassifiableError(err: unknown): ClassifiableError {
@@ -196,6 +202,8 @@ export async function runSendEmailFlow(
               text: email.text,
               html: cleanHtml(email.html),
               ...(email.attachments && email.attachments.length > 0 ? { attachments: email.attachments } : {}),
+              ...(email.replyTo ? { replyTo: email.replyTo } : {}),
+              ...(email.headers ? { headers: email.headers } : {}),
             });
 
             const durationMs = Date.now() - startedAt;
@@ -210,6 +218,11 @@ export async function runSendEmailFlow(
             return JSON.stringify(sentReceipt);
           } catch (err) {
             const permanent = permanentReason(err);
+            const evidence = {
+              ...toClassifiableError(err),
+              responseCode: (err as { responseCode?: unknown }).responseCode,
+              command: (err as { command?: unknown }).command,
+            };
             const reason = permanent ?? toClassifiableError(err).message as string;
             pinoLogger.error(
               { err, emailId, attempt, permanent },
@@ -237,6 +250,9 @@ export async function runSendEmailFlow(
                 kind: "rejected",
                 reason: permanent,
                 attempt,
+                ...(isRecipientHardBounce(evidence)
+                  ? { suppressionReason: recipientRejectionReason(evidence) }
+                  : {}),
               };
               return JSON.stringify(rejectedReceipt);
             }
@@ -260,6 +276,18 @@ export async function runSendEmailFlow(
     lastAttempt = receipt.attempt;
 
     if (receipt.kind === "rejected") {
+      if (receipt.suppressionReason && deps.suppressRecipient) {
+        const suppressionReason = receipt.suppressionReason;
+        // Best effort: failing to record the suppression must not change the outcome.
+        try {
+          await step.do("suppress-recipient", DB_STEP_CONFIG, async () => {
+            await deps.suppressRecipient!(emailId, suppressionReason);
+            return emailId;
+          });
+        } catch (err) {
+          pinoLogger.error({ err, emailId }, "Failed to add the recipient to the suppression list");
+        }
+      }
       return declareUndeliverable(
         receipt.reason ?? "Email was permanently rejected",
         receipt.attempt,

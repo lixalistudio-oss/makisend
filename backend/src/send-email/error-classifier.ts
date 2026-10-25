@@ -188,3 +188,57 @@ export function friendlyErrorMessage(err: ClassifiableError): string {
 
   return "Email delivery failed unexpectedly — please try again, and contact support if the problem persists.";
 }
+
+/** A send error as nodemailer raises it: `command` names the SMTP step that failed. */
+export interface RecipientRejectionEvidence extends ClassifiableError {
+  command?: unknown;
+}
+
+/**
+ * Enhanced status codes (RFC 3463) that mean "this address does not work", not "this message
+ * or this sender was refused": bad mailbox (5.1.1), bad domain (5.1.2), bad address syntax
+ * (5.1.3), mailbox moved (5.1.6), null MX (5.1.10), mailbox disabled (5.2.1).
+ */
+const DEAD_ADDRESS_STATUSES = new Set(["5.1.1", "5.1.2", "5.1.3", "5.1.6", "5.1.10", "5.2.1"]);
+
+/** A permanent enhanced status, delimited on both sides so an IP in the reply (192.5.1.10) is not read as one. */
+const ENHANCED_STATUS = /(?:^|[\s:(])(5\.\d{1,3}\.\d{1,3})(?=[\s;,)]|$)/;
+
+/** Servers without enhanced codes: the reply text has to say the mailbox does not exist. */
+const DEAD_ADDRESS_TEXT =
+  /no such (user|mailbox|recipient)|(user|mailbox|recipient|address)\b[^.;]{0,40}\b(unknown|not found|does ?n[o']t exist|invalid|disabled|unavailable)/i;
+
+/**
+ * True only when the SMTP server refused the recipient address itself during RCPT TO with a
+ * permanent status: the address is dead, and sending to it again would hurt the sender's
+ * reputation. Refusals of the sender, the content, a policy (5.7.x), a full mailbox (5.2.2) or
+ * any temporary status never qualify: suppressing a working address is the worse mistake.
+ *
+ * Asynchronous bounces (accepted at RCPT, bounced later by email) are not visible here.
+ */
+export function isRecipientHardBounce(err: RecipientRejectionEvidence): boolean {
+  const message = rawMessage(err);
+  const atRcpt =
+    err.command === "RCPT TO" ||
+    (err.command === undefined && /recipients? (were )?rejected|recipient command failed/i.test(message));
+  if (!atRcpt) return false;
+
+  const status = typeof err.responseCode === "number" ? err.responseCode : smtpStatusFromMessage(message);
+  if (status === undefined || status < 500) return false;
+
+  const enhanced = ENHANCED_STATUS.exec(message)?.[1];
+  if (enhanced) return DEAD_ADDRESS_STATUSES.has(enhanced);
+  return [550, 551, 553].includes(status) && DEAD_ADDRESS_TEXT.test(message);
+}
+
+/**
+ * Reason stored on a bounce suppression: the status codes only. The server's free text can
+ * carry the address or internal hostnames, and the reason is stored in clear.
+ */
+export function recipientRejectionReason(err: RecipientRejectionEvidence): string {
+  const message = rawMessage(err);
+  const status = typeof err.responseCode === "number" ? err.responseCode : smtpStatusFromMessage(message);
+  const enhanced = ENHANCED_STATUS.exec(message)?.[1];
+  const codes = [status, enhanced].filter((part) => part !== undefined).join(" ");
+  return `The recipient's server rejected the address${codes ? ` (${codes})` : ""}.`;
+}

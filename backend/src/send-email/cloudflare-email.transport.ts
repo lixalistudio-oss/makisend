@@ -31,6 +31,8 @@ export class CloudflareEmailTransport implements IEmailTransport {
             })),
           }
         : {}),
+      ...(input.replyTo ? { replyTo: input.replyTo } : {}),
+      ...(input.headers && Object.keys(input.headers).length > 0 ? { headers: input.headers } : {}),
     });
     return { messageId };
   }

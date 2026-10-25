@@ -19,12 +19,15 @@ export async function loadEmailForSending(
     throw new AppError(404, `Email ${emailId} not found`);
   }
 
-  const [to, text, html, storedAttachments] = await Promise.all([
+  const [to, text, html, replyTo, headersJson, storedAttachments] = await Promise.all([
     decrypt(stored.to, aesKey),
     decrypt(stored.text, aesKey),
     decrypt(stored.html, aesKey),
+    stored.replyTo ? decrypt(stored.replyTo, aesKey) : Promise.resolve(""),
+    stored.headers ? decrypt(stored.headers, aesKey) : Promise.resolve(""),
     repository.getEmailAttachments(emailId),
   ]);
+  const headers = headersJson ? (JSON.parse(headersJson) as Record<string, string>) : {};
 
   const attachments = await Promise.all(
     storedAttachments.map(async (file) => ({
@@ -41,5 +44,7 @@ export async function loadEmailForSending(
     html,
     smtpConfigId: stored.smtpConfigId,
     ...(attachments.length > 0 ? { attachments } : {}),
+    ...(replyTo ? { replyTo } : {}),
+    ...(Object.keys(headers).length > 0 ? { headers } : {}),
   };
 }

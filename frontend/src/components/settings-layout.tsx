@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils"
 import { useTheme } from "@/lib/theme"
 import { THEME_OPTIONS } from "@/components/theme-options"
 import { TwoFactorCard } from "@/components/two-factor-card"
+import { SuppressionsCard } from "@/components/suppressions-card"
 import { VersionCard } from "@/components/update-banner"
 import { useTranslation } from "@/i18n"
 
@@ -317,6 +318,8 @@ export function SettingsLayout() {
           </Card>
 
           <TwoFactorCard />
+
+          <SuppressionsCard />
 
           <Card>
             <CardHeader>
