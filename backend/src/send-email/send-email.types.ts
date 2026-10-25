@@ -13,6 +13,11 @@ export interface EmailInput {
   replyTo?: string;
   /** Custom headers, already validated against the allowlist (custom-headers.ts). */
   headers?: Record<string, string>;
+  /**
+   * MakiSend's id of the email. Set by the send workflow: the SMTP transport derives the
+   * Message-ID from it, and tags it for the provider's bounce webhook (src/bounce-webhooks).
+   */
+  emailId?: string;
 }
 
 export interface EmailSendResult {

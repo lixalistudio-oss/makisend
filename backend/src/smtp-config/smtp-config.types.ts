@@ -1,4 +1,5 @@
 import type { SmtpSecurity } from "./smtp-host";
+import type { BounceWebhookProviderId } from "@/bounce-webhooks/bounce-webhooks.types";
 
 export interface SmtpConfigInput {
   smtpHostname: string;
@@ -20,6 +21,9 @@ export interface SmtpConfigUpdateInput {
   lastCheckAt?: Date | null;
   lastCheckOk?: boolean | null;
   lastCheckError?: string | null;
+  bounceWebhookProvider?: BounceWebhookProviderId | null;
+  /** Encrypted. */
+  bounceWebhookSecret?: string | null;
 }
 
 export interface SmtpConfigRecord {
@@ -35,15 +39,19 @@ export interface SmtpConfigRecord {
   lastCheckAt: Date | null;
   lastCheckOk: boolean | null;
   lastCheckError: string | null;
+  /** Provider of the connected bounce webhook, or null. */
+  bounceWebhookProvider: BounceWebhookProviderId | null;
+  /** Its secret, encrypted. Never leaves the server. */
+  bounceWebhookSecret: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
 
-/** API-facing representation: never exposes the SMTP password. */
-export type PublicSmtpConfig = Omit<SmtpConfigRecord, "smtpPassword">;
+/** API-facing representation: never exposes the SMTP password nor the webhook secret. */
+export type PublicSmtpConfig = Omit<SmtpConfigRecord, "smtpPassword" | "bounceWebhookSecret">;
 
 export function toPublicSmtpConfig(record: SmtpConfigRecord): PublicSmtpConfig {
-  const { smtpPassword: _smtpPassword, ...config } = record;
+  const { smtpPassword: _smtpPassword, bounceWebhookSecret: _bounceWebhookSecret, ...config } = record;
   return config;
 }
 

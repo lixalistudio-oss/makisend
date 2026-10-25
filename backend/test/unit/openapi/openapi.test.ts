@@ -19,6 +19,8 @@ const EXPECTED_PATHS = [
   "/suppressions",
   "/suppressions/{id}",
   "/smtp-config/{id}/test-send",
+  "/smtp-config/{id}/bounce-webhook",
+  "/webhooks/bounces/{smtpConfigId}",
   "/api-keys",
   "/api-keys/{id}",
   "/email-logs",

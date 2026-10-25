@@ -528,6 +528,8 @@ describe("SendEmailWorkflow — full step execution", () => {
       subject: "Integration Test",
       text: "This is a test email body long enough.",
       html: expect.stringContaining("<p>"),
+      // The transport derives the Message-ID (and a bounce-webhook tag) from it.
+      emailId: "integration-test-email-id",
     });
 
     const logs = await db.select().from(emailLogs).all();

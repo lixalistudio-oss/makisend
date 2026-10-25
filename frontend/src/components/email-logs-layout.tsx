@@ -33,8 +33,10 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
+  CircleAlertIcon,
   CircleCheckIcon,
   CircleXIcon,
+  ClockIcon,
   LoaderIcon,
   MailIcon,
   SearchIcon,
@@ -83,6 +85,11 @@ const statusConfig: Record<string, { color: string; icon: React.ReactNode; label
   sent: { labelKey: "logs.status.sent", color: "text-success bg-surface-muted", icon: <CircleCheckIcon className="size-3" /> },
   attempt_failed: { labelKey: "logs.status.attemptFailed", color: "text-warning bg-surface-muted", icon: <CircleXIcon className="size-3" /> },
   failed: { labelKey: "logs.status.failed", color: "text-destructive bg-surface-muted", icon: <CircleXIcon className="size-3" /> },
+  // Reported later by the provider's bounce webhook.
+  delivered: { labelKey: "logs.status.delivered", color: "text-success bg-surface-muted", icon: <CircleCheckIcon className="size-3" /> },
+  deferred: { labelKey: "logs.status.deferred", color: "text-warning bg-surface-muted", icon: <ClockIcon className="size-3" /> },
+  bounced: { labelKey: "logs.status.bounced", color: "text-destructive bg-surface-muted", icon: <CircleXIcon className="size-3" /> },
+  complained: { labelKey: "logs.status.complained", color: "text-destructive bg-surface-muted", icon: <CircleAlertIcon className="size-3" /> },
   unknown: { labelKey: "logs.status.unknown", color: "text-muted-foreground bg-muted", icon: <LoaderIcon className="size-3" /> },
 }
 
@@ -94,6 +101,10 @@ const statusFilterLabel: Record<string, UiKey> = {
   cleaned: "logs.filter.cleaned",
   sent: "logs.filter.sent",
   failed: "logs.filter.failed",
+  delivered: "logs.filter.delivered",
+  deferred: "logs.filter.deferred",
+  bounced: "logs.filter.bounced",
+  complained: "logs.filter.complained",
 }
 
 const statusDot: Record<string, string> = {
@@ -103,6 +114,10 @@ const statusDot: Record<string, string> = {
   sent: "bg-success",
   attempt_failed: "bg-warning",
   failed: "bg-destructive",
+  delivered: "bg-success",
+  deferred: "bg-warning",
+  bounced: "bg-destructive",
+  complained: "bg-destructive",
 }
 
 /**
@@ -260,6 +275,10 @@ export function EmailLogsLayout() {
                 <SelectItem value="cleaned">{t("logs.filter.cleaned")}</SelectItem>
                 <SelectItem value="sent">{t("logs.filter.sent")}</SelectItem>
                 <SelectItem value="failed">{t("logs.filter.failed")}</SelectItem>
+                <SelectItem value="delivered">{t("logs.filter.delivered")}</SelectItem>
+                <SelectItem value="deferred">{t("logs.filter.deferred")}</SelectItem>
+                <SelectItem value="bounced">{t("logs.filter.bounced")}</SelectItem>
+                <SelectItem value="complained">{t("logs.filter.complained")}</SelectItem>
               </SelectContent>
             </Select>
             <Select value={configFilter} onValueChange={(v) => v && setConfigFilter(v)}>

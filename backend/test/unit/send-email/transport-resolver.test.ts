@@ -104,6 +104,7 @@ describe("SMTP transport resolution", () => {
       smtpUsername: "user@example.com",
       smtpPassword: "secret",
       senderEmail: "sender@example.com",
+      bounceWebhookProvider: null,
     });
   });
 });

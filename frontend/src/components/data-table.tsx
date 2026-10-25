@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react"
 import {
+  CircleAlertIcon,
   CircleCheckIcon,
   CircleXIcon,
+  ClockIcon,
   LoaderIcon,
   MailIcon,
 } from "lucide-react"
@@ -73,6 +75,21 @@ function StatusBadge({ status }: { status: string }) {
     failed: {
       labelKey: "dashboard.status.failed",
       icon: <CircleXIcon />,
+      className: "text-destructive",
+    },
+    deferred: {
+      labelKey: "dashboard.status.deferred",
+      icon: <ClockIcon />,
+      className: "text-warning",
+    },
+    bounced: {
+      labelKey: "dashboard.status.bounced",
+      icon: <CircleXIcon />,
+      className: "text-destructive",
+    },
+    complained: {
+      labelKey: "dashboard.status.complained",
+      icon: <CircleAlertIcon />,
       className: "text-destructive",
     },
     unknown: {

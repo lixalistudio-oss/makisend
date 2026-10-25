@@ -48,5 +48,8 @@ export default {
   "dashboard.status.delivered": "délivré",
   "dashboard.status.attemptFailed": "tentative échouée",
   "dashboard.status.failed": "échec",
+  "dashboard.status.deferred": "retardé",
+  "dashboard.status.bounced": "rebond",
+  "dashboard.status.complained": "plainte spam",
   "dashboard.status.unknown": "inconnu",
 } satisfies Record<keyof typeof en, string>

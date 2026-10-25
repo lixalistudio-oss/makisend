@@ -135,6 +135,7 @@ describe("runSendEmailFlow", () => {
       subject: storedEmail.subject,
       text: storedEmail.text,
       html: expect.any(String),
+      emailId,
     });
     expect(mockRepository.completeEmailLog).toHaveBeenCalledWith(
       emailId,

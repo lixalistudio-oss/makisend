@@ -10,6 +10,8 @@ export interface SmtpConfig {
   senderEmail: string;
   smtpUsername: string;
   smtpPassword: string;
+  /** Provider whose bounce webhook is connected: its correlation tag is added to each send. */
+  bounceWebhookProvider?: "resend" | "sendgrid" | "mailgun" | "postmark" | null;
 }
 export interface UserConfig {
   userId: string;

@@ -1,4 +1,5 @@
-export type SuppressionSource = "bounce" | "manual";
+/** "complaint": the recipient marked an email as spam (reported by the provider's webhook). */
+export type SuppressionSource = "bounce" | "complaint" | "manual";
 
 /** A row as stored: `recipient` is encrypted, `recipientHash` a keyed HMAC of the address. */
 export interface SuppressionRow {

@@ -79,6 +79,8 @@ export class SmtpConfigRepository implements ISmtpConfigRepository {
       lastCheckAt: row.lastCheckAt,
       lastCheckOk: row.lastCheckOk,
       lastCheckError: row.lastCheckError,
+      bounceWebhookProvider: row.bounceWebhookProvider ?? null,
+      bounceWebhookSecret: row.bounceWebhookSecret ?? null,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };

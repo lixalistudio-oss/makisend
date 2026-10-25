@@ -213,6 +213,8 @@ class InMemorySmtpConfigRepository implements ISmtpConfigRepository {
       lastCheckAt: null,
       lastCheckOk: null,
       lastCheckError: null,
+      bounceWebhookProvider: null,
+      bounceWebhookSecret: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     };

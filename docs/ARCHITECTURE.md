@@ -31,7 +31,7 @@ A small Astro dashboard (served by the same Worker) manages SMTP credentials,
 API keys, templates and delivery logs.
 
 **Non-goals in the current code:** multi-tenant sign-up, billing, scopes,
-webhooks, bounce/open/click tracking, multi-provider failover, deliverability
+outgoing webhooks, open/click tracking, multi-provider failover, deliverability
 automation (SPF/DKIM/DMARC), and rate limiting at the edge.
 
 ---
@@ -913,7 +913,9 @@ filter to that page.
 
 - `secure: true` hardcoded → 587/STARTTLS unsupported.
 - Single SMTP provider per key; no failover.
-- No bounce/open/click tracking, no webhooks.
+- No open/click tracking and no outgoing webhooks. Later bounces and complaints
+  are read only from the provider's delivery webhook (`src/bounce-webhooks/`:
+  Resend, SendGrid, Mailgun, Postmark).
 - No SPF/DKIM/DMARC management.
 - Sign-up is closed after the first user.
 - `create-user.ts` is a legacy API-key-only bootstrap that creates a

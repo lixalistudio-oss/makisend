@@ -104,7 +104,8 @@ export const DKIM_SELECTOR_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(
 export interface Suppression {
   id: string
   email: string
-  source: "bounce" | "manual"
+  /** "complaint": the recipient marked an email as spam (provider webhook). */
+  source: "bounce" | "complaint" | "manual"
   reason: string
   emailId: string | null
   createdAt: string
@@ -118,11 +119,81 @@ export function bounceCodes(reason: string): string | null {
   return /\(([0-9. ]+)\)\.?$/.exec(reason)?.[1]?.trim() || null
 }
 
+/** Reasons written by the bounce webhook: "Hard bounce reported by SendGrid (Bounce · 5.1.1 · Invalid Address)". */
+const WEBHOOK_REASON = /^(Hard bounce|Spam complaint) reported by ([A-Za-z]+)(?: \((.+)\))?$/
+
 /** A suppression's reason in the person's language; a reason typed by hand is shown as written. */
 export function describeSuppression(entry: Suppression, t: (key: UiKey, params?: Params) => string): string {
+  const reported = WEBHOOK_REASON.exec(entry.reason)
+  if (reported && entry.source !== "manual") {
+    const [, kind, provider = "", detail] = reported
+    if (kind === "Spam complaint") return t("deliverability.reportedComplaint", { provider })
+    return detail
+      ? t("deliverability.reportedBounce", { provider, detail })
+      : t("deliverability.reportedBounceNoDetail", { provider })
+  }
   if (entry.source === "bounce") {
     const codes = bounceCodes(entry.reason)
     return codes ? t("deliverability.bounceReason", { codes }) : t("deliverability.bounceReasonNoCodes")
   }
   return entry.reason === MANUAL_DEFAULT_REASON ? t("deliverability.manualReason") : entry.reason
+}
+
+/** Providers whose delivery webhooks MakiSend reads (backend BOUNCE_WEBHOOK_PROVIDERS). */
+export const WEBHOOK_PROVIDERS = [
+  {
+    id: "resend",
+    label: "Resend",
+    steps: "deliverability.webhookSteps.resend",
+    secret: "deliverability.webhookSecret.resend",
+    placeholder: "deliverability.webhookSecretPlaceholder.resend",
+    invalid: "deliverability.webhookSecretInvalid.resend",
+  },
+  {
+    id: "sendgrid",
+    label: "SendGrid",
+    steps: "deliverability.webhookSteps.sendgrid",
+    secret: "deliverability.webhookSecret.sendgrid",
+    placeholder: "deliverability.webhookSecretPlaceholder.sendgrid",
+    invalid: "deliverability.webhookSecretInvalid.sendgrid",
+  },
+  {
+    id: "mailgun",
+    label: "Mailgun",
+    steps: "deliverability.webhookSteps.mailgun",
+    secret: "deliverability.webhookSecret.mailgun",
+    placeholder: "deliverability.webhookSecretPlaceholder.mailgun",
+    invalid: "deliverability.webhookSecretInvalid.mailgun",
+  },
+  {
+    id: "postmark",
+    label: "Postmark",
+    steps: "deliverability.webhookSteps.postmark",
+    secret: "deliverability.webhookSecret.postmark",
+    placeholder: "deliverability.webhookSecretPlaceholder.postmark",
+    invalid: "deliverability.webhookSecretInvalid.postmark",
+  },
+] as const satisfies readonly {
+  id: string
+  label: string
+  steps: UiKey
+  secret: UiKey
+  placeholder: UiKey
+  invalid: UiKey
+}[]
+
+export type WebhookProviderId = (typeof WEBHOOK_PROVIDERS)[number]["id"]
+
+export function webhookProvider(id: string | null | undefined) {
+  return WEBHOOK_PROVIDERS.find((provider) => provider.id === id) ?? null
+}
+
+/** Where the provider posts its events: same origin as the dashboard (the Worker serves both). */
+export function webhookUrl(smtpConfigId: string, origin: string): string {
+  return `${origin.replace(/\/+$/, "")}/webhooks/bounces/${encodeURIComponent(smtpConfigId)}`
+}
+
+/** Cloudflare Email Service sends no delivery webhooks. */
+export function supportsBounceWebhook(smtpHostname: string): boolean {
+  return smtpHostname.trim().toLowerCase() !== "smtp.mx.cloudflare.net"
 }
