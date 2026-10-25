@@ -15,6 +15,7 @@ const EXPECTED_PATHS = [
   "/smtp-config/check",
   "/smtp-config/{id}",
   "/smtp-config/{id}/check",
+  "/smtp-config/{id}/dns-check",
   "/smtp-config/{id}/test-send",
   "/api-keys",
   "/api-keys/{id}",

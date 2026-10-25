@@ -344,6 +344,32 @@ export const openApiDocument = {
         },
       },
     },
+    "/smtp-config/{id}/dns-check": {
+      get: {
+        tags: ["SMTP Config"],
+        summary: "Check the sender domain's DNS (SPF, DKIM, DMARC, MX)",
+        operationId: "checkSmtpConfigDns",
+        description:
+          "Reads the public DNS records of the configuration's sender domain over DNS-over-HTTPS and grades each one. MakiSend does not sign mail itself: these records are published with your SMTP provider's values. Without `dkimSelector`, the usual providers' selectors are tried, and not finding one answers `unknown`, not `fail`.",
+        security: sessionSecurity,
+        parameters: [
+          idParameter,
+          {
+            name: "dkimSelector",
+            in: "query",
+            required: false,
+            description: "DKIM selector to check (the `s=` value of the DKIM-Signature header), e.g. `s1` or `google`.",
+            schema: { type: "string", maxLength: 253 },
+          },
+        ],
+        responses: {
+          200: jsonResponse("DNS check result; lookups that fail answer `unknown`.", "DnsCheckResult"),
+          400: responseRef("ValidationError"),
+          ...sessionErrors,
+          404: responseRef("NotFound"),
+        },
+      },
+    },
     "/smtp-config/{id}/test-send": {
       post: {
         tags: ["SMTP Config"],
@@ -889,6 +915,47 @@ export const openApiDocument = {
           },
           schemaRef("SmtpCheckFailure"),
         ],
+      },
+      DnsCheckItem: {
+        type: "object",
+        required: ["status", "code", "message"],
+        properties: {
+          status: { type: "string", enum: ["pass", "warn", "fail", "unknown"] },
+          code: {
+            type: "string",
+            description: "Stable outcome id, e.g. `spf_missing`, `dkim_selector_unknown`, `dmarc_monitoring`, `lookup_failed`.",
+          },
+          message: { type: "string", description: "English explanation." },
+          record: { type: "string", description: "The record that was evaluated." },
+        },
+      },
+      DnsCheckResult: {
+        type: "object",
+        required: ["domain", "spf", "dkim", "dmarc", "mx", "checkedAt"],
+        properties: {
+          domain: { type: "string" },
+          spf: schemaRef("DnsCheckItem"),
+          dkim: {
+            allOf: [
+              schemaRef("DnsCheckItem"),
+              { type: "object", properties: { selector: { type: "string" } } },
+            ],
+          },
+          dmarc: {
+            allOf: [
+              schemaRef("DnsCheckItem"),
+              {
+                type: "object",
+                properties: {
+                  policy: { type: "string", enum: ["none", "quarantine", "reject"] },
+                  recordDomain: { type: "string", description: "Domain the record was found on (the organizational domain for a subdomain sender)." },
+                },
+              },
+            ],
+          },
+          mx: schemaRef("DnsCheckItem"),
+          checkedAt: { type: "string", format: "date-time" },
+        },
       },
       SmtpSendResult: {
         oneOf: [
