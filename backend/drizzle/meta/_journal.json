@@ -50,6 +50,13 @@
       "when": 1792770361464,
       "tag": "0006_update_check",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1792931695546,
+      "tag": "0007_email_reply_to_headers",
+      "breakpoints": true
     }
   ]
 }

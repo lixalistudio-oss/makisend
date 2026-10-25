@@ -54,6 +54,10 @@ export const emailContents = sqliteTable("email_contents", {
   // No FK: deleting an SMTP config must not erase the content of emails already
   // queued with it; sending then fails with a permanent "config not found".
   smtpConfigId: text("smtp_config_id"),
+  // POST /send-email `reply_to` (an address) and `headers` (a JSON object), both AES-GCM
+  // encrypted like the bodies. NULL when the caller did not set them.
+  replyTo: text("reply_to"),
+  headers: text("headers"),
   createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
 });
 

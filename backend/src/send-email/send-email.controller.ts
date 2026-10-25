@@ -39,6 +39,8 @@ async function resolveTemplatePayload(
     html: rendered.html,
     text: rendered.text,
     ...(payload.attachments ? { attachments: payload.attachments } : {}),
+    ...(payload.reply_to ? { reply_to: payload.reply_to } : {}),
+    ...(payload.headers ? { headers: payload.headers } : {}),
   };
 }
 
@@ -82,10 +84,13 @@ export function createSendEmailController(
 
       // Pending log row first, so the email is visible on the dashboard from the
       // moment it is accepted — even if every later stage fails.
-      const [encryptedTo, encryptedText, encryptedHtml] = await Promise.all([
+      const hasHeaders = data.headers !== undefined && Object.keys(data.headers).length > 0;
+      const [encryptedTo, encryptedText, encryptedHtml, encryptedReplyTo, encryptedHeaders] = await Promise.all([
         encrypt(data.to, resolveEncryptionKeys(c.env)),
         encrypt(data.text, resolveEncryptionKeys(c.env)),
         encrypt(data.html, resolveEncryptionKeys(c.env)),
+        data.reply_to ? encrypt(data.reply_to, resolveEncryptionKeys(c.env)) : Promise.resolve(null),
+        hasHeaders ? encrypt(JSON.stringify(data.headers), resolveEncryptionKeys(c.env)) : Promise.resolve(null),
       ]);
       await repository.createPendingEmailLog(emailId, userId, encryptedTo, data.subject, apiKeyId);
 
@@ -96,6 +101,8 @@ export function createSendEmailController(
           text: encryptedText,
           html: encryptedHtml,
           smtpConfigId,
+          replyTo: encryptedReplyTo,
+          headers: encryptedHeaders,
         });
 
         // Attachments: base64 as received, encrypted, one row each (never in the queue).

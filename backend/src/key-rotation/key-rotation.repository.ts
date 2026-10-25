@@ -13,6 +13,9 @@ export const ENCRYPTED_COLUMNS: readonly EncryptedColumn[] = [
   { table: "email_logs", primaryKey: "internalId", column: "to" },
   { table: "email_contents", primaryKey: "email_id", column: "text_body" },
   { table: "email_contents", primaryKey: "email_id", column: "html_body" },
+  // POST /send-email `reply_to` and `headers` (JSON). NULL when unset: skipped by findStale.
+  { table: "email_contents", primaryKey: "email_id", column: "reply_to" },
+  { table: "email_contents", primaryKey: "email_id", column: "headers" },
   // The file as base64, encrypted (POST /send-email `attachments`).
   { table: "email_attachments", primaryKey: "id", column: "content" },
 ];

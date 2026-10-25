@@ -196,6 +196,8 @@ export async function runSendEmailFlow(
               text: email.text,
               html: cleanHtml(email.html),
               ...(email.attachments && email.attachments.length > 0 ? { attachments: email.attachments } : {}),
+              ...(email.replyTo ? { replyTo: email.replyTo } : {}),
+              ...(email.headers ? { headers: email.headers } : {}),
             });
 
             const durationMs = Date.now() - startedAt;

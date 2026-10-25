@@ -9,6 +9,10 @@ export interface EmailInput {
   html: string;
   /** Absent or empty: a message without attachments. */
   attachments?: EmailAttachment[];
+  /** Absent: replies go to the sender address. */
+  replyTo?: string;
+  /** Custom headers, already validated against the allowlist (custom-headers.ts). */
+  headers?: Record<string, string>;
 }
 
 export interface EmailSendResult {
@@ -74,15 +78,21 @@ export interface StoredEmailContent {
   text: string;
   html: string;
   smtpConfigId?: string | null;
+  /** Encrypted address. */
+  replyTo?: string | null;
+  /** Encrypted JSON object of the custom headers. */
+  headers?: string | null;
 }
 
-/** An email as read back from D1: `to`, `text` and `html` are encrypted, `subject` is clear. */
+/** An email as read back from D1: `to`, `text`, `html`, `replyTo` and `headers` are encrypted, `subject` is clear. */
 export interface StoredEmail {
   to: string;
   subject: string;
   text: string;
   html: string;
   smtpConfigId: string | null;
+  replyTo: string | null;
+  headers: string | null;
 }
 
 /** An email ready to be sent: decrypted, plus the SMTP configuration it was queued with. */
