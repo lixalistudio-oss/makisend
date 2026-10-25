@@ -199,6 +199,8 @@ This file is the single source of truth for both surfaces:
 
 Change a token here first, then in both places. Arc's own rules (`https://uiarc.dev/r/skills/arc/SKILL.md`) apply everywhere this file is silent.
 
+The logo has its own brief, variations and usage rules in [`brand/DESIGN.md`](brand/DESIGN.md).
+
 ## Colors
 
 Neutral surfaces, meaningful color. Most of every screen is white, near-black text and hairline grey borders.

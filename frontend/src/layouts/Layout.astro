@@ -17,7 +17,11 @@ const { title = "MakiSend" } = Astro.props;
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width" />
 		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<link rel="icon" href="/favicon.ico" />
+		<link rel="icon" href="/favicon.ico" sizes="48x48" />
+		<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+		<link rel="manifest" href="/site.webmanifest" />
+		<meta name="theme-color" content="#0f6b4f" />
+		<meta property="og:image" content="/makisend-og.png" />
 		<meta name="generator" content={Astro.generator} />
 		<title>{title}</title>
 		<!-- Sets <html lang> before the first paint; the islands then render in that language. -->
