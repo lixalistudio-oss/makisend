@@ -34,6 +34,7 @@ import { sendEmailQueueConsumer } from "@/queue/send-email.consumer";
 import { runSmtpHealthChecks } from "@/smtp-config/smtp-health";
 import { openApiDocument } from "@/openapi";
 import { createUpdatesController, createUpdateService, runUpdateCheck, type UpdateService } from "@/updates";
+import { createSuppressionsController, SuppressionRepository, SuppressionService } from "@/suppressions";
 
 // --- Better Auth ---
 import { createAuth } from "@/lib/auth";
@@ -152,6 +153,7 @@ const deps = {
   templateService: null as TemplateService | null,
   idempotencyService: null as IdempotencyService | null,
   updateService: null as UpdateService | null,
+  suppressionService: null as SuppressionService | null,
   aesKey: null as EncryptionKeys | null,
   emailBinding: undefined as SendEmail | undefined,
   dbInitialized: false,
@@ -173,6 +175,7 @@ const deps = {
     this.aesKey = resolveEncryptionKeys(env);
     this.emailBinding = env.EMAIL;
     this.updateService = createUpdateService(env);
+    this.suppressionService = new SuppressionService(new SuppressionRepository(db), this.aesKey);
     this.dbInitialized = true;
   },
 
@@ -329,6 +332,7 @@ app.use("/send-email/*", idempotencyMiddleware(() => deps.idempotencyService!));
 const sendEmailController = createSendEmailController(
   () => deps.emailRepository!,
   () => deps.templateRepository!,
+  () => deps.suppressionService!,
 );
 app.route("/send-email", sendEmailController);
 
@@ -381,6 +385,14 @@ app.use("/templates*", async (c, next) => {
   return sessionMiddleware(auth)(c, next);
 });
 app.route("/templates", templatesController);
+
+// Suppression list: addresses POST /send-email refuses (session auth).
+const suppressionsController = createSuppressionsController(() => deps.suppressionService!);
+app.use("/suppressions*", async (c, next) => {
+  const auth = getAuthInstance(c.env, c.req.url);
+  return sessionMiddleware(auth)(c, next);
+});
+app.route("/suppressions", suppressionsController);
 
 // New-release check, shown as a banner on the dashboard (session auth).
 const updatesController = createUpdatesController(() => deps.updateService!);

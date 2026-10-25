@@ -5,6 +5,7 @@ import { createDatabase } from "@/db/connection";
 import { SendEmailRepository } from "@/send-email/send-email.repository";
 import { loadEmailForSending } from "@/send-email/send-email.loader";
 import { resolveTransportFor } from "@/send-email/transport-resolver";
+import { SuppressionRepository, SuppressionService } from "@/suppressions";
 import {
   runSendEmailFlow,
   SEND_MAX_ATTEMPTS,
@@ -40,7 +41,9 @@ export class SendEmailWorkflow extends WorkflowEntrypoint<Bindings, SendEmailPar
     const env = this.env;
     // Fresh repository per run: the instance may outlive the isolate that
     // started it, so nothing may be cached across durable executions.
-    const repository = new SendEmailRepository(createDatabase(env.makisend_db));
+    const db = createDatabase(env.makisend_db);
+    const repository = new SendEmailRepository(db);
+    const suppressions = new SuppressionService(new SuppressionRepository(db), resolveEncryptionKeys(env));
 
     return runSendEmailFlow(
       {
@@ -50,6 +53,7 @@ export class SendEmailWorkflow extends WorkflowEntrypoint<Bindings, SendEmailPar
         resolveTransport: (smtpConfigId) =>
           resolveTransportFor(env, smtpConfigId ?? undefined),
         deadLetterQueue: env.SEND_EMAIL_DLQ,
+        suppressRecipient: (emailId, reason) => suppressions.suppressBouncedEmail(emailId, reason),
       },
       event.payload,
       step,

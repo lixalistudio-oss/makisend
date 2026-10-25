@@ -8,6 +8,7 @@ import { DEFAULT_ATTACHMENT_CONTENT_TYPE } from "./attachments";
 import type { SendEmailDto, SendTemplateEmailDto } from "./send-email.dto";
 import type { SendEmailQueueMessage, IEmailRepository } from "./send-email.types";
 import type { ITemplateRepository } from "@/templates/templates.types";
+import type { ISuppressionLookup } from "@/suppressions/suppressions.types";
 import { renderTemplateContent } from "@/templates/template-renderer";
 import { AppError } from "@/core/errors";
 import { encrypt } from "@/core/crypto";
@@ -47,6 +48,7 @@ async function resolveTemplatePayload(
 export function createSendEmailController(
   getEmailRepository: () => IEmailRepository,
   getTemplateRepository: () => ITemplateRepository,
+  getSuppressions?: () => ISuppressionLookup,
 ): Hono<{ Bindings: Bindings; Variables: UserInfoVariables }> {
   const controller = new Hono<{ Bindings: Bindings; Variables: UserInfoVariables }>();
 
@@ -73,6 +75,16 @@ export function createSendEmailController(
       const apiKeyId = c.get("apiKeyId");
       const smtpConfigId = c.get("smtpConfigId");
       const emailId = createId();
+
+      // A suppressed address is refused before anything is stored or queued: sending to an
+      // address its server already rejected only hurts the sender's reputation.
+      const suppressed = getSuppressions ? await getSuppressions().findSuppression(userId, payload.to) : null;
+      if (suppressed) {
+        throw new AppError(
+          422,
+          `The recipient is on the suppression list (${suppressed.reason}). Remove it under Suppressions in the dashboard to send to it again.`,
+        );
+      }
 
       // Template branch renders to the inline shape; inline payloads pass through.
       const data: SendEmailDto =
