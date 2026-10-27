@@ -1,0 +1,11 @@
+---
+import Layout from "../layouts/Layout.astro";
+import "../styles/global.css";
+import { EncryptionKeyHelp } from "@/components/encryption-key-help";
+---
+
+<Layout title="Encryption key - MakiSend">
+  <main class="flex min-h-screen items-center justify-center p-4">
+    <EncryptionKeyHelp client:load />
+  </main>
+</Layout>

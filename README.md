@@ -119,7 +119,7 @@ Set in `backend/.env` locally, as Worker secrets once deployed:
 
 | Variable | Description |
 |----------|-------------|
-| `ENCRYPTION_KEY` | AES-256 key, 64 hex characters (`openssl rand -hex 32`). **Keep a copy**: without it, stored data is unreadable. The legacy name `AES_256_KEY` is still read |
+| `ENCRYPTION_KEY` | AES-256 key, 64 hex characters (`openssl rand -hex 32`). **Keep a copy**: without it, stored data is unreadable. The legacy name `AES_256_KEY` is still read. Missing or malformed, the dashboard opens a page explaining how to generate one (`/encryption-key`) |
 | `ENCRYPTION_KEY_PREVIOUS` | Optional, during a [key rotation](#security): previous keys, comma-separated (decrypt only) |
 | `BETTER_AUTH_SECRET` | Signs sessions and encrypts the TOTP secrets (changing it breaks existing 2FA set-ups) |
 | `BETTER_AUTH_URL`, `FRONTEND_URL` | Worker URL and allowed frontend origin. Optional once deployed: the dashboard and the API share one origin, so the request's origin is used |

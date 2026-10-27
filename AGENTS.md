@@ -222,6 +222,8 @@ Tests: `test/unit/auth/auth-routes.test.ts` (single account, races, 2FA, passwor
 3. The hourly cron (`17 * * * *`, `src/key-rotation`) re-encrypts up to 200 values per column per run through a compare-and-swap `UPDATE` (a value edited in between is never overwritten) and logs `key-rotation: run complete` with `{reEncrypted, failed, remaining}`.
 4. Once a run logs `remaining: 0` and `failed: 0`, delete `ENCRYPTION_KEY_PREVIOUS` (and the legacy `AES_256_KEY`).
 
+**Unusable key → `/encryption-key`.** A missing or malformed key (not 64 hex characters, e.g. the `.dev.vars.example` placeholder) throws `EncryptionKeyError` (`src/core/errors.ts`): every request then answers 500 with `code` (`ENCRYPTION_KEY_MISSING` / `ENCRYPTION_KEY_INVALID`) and `variables` (names only, never values). `GET /api/setup-status` is registered before `configMiddleware` and reports it as `configError`; the login, setup and session guard send the owner to the dashboard page `/encryption-key` (`frontend/src/components/encryption-key-help.tsx`), which explains how to generate and store a key and re-checks.
+
 **Never replace the key outright once the database holds data**: SMTP credentials, recipients and bodies become unreadable. Every encrypted column must be listed in `ENCRYPTED_COLUMNS` (`src/key-rotation/key-rotation.repository.ts`). The daily cron (`17 3 * * *`) still runs the SMTP health checks; `scheduled` dispatches on the expression.
 
 ### Current security limitations

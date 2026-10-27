@@ -3,7 +3,7 @@
  * release workflow (.github/workflows/release.yml) turns into the `v<version>` tag and GitHub
  * release; test/unit/updates/version.test.ts fails when the two drift apart.
  */
-export const APP_VERSION = "0.2.0";
+export const APP_VERSION = "0.2.1";
 
 interface ParsedVersion {
   core: [number, number, number];

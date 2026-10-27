@@ -17,6 +17,7 @@ export default {
   "nav.title.home": "MakiSend",
   "nav.title.login": "Sign in - MakiSend",
   "nav.title.setup": "Set up - MakiSend",
+  "nav.title.encryptionKey": "Encryption key - MakiSend",
   "nav.title.dashboard": "Dashboard - MakiSend",
   "nav.title.smtpConfig": "SMTP configuration - MakiSend",
   "nav.title.apiKeys": "API keys - MakiSend",

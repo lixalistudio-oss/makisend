@@ -1,4 +1,4 @@
-import { AppError } from "@/core/errors";
+import { AppError, EncryptionKeyError } from "@/core/errors";
 import { isValidKeyHex, type EncryptionKeys } from "@/core/crypto";
 import type { Bindings } from "@/index";
 
@@ -23,6 +23,23 @@ export interface Config {
 
 type EncryptionKeyBindings = Pick<Bindings, "ENCRYPTION_KEY" | "ENCRYPTION_KEY_PREVIOUS" | "AES_256_KEY">;
 
+const MISSING_KEY_MESSAGE = "ENCRYPTION_KEY environment variable is required";
+const INVALID_KEY_MESSAGE = "Encryption keys must be 64 hexadecimal characters (openssl rand -hex 32)";
+
+/**
+ * What is wrong with the encryption secrets, `null` when they are usable. Names the offending
+ * variables, never their values: the answer is public (`GET /api/setup-status`).
+ */
+export function checkEncryptionKeys(env: EncryptionKeyBindings): EncryptionKeyError | null {
+  try {
+    resolveEncryptionKeys(env);
+    return null;
+  } catch (error) {
+    if (error instanceof EncryptionKeyError) return error;
+    throw error;
+  }
+}
+
 /**
  * Builds the keyring from the Worker secrets:
  * - `ENCRYPTION_KEY`: current key, encrypts everything new.
@@ -32,9 +49,10 @@ type EncryptionKeyBindings = Pick<Bindings, "ENCRYPTION_KEY" | "ENCRYPTION_KEY_P
  *   key-rotation job has re-encrypted it. Delete it once the job reports 0 values left.
  */
 export function resolveEncryptionKeys(env: EncryptionKeyBindings): EncryptionKeys {
-  const current = env.ENCRYPTION_KEY?.trim() || env.AES_256_KEY?.trim();
+  const fromEncryptionKey = env.ENCRYPTION_KEY?.trim();
+  const current = fromEncryptionKey || env.AES_256_KEY?.trim();
   if (!current) {
-    throw new AppError(500, "ENCRYPTION_KEY environment variable is required");
+    throw new EncryptionKeyError("ENCRYPTION_KEY_MISSING", ["ENCRYPTION_KEY"], MISSING_KEY_MESSAGE);
   }
 
   const previous = (env.ENCRYPTION_KEY_PREVIOUS ?? "")
@@ -42,13 +60,16 @@ export function resolveEncryptionKeys(env: EncryptionKeyBindings): EncryptionKey
     .map((key) => key.trim())
     .filter(Boolean);
   const legacy = env.AES_256_KEY?.trim();
-  if (legacy) previous.push(legacy);
 
-  const invalid = [current, ...previous].filter((key) => !isValidKeyHex(key));
-  if (invalid.length > 0) {
-    throw new AppError(500, "Encryption keys must be 64 hexadecimal characters (openssl rand -hex 32)");
+  const invalid = new Set<string>();
+  if (!isValidKeyHex(current)) invalid.add(fromEncryptionKey ? "ENCRYPTION_KEY" : "AES_256_KEY");
+  if (previous.some((key) => !isValidKeyHex(key))) invalid.add("ENCRYPTION_KEY_PREVIOUS");
+  if (legacy && !isValidKeyHex(legacy)) invalid.add("AES_256_KEY");
+  if (invalid.size > 0) {
+    throw new EncryptionKeyError("ENCRYPTION_KEY_INVALID", [...invalid], INVALID_KEY_MESSAGE);
   }
 
+  if (legacy) previous.push(legacy);
   return { current, previous: [...new Set(previous)].filter((key) => key !== current) };
 }
 
