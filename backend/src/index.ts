@@ -43,7 +43,7 @@ import { createDatabase } from "@/db/connection";
 import { SendEmailRepository } from "@/send-email/send-email.repository";
 
 // --- Type imports ---
-import { resolveEncryptionKeys, type SmtpConfig, type UserConfig } from "./config/config";
+import { checkEncryptionKeys, resolveEncryptionKeys, type SmtpConfig, type UserConfig } from "./config/config";
 import type { EncryptionKeys } from "@/core/crypto";
 import { runKeyRotation, KEY_ROTATION_CRON } from "@/key-rotation";
 import { needsSetup } from "@/lib/owner-lock";
@@ -226,6 +226,20 @@ app.use("*", async (c, next) => {
 });
 app.use("*", requestLoggerMiddleware());
 app.onError(errorHandler);
+
+// Public: whether the instance still has to be set up, and whether its encryption secrets are
+// usable. Registered before configMiddleware, which refuses every request when the keys are
+// missing or malformed: the dashboard reads `configError` here and sends the owner to the page
+// explaining how to generate a key (instead of a sign-in form that can only fail). While no
+// account exists the dashboard sends every visitor to the set-up page, where the first
+// connection creates the super admin.
+app.get("/api/setup-status", async (c) => {
+  const setup = await needsSetup(c.env.makisend_db);
+  const keyError = checkEncryptionKeys(c.env);
+  if (!keyError) return c.json({ needsSetup: setup });
+  return c.json({ needsSetup: setup, configError: { code: keyError.code, variables: keyError.variables } });
+});
+
 app.use(configMiddleware());
 
 // Public API documentation. Registered before the lazily initialized DB
@@ -264,12 +278,6 @@ function addCorsHeaders(
     headers,
   });
 }
-
-// Public: whether the instance still has to be set up. While no account exists the dashboard
-// sends every visitor to the set-up page, where the first connection creates the super admin.
-app.get("/api/setup-status", async (c) => {
-  return c.json({ needsSetup: await needsSetup(c.env.makisend_db) });
-});
 
 // Better Auth hardcodes `name: z.string()` in its sign-up body schema and offers no
 // option to relax it, while our product only asks for email + password. We fill it in

@@ -11,6 +11,7 @@ import settings from "./settings"
 import updates from "./updates"
 import apiDocs from "./apiDocs"
 import star from "./star"
+import encryptionKey from "./encryptionKey"
 
 export default {
   ...common,
@@ -26,4 +27,5 @@ export default {
   ...updates,
   ...apiDocs,
   ...star,
+  ...encryptionKey,
 }
