@@ -14,10 +14,10 @@
     "docs_url": "https://github.com/lixalistudio-oss/makisend#readme",
     "bindings": {
       "ENCRYPTION_KEY": {
-        "description": "AES-256 key that encrypts recipients, bodies and SMTP credentials in D1: 64 hex characters, generate it with `openssl rand -hex 32`. **Keep a copy**: data encrypted with a lost key cannot be read again."
+        "description": "AES-256 key that encrypts recipients, bodies and SMTP credentials in D1: 64 hex characters, generate it with `openssl rand -hex 32` or on [makisend.lixalistudio.tech/deploy](https://makisend.lixalistudio.tech/deploy/). **Keep a copy**: data encrypted with a lost key cannot be read again."
       },
       "BETTER_AUTH_SECRET": {
-        "description": "Signs dashboard sessions and encrypts the two-factor secrets. A long random string, e.g. `openssl rand -base64 32`."
+        "description": "Signs dashboard sessions and encrypts the two-factor secrets. A long random string, e.g. `openssl rand -base64 32` (or generate it on [makisend.lixalistudio.tech/deploy](https://makisend.lixalistudio.tech/deploy/))."
       },
       "MAKISEND_REPOSITORY": {
         "description": "Optional. The GitHub repository this install was copied to, as `owner/name` (the one created by this set-up). The dashboard's **Update** button then opens its *Sync with upstream* workflow."
