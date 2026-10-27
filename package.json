@@ -20,7 +20,7 @@
         "description": "Signs dashboard sessions and encrypts the two-factor secrets. A long random string, e.g. `openssl rand -base64 32` (or generate it on [makisend.lixalistudio.tech/deploy](https://makisend.lixalistudio.tech/deploy/))."
       },
       "MAKISEND_REPOSITORY": {
-        "description": "Optional. The GitHub repository this install was copied to, as `owner/name` (the one created by this set-up). The dashboard's **Update** button then opens its *Sync with upstream* workflow."
+        "description": "Pre-filled with the official repository: leave it as is if you are not sure. Change it to the GitHub repository this set-up creates for you, as `owner/name`, and the dashboard's **Update** button opens its *Sync with upstream* workflow in one click."
       },
       "UPDATE_CHECK": {
         "description": "Checks once a day whether a newer MakiSend release is published on GitHub and shows it on the dashboard. Set to `off` to never contact GitHub."

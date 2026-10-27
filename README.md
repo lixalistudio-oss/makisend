@@ -125,7 +125,7 @@ Set in `backend/.env` locally, as Worker secrets once deployed:
 | `BETTER_AUTH_URL`, `FRONTEND_URL` | Worker URL and allowed frontend origin. Optional once deployed: the dashboard and the API share one origin, so the request's origin is used |
 | `SEND_RATE_LIMIT` | Optional per-API-key send quota, e.g. `100/min` or `5000/day` (`s`, `min`, `hour`, `day`). Over it: `429` with `Retry-After`. Unset: no quota |
 | `UPDATE_CHECK` | Optional. `off` stops the daily new-release check (see [Updates](#updates)) |
-| `MAKISEND_REPOSITORY` | Optional. Your copy of the repository (`owner/name`): the dashboard's **Update** button opens its sync workflow |
+| `MAKISEND_REPOSITORY` | Optional. Your copy of the repository (`owner/name`): the dashboard's **Update** button opens its sync workflow. The Deploy button pre-fills `lixalistudio-oss/makisend`, which counts as unset |
 | `UPDATE_SOURCE_REPOSITORY` | Optional. Read releases from another repository. Default `lixalistudio-oss/makisend` |
 
 SMTP credentials and API keys are not environment variables: they are managed in the dashboard and stored encrypted in D1.

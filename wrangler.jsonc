@@ -29,10 +29,11 @@
 	"vars": {
 		// New-release check (dashboard banner): "off" stops every request to GitHub.
 		"UPDATE_CHECK": "on",
-		// Your copy of the repository, `owner/name` (e.g. "acme/makisend"): the dashboard's
-		// "Update" button then opens its "Sync with upstream" workflow. Empty: it links to
-		// the release and the update guide instead.
-		"MAKISEND_REPOSITORY": ""
+		// Pre-filled with the official repository so the Deploy button form needs no input.
+		// Change it to your copy, `owner/name` (e.g. "acme/makisend"), and the dashboard's
+		// "Update" button opens its "Sync with upstream" workflow. Left on the official
+		// repository (or empty), it links to the release and the update guide instead.
+		"MAKISEND_REPOSITORY": "lixalistudio-oss/makisend"
 	},
 	// Cloudflare Email Service, for SMTP configurations on smtp.mx.cloudflare.net.
 	"send_email": [{ "name": "EMAIL" }],
