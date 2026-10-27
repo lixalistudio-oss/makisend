@@ -98,6 +98,26 @@ describe("settings", () => {
     );
     expect(resolveUpdateSettings({ MAKISEND_REPOSITORY: "acme/mail" }).ownRepository).toBe("acme/mail");
   });
+
+  it("treats MAKISEND_REPOSITORY equal to the upstream (the Deploy button default) as unset", () => {
+    expect(resolveUpdateSettings({ MAKISEND_REPOSITORY: DEFAULT_UPSTREAM_REPOSITORY }).ownRepository).toBeNull();
+    expect(
+      resolveUpdateSettings({ MAKISEND_REPOSITORY: "https://github.com/LixaliStudio-OSS/MakiSend.git" }).ownRepository,
+    ).toBeNull();
+    expect(
+      resolveUpdateSettings({ UPDATE_SOURCE_REPOSITORY: "acme/makisend", MAKISEND_REPOSITORY: "acme/makisend" })
+        .ownRepository,
+    ).toBeNull();
+    expect(
+      resolveUpdateSettings({ UPDATE_SOURCE_REPOSITORY: "acme/makisend", MAKISEND_REPOSITORY: DEFAULT_UPSTREAM_REPOSITORY })
+        .ownRepository,
+    ).toBe(DEFAULT_UPSTREAM_REPOSITORY);
+  });
+
+  it("the root wrangler.jsonc pre-fills MAKISEND_REPOSITORY with the official repository", () => {
+    const wrangler = readFileSync(join(here, "../../../../wrangler.jsonc"), "utf8");
+    expect(wrangler).toContain(`"MAKISEND_REPOSITORY": "${DEFAULT_UPSTREAM_REPOSITORY}"`);
+  });
 });
 
 describe("GitHubReleaseSource", () => {

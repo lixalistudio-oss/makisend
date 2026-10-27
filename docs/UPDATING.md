@@ -11,7 +11,7 @@ Your instance runs from **your own copy** of this repository: the one the *Deplo
 | Worker variable | Effect |
 |---|---|
 | `UPDATE_CHECK` | `off` turns the check off. Anything else, or unset: on |
-| `MAKISEND_REPOSITORY` | Your copy, as `owner/name`. The banner's **Update** button then opens its *Sync with upstream* workflow |
+| `MAKISEND_REPOSITORY` | Your copy, as `owner/name`. The banner's **Update** button then opens its *Sync with upstream* workflow. The Deploy button pre-fills the official repository, which counts as unset (the banner links to the release and this guide) |
 | `UPDATE_SOURCE_REPOSITORY` | Read releases from another repository (`owner/name`), e.g. your company's fork. Default: `lixalistudio-oss/makisend` |
 
 ## Update in one click: the *Sync with upstream* workflow

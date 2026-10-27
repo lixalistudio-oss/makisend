@@ -2,7 +2,7 @@
 
 **Transactional email, one API call away. No mail server to run.**
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/lixalistudio-oss/makisend)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://makisend.lixalistudio.tech/deploy/)
 
 MakiSend is a self-hosted, serverless email API on **Cloudflare Workers**. Your app sends one authenticated `POST /send-email`; MakiSend encrypts and queues the message, then delivers it through **your own SMTP provider** with automatic retries, and shows every delivery in a dashboard.
 
@@ -125,7 +125,7 @@ Set in `backend/.env` locally, as Worker secrets once deployed:
 | `BETTER_AUTH_URL`, `FRONTEND_URL` | Worker URL and allowed frontend origin. Optional once deployed: the dashboard and the API share one origin, so the request's origin is used |
 | `SEND_RATE_LIMIT` | Optional per-API-key send quota, e.g. `100/min` or `5000/day` (`s`, `min`, `hour`, `day`). Over it: `429` with `Retry-After`. Unset: no quota |
 | `UPDATE_CHECK` | Optional. `off` stops the daily new-release check (see [Updates](#updates)) |
-| `MAKISEND_REPOSITORY` | Optional. Your copy of the repository (`owner/name`): the dashboard's **Update** button opens its sync workflow |
+| `MAKISEND_REPOSITORY` | Optional. Your copy of the repository (`owner/name`): the dashboard's **Update** button opens its sync workflow. The Deploy button pre-fills `lixalistudio-oss/makisend`, which counts as unset |
 | `UPDATE_SOURCE_REPOSITORY` | Optional. Read releases from another repository. Default `lixalistudio-oss/makisend` |
 
 SMTP credentials and API keys are not environment variables: they are managed in the dashboard and stored encrypted in D1.
@@ -213,7 +213,7 @@ Both jobs run after lint, tests and the frontend build. The Cloudflare configura
 
 ### Deploy to Cloudflare (one click)
 
-The button at the top of this page copies the repository into your GitHub (or GitLab) account, lets you name the Worker, the D1 database and the queues, asks for `ENCRYPTION_KEY` (`openssl rand -hex 32`, **keep a copy**) and `BETTER_AUTH_SECRET` (`openssl rand -base64 32`), then creates the resources and deploys with Workers Builds. Open the Worker's URL to create the administrator account, turn on 2FA and, if the API is reachable from the internet, set `SEND_RATE_LIMIT`.
+The button at the top of this page first opens [makisend.lixalistudio.tech/deploy](https://makisend.lixalistudio.tech/deploy/), which explains the two secrets Cloudflare will ask for and how to generate them: `ENCRYPTION_KEY` (`openssl rand -hex 32`, 64 hex characters, **keep a copy**) and `BETTER_AUTH_SECRET` (`openssl rand -base64 32`). It can also generate them in your browser. **Continue to Cloudflare** then opens Cloudflare's flow ([direct link](https://deploy.workers.cloudflare.com/?url=https://github.com/lixalistudio-oss/makisend)): it copies the repository into your GitHub (or GitLab) account, lets you name the Worker, the D1 database and the queues, asks for the two secrets (paste each value into the field with the same name), then creates the resources and deploys with Workers Builds. Open the Worker's URL to create the administrator account, turn on 2FA and, if the API is reachable from the internet, set `SEND_RATE_LIMIT`.
 
 The button uses the **root** `wrangler.jsonc` and `package.json`; a test keeps them in sync with `backend/wrangler.jsonc` (details in [`AGENTS.md`](./AGENTS.md)).
 
