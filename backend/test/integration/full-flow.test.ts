@@ -541,11 +541,12 @@ describe("SendEmailWorkflow — full step execution", () => {
     expect(decryptedTo).toBe("gedeon@example.com");
 
     const histories = await db.select().from(emailHistories).all();
-    const statuses = histories.map((h: { status: string }) => h.status);
-    expect(statuses).toContain("received");
-    expect(statuses).toContain("processing");
-    expect(statuses).toContain("cleaned");
-    expect(statuses).toContain("sent");
+    // Ordered as the dashboard reads them (created_at): the trail written in
+    // one INSERT keeps its order, then the sent row.
+    const statuses = [...histories]
+      .sort((a: { createdAt: string }, b: { createdAt: string }) => a.createdAt.localeCompare(b.createdAt))
+      .map((h: { status: string }) => h.status);
+    expect(statuses).toEqual(["received", "processing", "cleaned", "sent"]);
 
     // The successful attempt is recorded so the timeline shows retries on success.
     const sentEntry = histories.find((h: { status: string }) => h.status === "sent");

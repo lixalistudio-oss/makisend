@@ -49,6 +49,11 @@ export interface IEmailRepository {
     attempts?: number,
   ): Promise<void>;
   /**
+   * Writes several lifecycle rows in one INSERT, so a retried Workflow step
+   * never leaves half of them behind. Rows are 1 ms apart to keep their order.
+   */
+  saveEmailHistories(emailId: string, statuses: readonly string[]): Promise<void>;
+  /**
    * Stores the message bodies (already AES-GCM encrypted by the caller) so the
    * workflow can rebuild the email from D1 instead of carrying it through the
    * queue.

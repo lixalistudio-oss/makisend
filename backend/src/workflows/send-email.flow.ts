@@ -144,26 +144,24 @@ export async function runSendEmailFlow(
     return { outcome, reason, attempt };
   };
 
+  // A delivered email runs three steps (prepare, send, record): on the Workers
+  // Free plan the daily Workflows step quota is the tightest limit, so every
+  // step saved is more email per day.
   try {
-    await step.do("email-received-and-update-history", DB_STEP_CONFIG, async () => {
-      await deps.repository.saveEmailHistory(emailId, "received");
-      return emailId;
-    });
-
-    await step.do("processing", DB_STEP_CONFIG, async () => {
-      await deps.repository.saveEmailHistory(emailId, "processing");
-      return emailId;
-    });
-
     // Validate that the stored email can be rebuilt and sanitized before any
-    // SMTP work. Nothing from the email is returned: step outputs are stored
-    // by the workflow engine.
+    // SMTP work, then write the received/processing/cleaned trail in one
+    // INSERT (a retry of this step cannot duplicate part of it). Nothing from
+    // the email is returned: step outputs are stored by the workflow engine.
     try {
-      await step.do("cleaning-html-input", DB_STEP_CONFIG, async () => {
-        pinoLogger.info({ emailId }, "Step: cleaning HTML input");
+      await step.do("prepare-email", DB_STEP_CONFIG, async () => {
+        pinoLogger.info({ emailId }, "Step: preparing the email");
         const email = await deps.loadEmail(emailId);
         cleanHtml(email.html);
-        await deps.repository.saveEmailHistory(emailId, "cleaned");
+        await deps.repository.saveEmailHistories(emailId, [
+          "received",
+          "processing",
+          "cleaned",
+        ]);
         return emailId;
       });
     } catch (err) {
@@ -274,26 +272,24 @@ export async function runSendEmailFlow(
       attempt: receipt.attempt,
     };
 
-    // Post-send bookkeeping gets its own steps. If it fails after the SMTP
-    // provider accepted the message, report the send as successful rather than
-    // dead-lettering a duplicate-prone email.
+    // Post-send bookkeeping is its own step, never the SMTP one. The log
+    // update runs first because it is idempotent: a retry after a failed
+    // history insert rewrites the same values. If the step fails after the
+    // SMTP provider accepted the message, report the send as successful rather
+    // than dead-lettering a duplicate-prone email.
     try {
-      await step.do("record-sent", DB_STEP_CONFIG, async () => {
-        await deps.repository.saveEmailHistory(
-          emailId,
-          "sent",
-          undefined,
-          delivered!.attempt,
-        );
-        return emailId;
-      });
-
-      await step.do("save-delivery", DB_STEP_CONFIG, async () => {
+      await step.do("record-delivery", DB_STEP_CONFIG, async () => {
         await deps.repository.completeEmailLog(
           emailId,
           delivered!.messageId,
           new Date().toISOString(),
           delivered!.durationMs,
+        );
+        await deps.repository.saveEmailHistory(
+          emailId,
+          "sent",
+          undefined,
+          delivered!.attempt,
         );
         return emailId;
       });

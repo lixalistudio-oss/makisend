@@ -579,35 +579,34 @@ consumer must stay in sync with `max_retries`.
 
 ### 9.4 Workflow steps
 
-`backend/src/workflows/send-email.workflow.ts`, class
-`SendEmailWorkflow`:
-
-Before any step, `resolveTransportFor(env, data.smtpConfigId)` runs **outside**
-`step.do`. A missing config or decryption failure therefore fails fast into the
-classifier without checkpointing a doomed run.
+`backend/src/workflows/send-email.workflow.ts` (class `SendEmailWorkflow`)
+wires the dependencies; the steps live in
+`backend/src/workflows/send-email.flow.ts` (`runSendEmailFlow`). A delivered
+email runs **three steps**. On the Workers Free plan the daily Workflows step
+quota (3,000) is the tightest limit, so fewer steps means more email per day
+(half the steps of the previous six-step run, so about twice the daily
+volume; not measured on a real account yet).
 
 | # | Step | Work | History written |
 |---|---|---|---|
-| 1 | `email-received-and-update-history` | log + mark received | `received` |
-| 2 | `processing` | mark processing | `processing` |
-| 3 | `cleaning-html-input` | `cleanHtml(data.html)`; return cleaned string | `cleaned` |
-| 4 | `send-mail-via-nodemailer` | `transport.send(...)`; **`retries: { limit: 0 }`** | `sent` on success, `attempt_failed` on error |
-| 5 | `save-infos-in-db` | `completeEmailLog(emailId, messageId, sentAt, durationMs)` | — (log row updated) |
+| 1 | `prepare-email` | load and decrypt the email, `cleanHtml(html)`, then one multi-row INSERT | `received`, `processing`, `cleaned` |
+| 2 | `send-mail-via-nodemailer` | resolve the transport, `transport.send(...)`; 3 retries 30 s apart | `attempt_failed` per failed attempt |
+| 3 | `record-delivery` | `completeEmailLog(...)` (idempotent update), then the `sent` row | `sent` |
 
-Step 4 returns `JSON.stringify({ messageId, durationMs })` and step 5 parses
-it. Steps must return primitives: returning an object from `step.do` triggers
-a false "code had hung" cancellation in workerd
-(workerd#6925 / workers-sdk#14959). Step 3 returns a string for the same
-reason.
+Failure paths add two steps: `record-failure` (`failed` row) and
+`dead-letter` (publish `{ emailId }` to the DLQ).
 
-The SMTP step deliberately disables Workflows' default retries (5). SMTP is
-not idempotent: an auto-retry after a lost ack could send the email twice.
-`retries: { limit: 0 }` also ensures the outer `catch` sees the error and can
-classify it for the queue-cycle ladder.
-
-On success the run returns
-`{ outcome: "sent", messageId, durationMs, attempt }`. On any throw, the run
-builds `{ code, message }` and calls `resolveSendEmailRunEnd(...)`.
+- Step 1 writes its three rows in **one INSERT** (`saveEmailHistories`), 1 ms
+  apart so they keep their order, so a retried step never leaves part of the
+  trail behind. If loading or cleaning fails, no trail row is written and the
+  email ends as `failed` ("Could not prepare the email").
+- Step 2 does nothing but send: SMTP is not idempotent, so the `sent` row and
+  the log update live in step 3, and a D1 failure there can never replay the
+  send. A failure in step 3 after the provider accepted the message still
+  reports the email as sent.
+- Steps return primitives (the email id, or a JSON string for the send
+  receipt): returning an object from `step.do` triggers a false "code had
+  hung" cancellation in workerd (workerd#6925 / workers-sdk#14959).
 
 ### 9.5 Retry and error-classification state machine
 
