@@ -1,6 +1,6 @@
 {
   "name": "makisend",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "private": true,
   "description": "Self-hosted transactional email API on Cloudflare Workers: one POST /send-email, delivered through your own SMTP provider.",
   "cloudflare": {
