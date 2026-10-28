@@ -58,6 +58,23 @@ export class SendEmailRepository implements IEmailRepository {
     });
   }
 
+  async saveEmailHistories(
+    emailId: string,
+    statuses: readonly string[],
+  ): Promise<void> {
+    if (statuses.length === 0) return;
+    // Rows end at "now" and are 1 ms apart, oldest first: a later row (sent,
+    // failed) can never sort before them.
+    const last = Date.now();
+    await this.db.insert(emailHistories).values(
+      statuses.map((status, i) => ({
+        emailId,
+        status,
+        createdAt: new Date(last - (statuses.length - 1 - i)).toISOString(),
+      })),
+    );
+  }
+
   async saveEmailContent(
     emailId: string,
     content: StoredEmailContent,

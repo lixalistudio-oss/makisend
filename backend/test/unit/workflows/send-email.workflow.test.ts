@@ -78,6 +78,7 @@ describe("runSendEmailFlow", () => {
     createPendingEmailLog: vi.fn(),
     completeEmailLog: vi.fn(),
     saveEmailHistory: vi.fn(),
+    saveEmailHistories: vi.fn(),
     saveEmailContent: vi.fn(),
     getEmailForSending: vi.fn(),
     saveEmailAttachments: vi.fn().mockResolvedValue(undefined),
@@ -111,6 +112,7 @@ describe("runSendEmailFlow", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockRepository.saveEmailHistory.mockResolvedValue(undefined);
+    mockRepository.saveEmailHistories.mockResolvedValue(undefined);
     mockRepository.completeEmailLog.mockResolvedValue(undefined);
     mockLoadEmail.mockResolvedValue(storedEmail);
     mockResolveTransport.mockResolvedValue(transport);
@@ -121,9 +123,13 @@ describe("runSendEmailFlow", () => {
   it("sends the email, writes the lifecycle trail and completes the log", async () => {
     const result = await run();
 
+    expect(mockRepository.saveEmailHistories).toHaveBeenCalledExactlyOnceWith(
+      emailId,
+      ["received", "processing", "cleaned"],
+    );
     expect(
       mockRepository.saveEmailHistory.mock.calls.map((call) => call[1]),
-    ).toEqual(["received", "processing", "cleaned", "sent"]);
+    ).toEqual(["sent"]);
     expect(mockRepository.saveEmailHistory).toHaveBeenCalledWith(
       emailId,
       "sent",
@@ -148,6 +154,41 @@ describe("runSendEmailFlow", () => {
       messageId: "<mock-id@gmail.com>",
       attempt: 1,
     });
+  });
+
+  it("delivers an email in three Workflow steps", async () => {
+    const configs: Record<string, unknown> = {};
+    await run({ configs });
+
+    expect(Object.keys(configs)).toEqual([
+      "prepare-email",
+      "send-mail-via-nodemailer",
+      "record-delivery",
+    ]);
+  });
+
+  it("updates the log before writing the sent row, so a retried record step stays consistent", async () => {
+    const order: string[] = [];
+    mockRepository.completeEmailLog.mockImplementation(async () => {
+      order.push("log");
+    });
+    mockRepository.saveEmailHistory.mockImplementation(async (_id: string, status: string) => {
+      order.push(status);
+    });
+
+    await run();
+
+    expect(order).toEqual(["log", "sent"]);
+  });
+
+  it("still reports a sent email when the record step fails after delivery", async () => {
+    mockRepository.completeEmailLog.mockRejectedValue(new Error("D1 unavailable"));
+
+    const result = await run();
+
+    expect(mockSend).toHaveBeenCalledTimes(1);
+    expect(mockDeadLetterSend).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ outcome: "sent", attempt: 1 });
   });
 
   it("resolves the transport with the smtpConfigId captured at enqueue time", async () => {
@@ -255,6 +296,7 @@ describe("runSendEmailFlow", () => {
     const result = await run();
 
     expect(mockSend).not.toHaveBeenCalled();
+    expect(mockRepository.saveEmailHistories).not.toHaveBeenCalled();
     expect(mockRepository.saveEmailHistory).toHaveBeenCalledWith(
       emailId,
       "failed",
