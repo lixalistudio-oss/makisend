@@ -32,7 +32,7 @@ Resend is a hosted email provider: its servers send your mail. MakiSend is the A
 | | Resend | MakiSend |
 |---|---|---|
 | Where it runs | Resend's servers | Your Cloudflare account (Workers, D1, Queues, Workflows) |
-| Price of the API | Free up to 3,000 emails a month (100 a day), then from $20 a month | Free and open source; Cloudflare's free plan covers about 500 emails a day |
+| Price of the API | Free up to 3,000 emails a month (100 a day), then from $20 a month | Free and open source; Cloudflare's free plan covers about 1,000 emails a day |
 | Who sends the mail | Resend | Your SMTP provider, or Cloudflare Email Service |
 | Your data | Stored by Resend | Encrypted (AES-256-GCM) in your own D1 database |
 | Servers to manage | None | None |
@@ -287,11 +287,11 @@ Most of that time is the SMTP protocol, not MakiSend. SMTP waits for a reply to 
 
 ## Running on the Workers Free plan
 
-Everything MakiSend uses (Workers, static assets, D1, Queues, Workflows, cron triggers) is part of Cloudflare's **Workers Free** plan, so the Deploy button works on a free account and nothing is billed. What the free plan sets is a daily volume. The tightest quota is Workflows steps: a delivered email runs 6 steps (received, processing, cleaning, send, record, save), and every retry adds one.
+Everything MakiSend uses (Workers, static assets, D1, Queues, Workflows, cron triggers) is part of Cloudflare's **Workers Free** plan, so the Deploy button works on a free account and nothing is billed. What the free plan sets is a daily volume. The tightest quota is Workflows steps: a delivered email runs 3 steps (prepare, send, record), and every SMTP retry adds one.
 
 | Free plan quota (per day) | What it means for MakiSend |
 |---|---|
-| Workflows: 3,000 steps | About **500 delivered emails a day**, the binding limit |
+| Workflows: 3,000 steps | About **1,000 delivered emails a day**, the binding limit |
 | Queues: 10,000 operations | About 3,300 emails (write, read, delete per email) |
 | Workers: 100,000 requests, shared with Workflow runs | API calls, dashboard and deliveries together |
 | D1: 100,000 rows written, 5 GB stored | Logs, history and encrypted bodies |
@@ -304,7 +304,7 @@ Two things the free plan does not give you:
 - **Cloudflare Email Service** only sends to arbitrary recipients on Workers Paid. On a free account, use another SMTP provider (whose own sending limits also apply: Gmail and Google Workspace cap a mailbox per day).
 - **CPU time** is capped at 10 ms per invocation and per Workflow step. MakiSend's steps mostly wait on the network, which does not count, but very large HTML bodies take longer to sanitize.
 
-**For volume, move the account to Workers Paid ($5 a month).** It includes 500,000 Workflows steps a month (about 80,000 emails) and 1 million Queues operations; past that, steps cost $0.80 per 100,000, roughly $0.05 per 1,000 emails, with no daily cap. That is our estimate from Cloudflare's published prices, not a measured bill. Nothing changes in MakiSend: same Worker, same configuration.
+**For volume, move the account to Workers Paid ($5 a month).** It includes 500,000 Workflows steps a month (about 165,000 emails) and 1 million Queues operations (about 330,000 emails); past that, steps cost $0.80 per 100,000, roughly $0.03 per 1,000 emails, with no daily cap. That is our estimate from Cloudflare's published prices, not a measured bill. Nothing changes in MakiSend: same Worker, same configuration.
 
 ## Known limitations and constraints
 
