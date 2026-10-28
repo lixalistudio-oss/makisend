@@ -584,7 +584,8 @@ wires the dependencies; the steps live in
 `backend/src/workflows/send-email.flow.ts` (`runSendEmailFlow`). A delivered
 email runs **three steps**. On the Workers Free plan the daily Workflows step
 quota (3,000) is the tightest limit, so fewer steps means more email per day
-(about 1,000 instead of 500 with the previous six steps).
+(half the steps of the previous six-step run, so about twice the daily
+volume; not measured on a real account yet).
 
 | # | Step | Work | History written |
 |---|---|---|---|
