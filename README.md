@@ -1,13 +1,17 @@
 # MakiSend
 
-**Transactional email, one API call away. No mail server to run.**
+**The free, Cloudflare-native alternative to Resend. Transactional email from one API call, with no server to run.**
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://makisend.lixalistudio.tech/deploy/)
 
-MakiSend is a self-hosted, serverless email API on **Cloudflare Workers**. Your app sends one authenticated `POST /send-email`; MakiSend encrypts and queues the message, then delivers it through **your own SMTP provider** with automatic retries, and shows every delivery in a dashboard.
+If you use Resend, you already know how this works: an API key, one `POST`, a `202`, then logs, templates and retries in a dashboard. MakiSend gives you the same thing, open source, on **your own Cloudflare account**. It deploys in one click, even on a **Workers Free** account, and needs no server, container or database to manage.
+
+Your app sends one authenticated `POST /send-email`. MakiSend encrypts and queues the message, delivers it through **your own SMTP provider** with automatic retries, and shows every delivery in a dashboard.
 
 ## Why MakiSend
 
+- **Free and open source.** No per-email fee and no subscription to MakiSend. You pay Cloudflare only if you go past the free plan, and your SMTP provider for the mail it sends (see [Running on the Workers Free plan](#running-on-the-workers-free-plan)).
+- **Cloudflare-native.** Built on Workers, D1, Queues and Workflows, all of them on the Workers Free plan. Your data stays in your account.
 - **No server to run.** One Worker serves the API and the dashboard; Queues and Workflows handle delivery.
 - **Bring your own SMTP.** Zoho, Gmail, Microsoft 365, Resend, SendGrid, Mailgun or Cloudflare Email Service. You keep your sender domain and reputation.
 - **Reliable delivery.** `202` right away, then a durable Workflow with bounded retries and a dead-letter queue.
@@ -15,11 +19,38 @@ MakiSend is a self-hosted, serverless email API on **Cloudflare Workers**. Your 
 - **Fast enough to feel instant.** 300–400 ms from queue to SMTP provider in the best cases, about 2 s in the worst (see [Delivery speed](#delivery-speed)).
 - **Private by default.** Recipients, bodies, attachments and SMTP credentials are encrypted with AES-256-GCM before they reach D1.
 - **Built for teams of one.** Per-user API keys, optional send quota, idempotency keys, 2FA, and a dashboard with logs, metrics and templates.
-- **Resend-shaped API.** Same `attachments` format, so a client written for Resend sends the same JSON.
+- **Feels like Resend.** Bearer API key, `Idempotency-Key`, and the same `attachments` format, so moving a client over is a matter of a few fields (see [Coming from Resend](#coming-from-resend)).
 
 > **Status: early.** The sending pipeline, dashboard and security basics work end to end. Webhooks, bounce tracking and multi-provider failover are not built yet (see [Known limitations](#known-limitations-and-constraints) and [Roadmap](#roadmap)).
 
 **Further reading:** [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) (the full system), [`docs/DEVELOPER_GUIDE.md`](./docs/DEVELOPER_GUIDE.md) (run, change, test, debug), [`AGENTS.md`](./AGENTS.md) (conventions), [`DESIGN.md`](./DESIGN.md) (visual system of the dashboard and the website), [`CONTRIBUTING.md`](./CONTRIBUTING.md).
+
+## Coming from Resend
+
+Resend is a hosted email provider: its servers send your mail. MakiSend is the API, queue, retries, logs and dashboard part, running in your Cloudflare account, and it hands each email to an SMTP provider you pick. That can be the mailbox you already pay for (Google Workspace, Zoho, Microsoft 365), Cloudflare Email Service, or Resend's own SMTP if you want to keep its delivery and drop its dashboard.
+
+| | Resend | MakiSend |
+|---|---|---|
+| Where it runs | Resend's servers | Your Cloudflare account (Workers, D1, Queues, Workflows) |
+| Price of the API | Free up to 3,000 emails a month (100 a day), then from $20 a month | Free and open source; Cloudflare's free plan covers about 500 emails a day |
+| Who sends the mail | Resend | Your SMTP provider, or Cloudflare Email Service |
+| Your data | Stored by Resend | Encrypted (AES-256-GCM) in your own D1 database |
+| Servers to manage | None | None |
+
+Resend figures are from [resend.com/pricing](https://resend.com/pricing), read in October 2026.
+
+Moving a call over:
+
+| Resend `POST /emails` | MakiSend `POST /send-email` |
+|---|---|
+| `Authorization: Bearer re_…` | `Authorization: Bearer mk_…` (or `x-api-key`) |
+| `Idempotency-Key` header | Same header, 24-hour replay window |
+| `from` | Not in the body: the sender address belongs to the SMTP configuration the API key is linked to |
+| `to` (string or array) | One address per request |
+| `subject`, `html`, `text` | Same names; `text` and `html` are both required |
+| `attachments` (`filename`, `content`, `content_type`) | Same shape; `path` (a URL to fetch) is refused |
+| `cc`, `bcc`, `reply_to`, `headers`, `tags`, `scheduled_at` | Not supported yet |
+| `200` with an `id` | `202` with an `emailId`; the outcome shows in the dashboard logs |
 
 ---
 
@@ -253,6 +284,27 @@ The dashboard shows a banner when a newer release is published, and **Settings �
 | Worst case | about 2 s |
 
 Most of that time is the SMTP protocol, not MakiSend. SMTP waits for a reply to each command before sending the next ([RFC 5321](https://www.rfc-editor.org/rfc/rfc5321)), and on high-latency links this turnaround time dominates ([RFC 2920](https://www.rfc-editor.org/rfc/rfc2920)). One send is a chain of round trips (TCP connect, TLS handshake, `EHLO`, `AUTH`, `MAIL FROM`, `RCPT TO`, `DATA`, the message, `QUIT`), and a Worker opens a fresh connection for every email. Commonly cited figures put an SMTP send at 200 ms to 1 s, against roughly 100–500 ms for an HTTP email API ([comparison](https://resources.mailertogo.com/comparisons/smtp-relay-vs-email-api-developers-complete-comparison)). Delivery to the inbox then depends on the receiving server.
+
+## Running on the Workers Free plan
+
+Everything MakiSend uses (Workers, static assets, D1, Queues, Workflows, cron triggers) is part of Cloudflare's **Workers Free** plan, so the Deploy button works on a free account and nothing is billed. What the free plan sets is a daily volume. The tightest quota is Workflows steps: a delivered email runs 6 steps (received, processing, cleaning, send, record, save), and every retry adds one.
+
+| Free plan quota (per day) | What it means for MakiSend |
+|---|---|
+| Workflows: 3,000 steps | About **500 delivered emails a day**, the binding limit |
+| Queues: 10,000 operations | About 3,300 emails (write, read, delete per email) |
+| Workers: 100,000 requests, shared with Workflow runs | API calls, dashboard and deliveries together |
+| D1: 100,000 rows written, 5 GB stored | Logs, history and encrypted bodies |
+| Cron triggers: 5 per account | MakiSend uses 2 (health check, key rotation) |
+
+Limits from Cloudflare's [Workflows](https://developers.cloudflare.com/workflows/reference/pricing/), [Queues](https://developers.cloudflare.com/queues/platform/pricing/), [D1](https://developers.cloudflare.com/d1/platform/pricing/) and [Workers](https://developers.cloudflare.com/workers/platform/limits/) pages.
+
+Two things the free plan does not give you:
+
+- **Cloudflare Email Service** only sends to arbitrary recipients on Workers Paid. On a free account, use another SMTP provider (whose own sending limits also apply: Gmail and Google Workspace cap a mailbox per day).
+- **CPU time** is capped at 10 ms per invocation and per Workflow step. MakiSend's steps mostly wait on the network, which does not count, but very large HTML bodies take longer to sanitize.
+
+**For volume, move the account to Workers Paid ($5 a month).** It includes 500,000 Workflows steps a month (about 80,000 emails) and 1 million Queues operations; past that, steps cost $0.80 per 100,000, roughly $0.05 per 1,000 emails, with no daily cap. That is our estimate from Cloudflare's published prices, not a measured bill. Nothing changes in MakiSend: same Worker, same configuration.
 
 ## Known limitations and constraints
 
