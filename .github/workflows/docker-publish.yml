@@ -1,10 +1,17 @@
 name: Docker image
 
 # Builds the self-hosting image (docker/Dockerfile) and pushes it to
-# ghcr.io/lixalistudio-oss/makisend. Called by release.yml right after it publishes a release
-# (a release created with GITHUB_TOKEN does not trigger `release` events itself), and runnable
-# by hand for an existing tag.
+# ghcr.io/lixalistudio-oss/makisend, in three ways:
+#   - after every green CI run on main (workflow_run): tags `edge` and `sha-<commit>`;
+#   - called by release.yml right after it publishes a release (a release created with
+#     GITHUB_TOKEN does not trigger `release` events itself): tags X.Y.Z, X.Y and latest;
+#   - by hand for an existing tag (workflow_dispatch).
+# `latest` only ever moves on a stable release, never on a main build.
 on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
   workflow_call:
     inputs:
       tag:
@@ -22,7 +29,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: docker-publish-${{ inputs.tag }}
+  group: docker-publish-${{ inputs.tag || 'main' }}
   cancel-in-progress: false
 
 env:
@@ -30,9 +37,10 @@ env:
 
 jobs:
   # Nothing is pushed unless the image sends a real mail (Mailpit), runs its cron and keeps its data.
+  # A main build skips it: the green CI run that triggered it already ran this test (docker-e2e).
   test:
     name: Test the image end to end
-    if: github.repository == 'lixalistudio-oss/makisend'
+    if: github.repository == 'lixalistudio-oss/makisend' && github.event_name != 'workflow_run'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -58,18 +66,23 @@ jobs:
   publish:
     name: Build and push the image
     needs: test
-    # Copies of this repository must not publish to our registry.
-    if: github.repository == 'lixalistudio-oss/makisend'
+    # Copies of this repository must not publish to our registry. A skipped `test` job (main
+    # builds) must not block the push, hence always(); a failed one still does.
+    if: >-
+      always() && !cancelled() && needs.test.result != 'failure'
+      && github.repository == 'lixalistudio-oss/makisend'
+      && (github.event_name != 'workflow_run'
+          || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'))
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
       contents: read
       packages: write
     steps:
-      - name: Check out the release tag
+      - name: Check out the release tag, or the commit CI validated
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag }}
+          ref: ${{ inputs.tag || github.event.workflow_run.head_sha }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -84,18 +97,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 0.3.0 -> 0.3.0, 0.3, 0, latest. A prerelease (0.4.0-rc.1) only gets its own tag,
-      # so `latest` always points at the newest stable release.
+      # Release 0.3.0 -> 0.3.0, 0.3, latest (and 0 from 1.0.0). A prerelease (0.4.0-rc.1) only gets its own tag,
+      # so `latest` always points at the newest stable release. A main build -> edge, sha-<commit>.
       - name: Compute tags and labels
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.IMAGE }}
           tags: |
-            type=semver,pattern={{version}},value=${{ inputs.tag }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ inputs.tag }}
-            type=semver,pattern={{major}},value=${{ inputs.tag }},enable=${{ !contains(inputs.tag, '-') }}
-            type=raw,value=latest,enable=${{ !contains(inputs.tag, '-') }}
+            type=semver,pattern={{version}},value=${{ inputs.tag || 'v0.0.0' }},enable=${{ inputs.tag != '' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ inputs.tag || 'v0.0.0' }},enable=${{ inputs.tag != '' }}
+            type=semver,pattern={{major}},value=${{ inputs.tag || 'v0.0.0' }},enable=${{ inputs.tag != '' && !contains(inputs.tag, '-') }}
+            type=raw,value=latest,enable=${{ inputs.tag != '' && !contains(inputs.tag, '-') }}
+            type=raw,value=edge,enable=${{ inputs.tag == '' }}
+            type=raw,value=sha-${{ github.event.workflow_run.head_sha }},enable=${{ inputs.tag == '' }}
           labels: |
             org.opencontainers.image.title=MakiSend
             org.opencontainers.image.description=Self-hosted transactional email API (Hono, Cloudflare Workers runtime, D1, SMTP)

@@ -173,7 +173,7 @@ Hot reload works on both services, local D1/Queues/Workflows state persists in `
 
 ### Self-host on a VPS
 
-Every release publishes a multi-arch (`amd64`, `arm64`) image to `ghcr.io/lixalistudio-oss/makisend`, tagged `X.Y.Z`, `X.Y` and `latest` (a prerelease only gets its own tag). One container serves the API and the dashboard; D1 is emulated by Miniflare as a SQLite file in `/data`, the queue and workflow are emulated too, migrations run at start-up, and a small scheduler fires the daily SMTP check and the hourly key rotation.
+Every release publishes a multi-arch (`amd64`, `arm64`) image to `ghcr.io/lixalistudio-oss/makisend`, tagged `X.Y.Z`, `X.Y` and `latest` (a prerelease only gets its own tag). Every green CI run on `main` also publishes `edge` (and `sha-<commit>`), the newest unreleased build; `latest` only moves on a stable release. One container serves the API and the dashboard; D1 is emulated by Miniflare as a SQLite file in `/data`, the queue and workflow are emulated too, migrations run at start-up, and a small scheduler fires the daily SMTP check and the hourly key rotation.
 
 ```bash
 docker run -d --name makisend -p 8787:8787 -v makisend-data:/data \
