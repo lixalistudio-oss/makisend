@@ -52,14 +52,14 @@ Keep a copy of `ENCRYPTION_KEY` outside the server: recipients, bodies and SMTP 
 
 ## Update
 
-Releases publish a new image (`latest`, `X.Y.Z`, `X.Y`). To update:
+Releases publish a new image (`latest`, `X.Y.Z`, `X.Y`). Each green CI run on `main` also publishes `edge` and `sha-<commit>`: the newest build, not yet released, for testing only. To update:
 
 ```bash
 docker compose -f compose.vps.yml pull
 docker compose -f compose.vps.yml up -d
 ```
 
-Database migrations are applied when the container starts, and are a no-op when already applied. To stay on a version, set `MAKISEND_VERSION=0.3.0` in `.env`. The dashboard's new-release banner works as usual; ignore its *Update* button, which targets Cloudflare copies.
+Database migrations are applied when the container starts, and are a no-op when already applied. To stay on a version, set `MAKISEND_VERSION=0.3.0` in `.env` (`edge` for the newest main build, at your own risk). The dashboard's new-release banner works as usual; ignore its *Update* button, which targets Cloudflare copies.
 
 ## Back up and restore
 
