@@ -171,6 +171,21 @@ pnpm docker:test      # also: docker:lint, docker:migrate, docker:down
 
 Hot reload works on both services, local D1/Queues/Workflows state persists in `backend/.wrangler`, and no secret is copied into the image. Do not run `pnpm dev` on the host at the same time (port 8787). A devcontainer (`.devcontainer/`) reuses the same compose file.
 
+### Self-host on a VPS
+
+Every release publishes a multi-arch (`amd64`, `arm64`) image to `ghcr.io/lixalistudio-oss/makisend`, tagged `X.Y.Z`, `X.Y` and `latest` (a prerelease only gets its own tag). One container serves the API and the dashboard; D1 is emulated by Miniflare as a SQLite file in `/data`, the queue and workflow are emulated too, migrations run at start-up, and a small scheduler fires the daily SMTP check and the hourly key rotation.
+
+```bash
+docker run -d --name makisend -p 8787:8787 -v makisend-data:/data \
+  -e ENCRYPTION_KEY=$(openssl rand -hex 32) \
+  -e BETTER_AUTH_SECRET=$(openssl rand -base64 32) \
+  ghcr.io/lixalistudio-oss/makisend:latest
+```
+
+For a real server (domain, HTTPS with Caddy, updates, backups), follow [`docs/SELF_HOST_VPS.md`](docs/SELF_HOST_VPS.md) and use [`docker/compose.vps.yml`](docker/compose.vps.yml). Keep both secrets (a lost `ENCRYPTION_KEY` makes stored data unreadable) and the `/data` volume.
+
+This is a **single-instance** set-up: not the scalable Cloudflare deployment, and the Cloudflare Email Service configuration is unavailable (use any SMTP provider on 465/587). `pnpm test:e2e:docker` (in `backend/`) (also run in CI and before each image push) starts the image next to Mailpit and checks a real send, cron and persistence across a restart. The image comes from `docker/Dockerfile`; the root `Dockerfile` stays the development image.
+
 ---
 
 ## SMTP providers
