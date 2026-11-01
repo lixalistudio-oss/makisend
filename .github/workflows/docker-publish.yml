@@ -5,7 +5,8 @@ name: Docker image
 #   - after every green CI run on main (workflow_run): tags `edge` and `sha-<commit>`;
 #   - called by release.yml right after it publishes a release (a release created with
 #     GITHUB_TOKEN does not trigger `release` events itself): tags X.Y.Z, X.Y and latest;
-#   - by hand for an existing tag (workflow_dispatch).
+#   - by hand (workflow_dispatch): an existing release tag, or no tag to publish `edge` from the
+#     branch you run it on (the way to publish a first image without waiting for a merge).
 # `latest` only ever moves on a stable release, never on a main build.
 on:
   workflow_run:
@@ -21,8 +22,8 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag to build, e.g. v0.3.0
-        required: true
+        description: Release tag to build, e.g. v0.3.1. Leave empty to build the selected branch as edge.
+        required: false
         type: string
 
 permissions:
@@ -47,7 +48,7 @@ jobs:
       - name: Check out the release tag
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag }}
+          ref: ${{ inputs.tag || github.sha }}
 
       - uses: pnpm/action-setup@v4
         with:
@@ -82,7 +83,7 @@ jobs:
       - name: Check out the release tag, or the commit CI validated
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.event.workflow_run.head_sha }}
+          ref: ${{ inputs.tag || github.event.workflow_run.head_sha || github.sha }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -110,7 +111,7 @@ jobs:
             type=semver,pattern={{major}},value=${{ inputs.tag || 'v0.0.0' }},enable=${{ inputs.tag != '' && !contains(inputs.tag, '-') }}
             type=raw,value=latest,enable=${{ inputs.tag != '' && !contains(inputs.tag, '-') }}
             type=raw,value=edge,enable=${{ inputs.tag == '' }}
-            type=raw,value=sha-${{ github.event.workflow_run.head_sha }},enable=${{ inputs.tag == '' }}
+            type=raw,value=sha-${{ github.event.workflow_run.head_sha || github.sha }},enable=${{ inputs.tag == '' }}
           labels: |
             org.opencontainers.image.title=MakiSend
             org.opencontainers.image.description=Self-hosted transactional email API (Hono, Cloudflare Workers runtime, D1, SMTP)
