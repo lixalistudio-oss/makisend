@@ -171,6 +171,19 @@ pnpm docker:test      # also: docker:lint, docker:migrate, docker:down
 
 Hot reload works on both services, local D1/Queues/Workflows state persists in `backend/.wrangler`, and no secret is copied into the image. Do not run `pnpm dev` on the host at the same time (port 8787). A devcontainer (`.devcontainer/`) reuses the same compose file.
 
+### Run the published image
+
+Every release publishes a multi-arch (`amd64`, `arm64`) image to `ghcr.io/lixalistudio-oss/makisend`, tagged `X.Y.Z`, `X.Y` and `latest` (a prerelease only gets its own tag). It runs the same Worker in workerd with D1, Queues and Workflows emulated by Miniflare; migrations are applied at start-up.
+
+```bash
+docker run -d --name makisend -p 8787:8787 -v makisend-data:/data \
+  -e ENCRYPTION_KEY=$(openssl rand -hex 32) \
+  -e BETTER_AUTH_SECRET=$(openssl rand -base64 32) \
+  ghcr.io/lixalistudio-oss/makisend:latest
+```
+
+Keep both secrets (a lost `ENCRYPTION_KEY` makes stored data unreadable) and the `/data` volume, which holds the database. Upgrade with `docker pull`, then recreate the container. The image comes from `docker/Dockerfile`, built by `.github/workflows/docker-publish.yml`; the root `Dockerfile` stays the development image.
+
 ---
 
 ## SMTP providers
