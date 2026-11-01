@@ -20,6 +20,7 @@ There is no choice of database: the code is written for D1 (SQLite). Do not expe
 ## Requirements
 
 - A VPS with Docker and the Compose plugin (1 vCPU and 1 GB of RAM is enough to start; the first start needs a few seconds).
+- About 650 MB of disk for the image (Node 22 slim and workerd, no sources or dev tooling), plus your data.
 - A domain name with an `A` record pointing to the VPS, ports 80 and 443 open.
 - **Outbound SMTP on 465 or 587.** MakiSend sends through *your* SMTP provider (Zoho, Brevo, Postmark, SES...). Port 25 is refused by design, and some VPS providers block outbound SMTP: check yours.
 - Deliverability still depends on your SMTP provider and your domain (SPF, DKIM, DMARC), not on the VPS.
