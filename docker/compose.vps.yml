@@ -1,0 +1,29 @@
+# MakiSend on a VPS: the published image behind Caddy, which gets and renews the HTTPS certificate.
+# Guide: docs/SELF_HOST_VPS.md. Put a .env next to this file (see docker/vps.env.example).
+name: makisend
+
+services:
+  makisend:
+    image: ghcr.io/lixalistudio-oss/makisend:${MAKISEND_VERSION:-latest}
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      # The database (D1 emulated as SQLite), the queues and the workflow state.
+      - makisend-data:/data
+    # No published port: only Caddy reaches the app, on the compose network.
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    command: caddy reverse-proxy --from ${DOMAIN:?Set DOMAIN in .env} --to makisend:8787
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy-data:/data
+    depends_on:
+      - makisend
+
+volumes:
+  makisend-data:
+  caddy-data:

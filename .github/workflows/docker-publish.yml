@@ -29,8 +29,35 @@ env:
   IMAGE: ghcr.io/lixalistudio-oss/makisend
 
 jobs:
+  # Nothing is pushed unless the image sends a real mail (Mailpit), runs its cron and keeps its data.
+  test:
+    name: Test the image end to end
+    if: github.repository == 'lixalistudio-oss/makisend'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm test:e2e:docker
+        working-directory: backend
+
   publish:
     name: Build and push the image
+    needs: test
     # Copies of this repository must not publish to our registry.
     if: github.repository == 'lixalistudio-oss/makisend'
     runs-on: ubuntu-latest
