@@ -184,7 +184,7 @@ docker run -d --name makisend -p 8787:8787 -v makisend-data:/data \
 
 For a real server (domain, HTTPS with Caddy, updates, backups), follow [`docs/SELF_HOST_VPS.md`](docs/SELF_HOST_VPS.md) and use [`docker/compose.vps.yml`](docker/compose.vps.yml). Keep both secrets (a lost `ENCRYPTION_KEY` makes stored data unreadable) and the `/data` volume.
 
-This is a **single-instance** set-up: not the scalable Cloudflare deployment, and the Cloudflare Email Service configuration is unavailable (use any SMTP provider on 465/587). `pnpm --filter backend test:e2e:docker` (also run in CI and before each image push) starts the image next to Mailpit and checks a real send, cron and persistence across a restart. The image comes from `docker/Dockerfile`; the root `Dockerfile` stays the development image.
+This is a **single-instance** set-up: not the scalable Cloudflare deployment, and the Cloudflare Email Service configuration is unavailable (use any SMTP provider on 465/587). `pnpm test:e2e:docker` (in `backend/`) (also run in CI and before each image push) starts the image next to Mailpit and checks a real send, cron and persistence across a restart. The image comes from `docker/Dockerfile`; the root `Dockerfile` stays the development image.
 
 ---
 

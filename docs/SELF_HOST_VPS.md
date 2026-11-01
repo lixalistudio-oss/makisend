@@ -88,7 +88,7 @@ Put your own reverse proxy (nginx, Traefik...) in front for HTTPS. Do not expose
 
 ## Known limits
 
-- One container: no failover, and a restart briefly interrupts requests. Emails already queued resume from the volume.
+- One container: no failover, and a restart briefly interrupts requests.
 - It is a development server under the hood (`wrangler dev`); Cloudflare documents it for local use. It is tested in CI (`pnpm test:e2e:docker`: a real mail through Mailpit, cron, restart with data kept) but not load-tested.
 - The image is public on `ghcr.io/lixalistudio-oss/makisend`, multi-arch (`amd64`, `arm64`).
 
