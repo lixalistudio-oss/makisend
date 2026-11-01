@@ -2,12 +2,14 @@
 # The Docker image, end to end, with a real SMTP server (Mailpit, STARTTLS, throw-away CA).
 # Never deploys or pushes anything; every secret and certificate is generated here and dropped.
 # Usage: test/e2e/run-docker.sh            builds docker/Dockerfile and tests it
-#        IMAGE=ghcr.io/...:tag test/e2e/run-docker.sh   tests an image that already exists
+#        E2E_IMAGE=ghcr.io/...:tag test/e2e/run-docker.sh   tests an image that already exists
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 RUN="makisend-e2e-$$"
-IMAGE="${IMAGE:-}"
+# E2E_IMAGE, not IMAGE: CI jobs commonly export IMAGE for the registry name, which must not be
+# mistaken for "test this existing image".
+IMAGE="${E2E_IMAGE:-}"
 PORT="${PORT:-18787}"
 MAILPIT_PORT="${MAILPIT_PORT:-18025}"
 WORK="$(mktemp -d)"

@@ -34,7 +34,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  IMAGE: ghcr.io/lixalistudio-oss/makisend
+  REGISTRY_IMAGE: ghcr.io/lixalistudio-oss/makisend
 
 jobs:
   # Nothing is pushed unless the image sends a real mail (Mailpit), runs its cron and keeps its data.
@@ -104,7 +104,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.IMAGE }}
+          images: ${{ env.REGISTRY_IMAGE }}
           tags: |
             type=semver,pattern={{version}},value=${{ inputs.tag || 'v0.0.0' }},enable=${{ inputs.tag != '' }}
             type=semver,pattern={{major}}.{{minor}},value=${{ inputs.tag || 'v0.0.0' }},enable=${{ inputs.tag != '' }}
