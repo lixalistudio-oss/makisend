@@ -158,6 +158,8 @@ Set in `backend/.env` locally, as Worker secrets once deployed:
 | `UPDATE_CHECK` | Optional. `off` stops the daily new-release check (see [Updates](#updates)) |
 | `MAKISEND_REPOSITORY` | Optional. Your copy of the repository (`owner/name`): the dashboard's **Update** button opens its sync workflow. The Deploy button pre-fills `lixalistudio-oss/makisend`, which counts as unset |
 | `UPDATE_SOURCE_REPOSITORY` | Optional. Read releases from another repository. Default `lixalistudio-oss/makisend` |
+| `UPDATE_SOURCE` | Optional. `registry` announces a version once its image is published (the newest `X.Y.Z` tag of `UPDATE_SOURCE_IMAGE`) instead of on its GitHub release. The Docker image sets it |
+| `UPDATE_SOURCE_IMAGE` | Optional, with `UPDATE_SOURCE=registry`. Image whose tags are read. Default `ghcr.io/lixalistudio-oss/makisend` |
 
 SMTP credentials and API keys are not environment variables: they are managed in the dashboard and stored encrypted in D1.
 

@@ -52,12 +52,15 @@ RUN mkdir -p /data && chown -R node:node /data /app
 USER node
 
 # HOME is writable for wrangler's logs and cache; -e SECRET=... reaches the Worker as a binding.
+# UPDATE_SOURCE=registry: the dashboard announces a release once its image is pullable from ghcr.io
+# (UPDATE_SOURCE_IMAGE to read another image, UPDATE_CHECK=off to never check).
 ENV PATH=/opt/runtime/node_modules/.bin:$PATH \
     HOME=/tmp \
     CI=1 \
     WRANGLER_SEND_METRICS=false \
     CLOUDFLARE_INCLUDE_PROCESS_ENV=true \
-    UPDATE_CHECK=on
+    UPDATE_CHECK=on \
+    UPDATE_SOURCE=registry
 
 # D1 database, queues and workflow state live here: mount a volume.
 VOLUME /data
