@@ -28,6 +28,14 @@ if [ -z "$IMAGE" ]; then
   docker build -f ../docker/Dockerfile -t "$IMAGE" ..
 fi
 
+# The app container below trusts only the throw-away CA (SSL_CERT_FILE), which would hide a missing
+# system CA bundle: without it, real SMTP providers and the update check fail on TLS.
+if ! docker run --rm --entrypoint sh "$IMAGE" -c 'test -s /etc/ssl/certs/ca-certificates.crt'; then
+  echo "FAIL  the image has no CA bundle (/etc/ssl/certs/ca-certificates.crt): outbound TLS cannot work" >&2
+  exit 1
+fi
+echo "PASS  the image ships the system CA bundle"
+
 # A CA and a certificate for smtp.example.test: the app verifies TLS, so the SMTP server has to
 # present a certificate the image trusts (SSL_CERT_FILE below, for this container only).
 openssl req -x509 -newkey rsa:2048 -nodes -keyout "$WORK/ca.key" -out "$WORK/ca.crt" -days 2 -subj "/CN=MakiSend e2e CA" 2>/dev/null
