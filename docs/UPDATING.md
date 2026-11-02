@@ -7,12 +7,15 @@ Your instance runs from **your own copy** of this repository: the one the *Deplo
 - Every release is a GitHub release on [`lixalistudio-oss/makisend`](https://github.com/lixalistudio-oss/makisend/releases), tagged `vX.Y.Z`. To be notified on GitHub as well: **Watch → Custom → Releases** on that repository.
 - The dashboard checks once a day (and when you open it, if the last check is older than a day) and shows a banner: *MakiSend X.Y.Z is available*. **Settings → MakiSend version** shows the installed and latest versions, and **Check now** checks again (at most once every five minutes).
 - The check calls `GET https://api.github.com/repos/lixalistudio-oss/makisend/releases/latest`, unauthenticated, from your Worker. Nothing about your instance is sent. Set `UPDATE_CHECK=off` on the Worker to never contact GitHub.
+- On the self-hosting Docker image (`UPDATE_SOURCE=registry`, set by the image), the check reads the image's tags from its registry instead (`GET https://ghcr.io/v2/lixalistudio-oss/makisend/tags/list`, with an anonymous pull token) and announces the highest `X.Y.Z` tag: a version shows up once its image can be pulled, not when the GitHub release is created. The release notes still come from the matching GitHub release, best effort: if GitHub is unreachable, the banner shows without them. See [Self-hosting on a VPS](SELF_HOST_VPS.md#update) for the update itself.
 
 | Worker variable | Effect |
 |---|---|
 | `UPDATE_CHECK` | `off` turns the check off. Anything else, or unset: on |
 | `MAKISEND_REPOSITORY` | Your copy, as `owner/name`. The banner's **Update** button then opens its *Sync with upstream* workflow. The Deploy button pre-fills the official repository, which counts as unset (the banner links to the release and this guide) |
 | `UPDATE_SOURCE_REPOSITORY` | Read releases from another repository (`owner/name`), e.g. your company's fork. Default: `lixalistudio-oss/makisend` |
+| `UPDATE_SOURCE` | `registry`: a new version is the newest `X.Y.Z` tag of `UPDATE_SOURCE_IMAGE` (the Docker image sets it). Anything else, or unset: the latest GitHub release |
+| `UPDATE_SOURCE_IMAGE` | Image read by the registry check, as `docker pull` takes it (`ghcr.io/owner/name`, `owner/name` for Docker Hub). Public images only. Default: `ghcr.io/lixalistudio-oss/makisend` |
 
 ## Update in one click: the *Sync with upstream* workflow
 

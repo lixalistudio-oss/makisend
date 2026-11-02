@@ -25,6 +25,14 @@ export default {
   "updates.dialog.openWorkflow": "Open the sync workflow",
   "updates.dialog.openRelease": "Open the release",
 
+  // dialog, Docker image
+  "updates.docker.description":
+    "Your instance runs the MakiSend Docker image ({image}), and this version is already published there. Updating pulls the new image; the database migrations run when the container starts.",
+  "updates.docker.step1": "On your server, in the folder of compose.vps.yml, run:",
+  "updates.docker.step2Before": "If ",
+  "updates.docker.step2After": " pins a version in your .env, set it to {version} first.",
+  "updates.docker.step3": "Reload this page once the container is back up.",
+
   // version card (settings)
   "updates.version.checkFailedToast": "Could not check for updates",
   "updates.version.latestToast": "You run the latest release",

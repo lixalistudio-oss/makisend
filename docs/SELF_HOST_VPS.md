@@ -60,7 +60,7 @@ docker compose -f compose.vps.yml pull
 docker compose -f compose.vps.yml up -d
 ```
 
-Database migrations are applied when the container starts, and are a no-op when already applied. To stay on a version, set `MAKISEND_VERSION=0.3.0` in `.env` (`edge` for the newest main build, at your own risk). The dashboard's new-release banner works as usual; ignore its *Update* button, which targets Cloudflare copies.
+Database migrations are applied when the container starts, and are a no-op when already applied. To stay on a version, set `MAKISEND_VERSION=0.3.0` in `.env` (`edge` for the newest main build, at your own risk). The dashboard's new-release banner reads the image registry (`UPDATE_SOURCE=registry` is set in the image): it shows a version once its image is published to ghcr.io, and its *Update* button gives the two commands above. To follow your own image (a company build), set `UPDATE_SOURCE_IMAGE=ghcr.io/acme/makisend` (and `UPDATE_SOURCE_REPOSITORY` for the release notes); `UPDATE_CHECK=off` turns the check off.
 
 ## Back up and restore
 

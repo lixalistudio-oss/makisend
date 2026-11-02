@@ -75,10 +75,15 @@ export type Bindings = {
   // Optional per-API-key send quota on POST /send-email, e.g. "100/min" or "5000/day".
   // Unset (the default): no quota. Over the limit: 429 + Retry-After.
   SEND_RATE_LIMIT?: string;
-  // New-release check (src/updates): "off" stops every request to GitHub. Unset: on.
+  // New-release check (src/updates): "off" stops every outbound request. Unset: on.
   UPDATE_CHECK?: string;
+  // "registry": a new version is the newest version tag of UPDATE_SOURCE_IMAGE (set by the
+  // self-hosting Docker image). Anything else, or unset: the latest GitHub release.
+  UPDATE_SOURCE?: string;
   // Repository the releases are read from, `owner/name`. Default: lixalistudio-oss/makisend.
   UPDATE_SOURCE_REPOSITORY?: string;
+  // Image read by the registry check. Default: ghcr.io/lixalistudio-oss/makisend.
+  UPDATE_SOURCE_IMAGE?: string;
   // This instance's own copy of the repo (`owner/name`): links "Update" to its sync workflow.
   MAKISEND_REPOSITORY?: string;
   SEND_EMAIL_QUEUE: Queue<SendEmailQueueMessage>;

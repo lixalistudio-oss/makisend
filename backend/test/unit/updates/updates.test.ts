@@ -24,14 +24,21 @@ import { updateCheck } from "@/db/schema";
 import { app, type Bindings } from "@/index";
 import {
   CHECK_MAX_AGE_MS,
+  DEFAULT_UPSTREAM_IMAGE,
   DEFAULT_UPSTREAM_REPOSITORY,
   GitHubReleaseSource,
   MANUAL_CHECK_MIN_INTERVAL_MS,
   MAX_RELEASE_NOTES,
+  REGISTRY_MAX_PAGES,
+  REGISTRY_PAGE_SIZE,
+  RegistryReleaseSource,
   UpdateCheckRepository,
   UpdateService,
+  createReleaseSource,
+  parseImage,
   parseRepository,
   resolveUpdateSettings,
+  type IReleaseDetails,
   type IReleaseSource,
   type IUpdateCheckRepository,
   type ReleaseInfo,
@@ -77,9 +84,41 @@ describe("settings", () => {
   it("is on by default and reads the official repository", () => {
     expect(resolveUpdateSettings({})).toEqual({
       enabled: true,
+      source: "github",
       upstreamRepository: DEFAULT_UPSTREAM_REPOSITORY,
+      upstreamImage: DEFAULT_UPSTREAM_IMAGE,
       ownRepository: null,
     });
+  });
+
+  it("UPDATE_SOURCE=registry reads the image tags, any other value keeps GitHub", () => {
+    expect(resolveUpdateSettings({ UPDATE_SOURCE: " Registry " }).source).toBe("registry");
+    expect(resolveUpdateSettings({ UPDATE_SOURCE: "github" }).source).toBe("github");
+    expect(resolveUpdateSettings({ UPDATE_SOURCE: "docker" }).source).toBe("github");
+    expect(resolveUpdateSettings({ UPDATE_SOURCE_IMAGE: "acme/makisend:1.0.0" }).upstreamImage).toBe(
+      "docker.io/acme/makisend",
+    );
+    expect(resolveUpdateSettings({ UPDATE_SOURCE_IMAGE: "Not An Image" }).upstreamImage).toBe(DEFAULT_UPSTREAM_IMAGE);
+  });
+
+  it.each([
+    ["ghcr.io/lixalistudio-oss/makisend", "ghcr.io/lixalistudio-oss/makisend"],
+    ["ghcr.io/lixalistudio-oss/makisend:latest", "ghcr.io/lixalistudio-oss/makisend"],
+    ["GHCR.IO/acme/makisend@sha256:abc", "ghcr.io/acme/makisend"],
+    ["acme/makisend", "docker.io/acme/makisend"],
+    ["nginx", "docker.io/library/nginx"],
+    ["index.docker.io/acme/makisend", "docker.io/acme/makisend"],
+    ["localhost:5000/makisend:0.4.0", "localhost:5000/makisend"],
+    ["registry.example.com:8443/team/mail/makisend", "registry.example.com:8443/team/mail/makisend"],
+  ])("parseImage(%s) = %s", (value, expected) => {
+    expect(parseImage(value)).toBe(expected);
+  });
+
+  it("parseImage refuses what is not an image reference", () => {
+    expect(parseImage("")).toBeNull();
+    expect(parseImage("Acme/MakiSend")).toBeNull();
+    expect(parseImage("https://ghcr.io/acme/makisend")).toBeNull();
+    expect(parseImage("ghcr.io/acme//makisend")).toBeNull();
   });
 
   it("UPDATE_CHECK=off turns it off, any other value keeps it on", () => {
@@ -170,6 +209,165 @@ describe("GitHubReleaseSource", () => {
     const release = await sourceAnswering(200, { tag_name: "1.0.0", body: "x".repeat(MAX_RELEASE_NOTES + 50) }).source.latest();
     expect(release?.notes).toHaveLength(MAX_RELEASE_NOTES + 1);
   });
+
+  it("reads one release by its tag", async () => {
+    const { source, calls } = sourceAnswering(200, { tag_name: "v0.4.0", body: "notes" });
+    await expect(source.byTag("v0.4.0")).resolves.toMatchObject({ version: "0.4.0", notes: "notes" });
+    expect(calls[0].url).toBe("https://api.github.com/repos/acme/makisend/releases/tags/v0.4.0");
+  });
+});
+
+/**
+ * A scripted registry: answers 401 + a Bearer challenge without a token, as ghcr.io and Docker Hub
+ * do, hands out an anonymous token, and serves the tags in pages linked by `Link: rel="next"`.
+ */
+class FakeRegistry {
+  calls: { url: string; authorization: string | null }[] = [];
+  tokenStatus = 200;
+  tagsStatus = 200;
+
+  constructor(
+    private readonly pages: string[][],
+    private readonly host = "ghcr.io",
+    private readonly realm = "https://ghcr.io/token",
+  ) {}
+
+  readonly fetcher = async (url: string, init?: RequestInit): Promise<Response> => {
+    const authorization = new Headers(init?.headers).get("authorization");
+    this.calls.push({ url, authorization });
+    const parsed = new URL(url);
+
+    if (url.startsWith(this.realm)) {
+      return Response.json({ token: "anon-token" }, { status: this.tokenStatus });
+    }
+    if (parsed.host !== this.host || !parsed.pathname.endsWith("/tags/list")) {
+      return new Response("unexpected", { status: 500 });
+    }
+    if (authorization !== "Bearer anon-token") {
+      const scope = `repository:${parsed.pathname.slice(4, -"/tags/list".length)}:pull`;
+      return new Response(null, {
+        status: 401,
+        headers: { "WWW-Authenticate": `Bearer realm="${this.realm}",service="${this.host}",scope="${scope}"` },
+      });
+    }
+    if (this.tagsStatus !== 200) return new Response(null, { status: this.tagsStatus });
+
+    const page = Number(parsed.searchParams.get("page") ?? "0");
+    const headers = new Headers();
+    if (page + 1 < this.pages.length) {
+      headers.set("Link", `<${parsed.pathname}?n=${REGISTRY_PAGE_SIZE}&page=${page + 1}>; rel="next"`);
+    }
+    return Response.json({ name: parsed.pathname, tags: this.pages[page] }, { headers });
+  };
+}
+
+class ScriptedDetails implements IReleaseDetails {
+  tags: string[] = [];
+  constructor(private readonly answer: ReleaseInfo | null | Error) {}
+  async byTag(tag: string) {
+    this.tags.push(tag);
+    if (this.answer instanceof Error) throw this.answer;
+    return this.answer;
+  }
+}
+
+describe("RegistryReleaseSource", () => {
+  const image = DEFAULT_UPSTREAM_IMAGE;
+  const repository = DEFAULT_UPSTREAM_REPOSITORY;
+  const published: ReleaseInfo = {
+    version: "0.10.0",
+    name: "MakiSend v0.10.0",
+    url: `https://github.com/${repository}/releases/tag/v0.10.0`,
+    notes: "## Changes",
+    publishedAt: "2026-11-01T18:32:10Z",
+  };
+
+  it("answers the highest stable version tag, read anonymously across every page", async () => {
+    const registry = new FakeRegistry([
+      ["edge", "sha-67bb589", "0.9.0", "0.9", "0", "latest"],
+      ["0.10.0", "0.10", "0.11.0-rc.1", "v0.2.0"],
+    ]);
+    const source = new RegistryReleaseSource(image, repository, null, registry.fetcher);
+
+    await expect(source.latest()).resolves.toEqual({
+      version: "0.10.0",
+      name: null,
+      url: `https://github.com/${repository}/releases/tag/v0.10.0`,
+      notes: null,
+      publishedAt: null,
+    });
+    const token = registry.calls.find((call) => call.url.startsWith("https://ghcr.io/token"));
+    expect(token?.url).toBe(
+      "https://ghcr.io/token?service=ghcr.io&scope=repository%3Alixalistudio-oss%2Fmakisend%3Apull",
+    );
+    const pages = registry.calls.filter((call) => call.url.includes("/tags/list") && call.authorization);
+    expect(pages.map((call) => new URL(call.url).searchParams.get("page"))).toEqual([null, "1"]);
+  });
+
+  it("adds the matching GitHub release notes", async () => {
+    const details = new ScriptedDetails(published);
+    const registry = new FakeRegistry([["0.10.0", "latest"]]);
+    await expect(new RegistryReleaseSource(image, repository, details, registry.fetcher).latest()).resolves.toEqual(
+      published,
+    );
+    expect(details.tags).toEqual(["v0.10.0"]);
+  });
+
+  it("still announces a pullable image when GitHub fails or has no such release", async () => {
+    const registry = new FakeRegistry([["0.10.0"]]);
+    for (const details of [new ScriptedDetails(new Error("GitHub rate limit")), new ScriptedDetails(null)]) {
+      const release = await new RegistryReleaseSource(image, repository, details, registry.fetcher).latest();
+      expect(release).toMatchObject({ version: "0.10.0", notes: null });
+    }
+  });
+
+  it("U8 an image with no stable version tag announces nothing", async () => {
+    const registry = new FakeRegistry([["edge", "latest", "sha-1", "1.0.0-rc.1"]]);
+    await expect(new RegistryReleaseSource(image, repository, null, registry.fetcher).latest()).resolves.toBeNull();
+  });
+
+  it("reads Docker Hub images on registry-1.docker.io", async () => {
+    const registry = new FakeRegistry([["1.0.0"]], "registry-1.docker.io", "https://auth.docker.io/token");
+    const source = new RegistryReleaseSource("docker.io/acme/makisend", "acme/makisend", null, registry.fetcher);
+    await expect(source.latest()).resolves.toMatchObject({ version: "1.0.0" });
+    expect(registry.calls[0].url).toBe(`https://registry-1.docker.io/v2/acme/makisend/tags/list?n=${REGISTRY_PAGE_SIZE}`);
+  });
+
+  it("names why it could not read the tags", async () => {
+    const read = (registry: FakeRegistry) => new RegistryReleaseSource(image, repository, null, registry.fetcher).latest();
+
+    const missing = new FakeRegistry([[]]);
+    missing.tagsStatus = 404;
+    await expect(read(missing)).rejects.toThrow(/not found on ghcr\.io/);
+
+    const privateImage = new FakeRegistry([[]]);
+    privateImage.tokenStatus = 403;
+    await expect(read(privateImage)).rejects.toThrow(/anonymous pull token \(HTTP 403\)/);
+
+    const limited = new FakeRegistry([[]]);
+    limited.tagsStatus = 429;
+    await expect(read(limited)).rejects.toThrow(/rate limit/);
+  });
+
+  it(`stops after ${REGISTRY_MAX_PAGES} pages`, async () => {
+    const registry = new FakeRegistry(Array.from({ length: REGISTRY_MAX_PAGES + 5 }, (_, i) => [`0.0.${i}`]));
+    const release = await new RegistryReleaseSource(image, repository, null, registry.fetcher).latest();
+    expect(release?.version).toBe(`0.0.${REGISTRY_MAX_PAGES - 1}`);
+  });
+});
+
+describe("createReleaseSource", () => {
+  it("picks the registry only when UPDATE_SOURCE=registry", () => {
+    expect(createReleaseSource(resolveUpdateSettings({ UPDATE_SOURCE: "registry" }))).toBeInstanceOf(
+      RegistryReleaseSource,
+    );
+    expect(createReleaseSource(resolveUpdateSettings({}))).toBeInstanceOf(GitHubReleaseSource);
+  });
+
+  it("the self-hosting image turns the registry check on", () => {
+    const dockerfile = readFileSync(join(here, "../../../../docker/Dockerfile"), "utf8");
+    expect(dockerfile).toMatch(/UPDATE_SOURCE=registry/);
+  });
 });
 
 /** In-memory storage and a scripted release source: the service needs nothing else. */
@@ -202,7 +400,13 @@ const release = (version: string): ReleaseInfo => ({
 });
 
 describe("UpdateService", () => {
-  const settings: UpdateSettings = { enabled: true, upstreamRepository: DEFAULT_UPSTREAM_REPOSITORY, ownRepository: null };
+  const settings: UpdateSettings = {
+    enabled: true,
+    source: "github",
+    upstreamRepository: DEFAULT_UPSTREAM_REPOSITORY,
+    upstreamImage: DEFAULT_UPSTREAM_IMAGE,
+    ownRepository: null,
+  };
   let clock: number;
   let repository: MemoryRepository;
   let source: ScriptedSource;
@@ -294,6 +498,17 @@ describe("UpdateService", () => {
   it("links the Update button to the instance's sync workflow when its repository is known", async () => {
     const status = await service({ ownRepository: "acme/mail" }).getStatus();
     expect(status.syncWorkflowUrl).toBe("https://github.com/acme/mail/actions/workflows/sync-upstream.yml");
+  });
+
+  it("on the Docker image, names the image and offers no sync workflow (updating means pulling)", async () => {
+    const status = await service({ source: "registry", ownRepository: "acme/mail" }).getStatus();
+    expect(status).toMatchObject({
+      source: "registry",
+      upstreamImage: DEFAULT_UPSTREAM_IMAGE,
+      syncWorkflowUrl: null,
+      updateAvailable: true,
+    });
+    expect((await service().getStatus()).upstreamImage).toBeNull();
   });
 });
 

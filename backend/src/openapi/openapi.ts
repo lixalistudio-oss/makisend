@@ -715,7 +715,7 @@ export const openApiDocument = {
         summary: "New-release check",
         operationId: "getUpdateStatus",
         description:
-          "Compares this build with the latest release of the upstream repository (GitHub, checked at most daily and cached in D1). `UPDATE_CHECK=off` turns the check off.",
+          "Compares this build with the latest release: the latest GitHub release of the upstream repository, or, on the self-hosting Docker image (`UPDATE_SOURCE=registry`), the newest version tag of the image in its registry, with the GitHub release notes when available. Checked at most daily and cached in D1. `UPDATE_CHECK=off` turns the check off.",
         security: sessionSecurity,
         parameters: [
           {
@@ -1090,7 +1090,16 @@ export const openApiDocument = {
       },
       UpdateStatus: {
         type: "object",
-        required: ["enabled", "currentVersion", "latestVersion", "updateAvailable", "checkedAt", "upstreamRepository"],
+        required: [
+          "enabled",
+          "currentVersion",
+          "latestVersion",
+          "updateAvailable",
+          "checkedAt",
+          "source",
+          "upstreamRepository",
+          "upstreamImage",
+        ],
         properties: {
           enabled: { type: "boolean" },
           currentVersion: { type: "string", examples: ["0.1.0"] },
@@ -1102,11 +1111,22 @@ export const openApiDocument = {
           publishedAt: { type: ["string", "null"], format: "date-time" },
           checkedAt: { type: ["string", "null"], format: "date-time" },
           error: { type: ["string", "null"], description: "Why the last check failed." },
+          source: {
+            type: "string",
+            enum: ["github", "registry"],
+            description: "`registry` on the self-hosting image (`UPDATE_SOURCE=registry`): updating means pulling the image.",
+          },
           upstreamRepository: { type: "string", examples: ["lixalistudio-oss/makisend"] },
+          upstreamImage: {
+            type: ["string", "null"],
+            examples: ["ghcr.io/lixalistudio-oss/makisend"],
+            description: "The image whose tags are read, `null` when the source is GitHub.",
+          },
           syncWorkflowUrl: {
             type: ["string", "null"],
             format: "uri",
-            description: "The sync workflow of this instance's own repository, when `MAKISEND_REPOSITORY` is set.",
+            description:
+              "The sync workflow of this instance's own repository, when `MAKISEND_REPOSITORY` is set. Always `null` on the Docker image.",
           },
         },
       },
