@@ -40,6 +40,11 @@ RUN npm install --omit=dev --no-audit --no-fund --no-package-lock "wrangler@$(ca
 
 # 3) Final image.
 FROM node:22-bookworm-slim
+# The slim base has no CA bundle: workerd then trusts no public certificate, and every outbound TLS
+# connection fails (SMTP providers with a verified certificate, the update check).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=runtime-deps /opt/runtime/node_modules /opt/runtime/node_modules
 COPY --from=build /out/wrangler.json ./wrangler.json
