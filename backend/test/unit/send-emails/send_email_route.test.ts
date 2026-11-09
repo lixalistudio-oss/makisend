@@ -37,6 +37,7 @@ function buildApp() {
     createPendingEmailLog: vi.fn().mockResolvedValue(undefined),
     completeEmailLog: vi.fn().mockResolvedValue(undefined),
     saveEmailHistory: vi.fn().mockResolvedValue(undefined),
+    saveEmailHistories: vi.fn().mockResolvedValue(undefined),
     saveEmailContent: vi.fn().mockResolvedValue(undefined),
     getEmailForSending: vi.fn().mockResolvedValue(null),
     saveEmailAttachments: vi.fn().mockResolvedValue(undefined),

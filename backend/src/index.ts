@@ -43,7 +43,7 @@ import { createDatabase } from "@/db/connection";
 import { SendEmailRepository } from "@/send-email/send-email.repository";
 
 // --- Type imports ---
-import { resolveEncryptionKeys, type SmtpConfig, type UserConfig } from "./config/config";
+import { checkEncryptionKeys, resolveEncryptionKeys, type SmtpConfig, type UserConfig } from "./config/config";
 import type { EncryptionKeys } from "@/core/crypto";
 import { runKeyRotation, KEY_ROTATION_CRON } from "@/key-rotation";
 import { needsSetup } from "@/lib/owner-lock";
@@ -75,10 +75,15 @@ export type Bindings = {
   // Optional per-API-key send quota on POST /send-email, e.g. "100/min" or "5000/day".
   // Unset (the default): no quota. Over the limit: 429 + Retry-After.
   SEND_RATE_LIMIT?: string;
-  // New-release check (src/updates): "off" stops every request to GitHub. Unset: on.
+  // New-release check (src/updates): "off" stops every outbound request. Unset: on.
   UPDATE_CHECK?: string;
+  // "registry": a new version is the newest version tag of UPDATE_SOURCE_IMAGE (set by the
+  // self-hosting Docker image). Anything else, or unset: the latest GitHub release.
+  UPDATE_SOURCE?: string;
   // Repository the releases are read from, `owner/name`. Default: lixalistudio-oss/makisend.
   UPDATE_SOURCE_REPOSITORY?: string;
+  // Image read by the registry check. Default: ghcr.io/lixalistudio-oss/makisend.
+  UPDATE_SOURCE_IMAGE?: string;
   // This instance's own copy of the repo (`owner/name`): links "Update" to its sync workflow.
   MAKISEND_REPOSITORY?: string;
   SEND_EMAIL_QUEUE: Queue<SendEmailQueueMessage>;
@@ -226,6 +231,20 @@ app.use("*", async (c, next) => {
 });
 app.use("*", requestLoggerMiddleware());
 app.onError(errorHandler);
+
+// Public: whether the instance still has to be set up, and whether its encryption secrets are
+// usable. Registered before configMiddleware, which refuses every request when the keys are
+// missing or malformed: the dashboard reads `configError` here and sends the owner to the page
+// explaining how to generate a key (instead of a sign-in form that can only fail). While no
+// account exists the dashboard sends every visitor to the set-up page, where the first
+// connection creates the super admin.
+app.get("/api/setup-status", async (c) => {
+  const setup = await needsSetup(c.env.makisend_db);
+  const keyError = checkEncryptionKeys(c.env);
+  if (!keyError) return c.json({ needsSetup: setup });
+  return c.json({ needsSetup: setup, configError: { code: keyError.code, variables: keyError.variables } });
+});
+
 app.use(configMiddleware());
 
 // Public API documentation. Registered before the lazily initialized DB
@@ -264,12 +283,6 @@ function addCorsHeaders(
     headers,
   });
 }
-
-// Public: whether the instance still has to be set up. While no account exists the dashboard
-// sends every visitor to the set-up page, where the first connection creates the super admin.
-app.get("/api/setup-status", async (c) => {
-  return c.json({ needsSetup: await needsSetup(c.env.makisend_db) });
-});
 
 // Better Auth hardcodes `name: z.string()` in its sign-up body schema and offers no
 // option to relax it, while our product only asks for email + password. We fill it in

@@ -24,6 +24,8 @@ jobs:
     # Copies of this repository (Deploy to Cloudflare button) must not publish releases.
     if: github.repository == 'lixalistudio-oss/makisend'
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
     steps:
       - name: Check out the repository
         uses: actions/checkout@v4
@@ -67,3 +69,15 @@ jobs:
           if [ "$PRERELEASE" = "true" ]; then FLAGS+=(--prerelease); else FLAGS+=(--latest); fi
           gh release create "$TAG" "${FLAGS[@]}"
           echo "### Released $TAG" >> "$GITHUB_STEP_SUMMARY"
+
+  # Also runs when the release already existed, so a failed image build is fixed by re-running
+  # this workflow; pushing the same tags again is idempotent.
+  docker:
+    name: Publish the Docker image
+    needs: release
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/docker-publish.yml
+    with:
+      tag: ${{ needs.release.outputs.tag }}

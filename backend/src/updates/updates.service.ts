@@ -87,8 +87,11 @@ export class UpdateService {
       publishedAt: record?.publishedAt ?? null,
       checkedAt: record ? new Date(record.checkedAt).toISOString() : null,
       error: record?.error ?? null,
+      source: this.settings.source,
       upstreamRepository: this.settings.upstreamRepository,
-      syncWorkflowUrl: this.settings.ownRepository
+      upstreamImage: this.settings.source === "registry" ? this.settings.upstreamImage : null,
+      // The sync workflow updates a Cloudflare copy; a Docker instance updates by pulling the image.
+      syncWorkflowUrl: this.settings.source === "github" && this.settings.ownRepository
         ? `https://github.com/${this.settings.ownRepository}/actions/workflows/sync-upstream.yml`
         : null,
     };

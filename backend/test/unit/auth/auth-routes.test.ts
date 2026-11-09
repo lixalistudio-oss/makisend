@@ -116,6 +116,32 @@ afterEach(async () => {
   await cleanupTestD1(mf);
 });
 
+describe("encryption key that cannot be used", () => {
+  it("still answers setup-status, with the reason, so the dashboard can explain it", async () => {
+    env = { ...env, ENCRYPTION_KEY: "your_64_character_hexadecimal_string_here" };
+    const status = await call("/api/setup-status");
+    expect(status.status).toBe(200);
+    expect(status.body).toEqual({
+      needsSetup: true,
+      configError: { code: "ENCRYPTION_KEY_INVALID", variables: ["ENCRYPTION_KEY"] },
+    });
+  });
+
+  it("reports a missing key", async () => {
+    env = { ...env, ENCRYPTION_KEY: undefined };
+    expect((await call("/api/setup-status")).body).toMatchObject({
+      configError: { code: "ENCRYPTION_KEY_MISSING", variables: ["ENCRYPTION_KEY"] },
+    });
+  });
+
+  it("tags every other request's 500 with the same code", async () => {
+    env = { ...env, ENCRYPTION_KEY: "0".repeat(10) };
+    const res = await call("/api/auth/get-session");
+    expect(res.status).toBe(500);
+    expect(res.body).toMatchObject({ success: false, code: "ENCRYPTION_KEY_INVALID", variables: ["ENCRYPTION_KEY"] });
+  });
+});
+
 describe("super admin created at the first connection", () => {
   it("reports the instance as not set up until the first account exists", async () => {
     expect((await call("/api/setup-status")).body).toEqual({ needsSetup: true });

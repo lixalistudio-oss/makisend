@@ -5,12 +5,12 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { SmtpPresetPicker } from "@/components/smtp-preset-picker"
 import { DialogFooter } from "@/components/ui/dialog"
 import { fetchApi } from "@/lib/api"
 import { useTranslation, type UiKey } from "@/i18n"
 import {
   DEFAULT_PORT,
-  PRESETS,
   SMTP_PORTS,
   cleanHostname,
   fieldErrorsFrom,
@@ -18,6 +18,7 @@ import {
   securityForPort,
   type CheckResult,
   type FieldErrors,
+  type SmtpPreset,
   type SmtpSecurity,
 } from "@/lib/smtp-form"
 
@@ -60,19 +61,19 @@ export function SmtpConfigForm({ editingId, initial, onSaved, onCancel }: Props)
   const [checking, setChecking] = useState(false)
   const [check, setCheck] = useState<CheckResult | null>(null)
   const [hint, setHint] = useState<UiKey | null>(null)
-  const [presetId, setPresetId] = useState<string | null>(null)
+  const [preset, setPreset] = useState<SmtpPreset | null>(null)
 
   const portNumber = Number(port)
   const touched = () => setCheck(null)
 
-  const applyPreset = (id: string) => {
-    const preset = PRESETS.find((p) => p.id === id)
-    if (!preset) return
-    setPresetId(preset.id)
-    setHostname(preset.hostname)
-    setPort(String(preset.port))
-    setSecurity(preset.security)
-    setHint(preset.hintKey ?? null)
+  /** Fills the server fields from a provider. Clearing the provider keeps what is typed, only the hint goes. */
+  const applyPreset = (next: SmtpPreset | null) => {
+    setPreset(next)
+    setHint(next?.hintKey ?? null)
+    if (!next) return
+    setHostname(next.hostname)
+    setPort(String(next.port))
+    setSecurity(next.security)
     setErrors({})
     touched()
   }
@@ -158,22 +159,7 @@ export function SmtpConfigForm({ editingId, initial, onSaved, onCancel }: Props)
       <FieldGroup className={`${check ? "max-h-[calc(85dvh-18rem)]" : "max-h-[calc(85dvh-13rem)]"} overflow-y-auto py-1 pr-1 gap-1.5 sm:gap-2`}>
         <Field>
           <FieldLabel htmlFor="preset">{t("smtp.provider")}</FieldLabel>
-          <Select value={presetId ?? ""} onValueChange={(v) => typeof v === "string" && applyPreset(v)}>
-            <SelectTrigger id="preset">
-              <SelectValue>
-                {PRESETS.find((p) => p.id === presetId)?.label ?? (
-                  <span className="text-muted-foreground">{t("smtp.providerPlaceholder")}</span>
-                )}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {PRESETS.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <SmtpPresetPicker id="preset" value={preset} onChange={applyPreset} />
           {hint && <FieldDescription className="text-xs leading-snug sm:text-sm">{t(hint)}</FieldDescription>}
         </Field>
 

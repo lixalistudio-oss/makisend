@@ -27,11 +27,15 @@ export interface UpdateStatus {
   publishedAt: string | null
   checkedAt: string | null
   error: string | null
+  /** `registry` on the self-hosting Docker image: updating means pulling the image. */
+  source: "github" | "registry"
   upstreamRepository: string
+  upstreamImage: string | null
   syncWorkflowUrl: string | null
 }
 
 const UPDATE_GUIDE = "https://github.com/lixalistudio-oss/makisend/blob/main/docs/UPDATING.md"
+const DOCKER_UPDATE_GUIDE = "https://github.com/lixalistudio-oss/makisend/blob/main/docs/SELF_HOST_VPS.md#update"
 /** "Later" hides the banner for this release only: the next one shows again. */
 const DISMISS_KEY = "makisend:update-dismissed"
 
@@ -51,9 +55,9 @@ function dismissed(version: string): boolean {
 }
 
 /**
- * Dashboard banner shown when a newer MakiSend release is published. "Update" explains the
- * two ways to install it: the instance's sync workflow (one click when MAKISEND_REPOSITORY is
- * set), or the manual steps of docs/UPDATING.md.
+ * Dashboard banner shown when a newer MakiSend release is published. "Update" explains how to
+ * install it: on the Docker image, pull the new image; on Cloudflare, the instance's sync workflow
+ * (one click when MAKISEND_REPOSITORY is set), or the manual steps of docs/UPDATING.md.
  */
 export function UpdateBanner() {
   const { t } = useTranslation()
@@ -123,6 +127,7 @@ function UpdateDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const { t } = useTranslation()
+  if (status.source === "registry") return <DockerUpdateDialog status={status} open={open} onOpenChange={onOpenChange} />
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
@@ -180,6 +185,65 @@ function UpdateDialog({
                 {t("updates.dialog.openRelease")}
               </a>
             )
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** Docker image: the new version is already pullable (the check reads the registry's tags). */
+function DockerUpdateDialog({
+  status,
+  open,
+  onOpenChange,
+}: {
+  status: UpdateStatus
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const { t } = useTranslation()
+  const commands = [
+    "docker compose -f compose.vps.yml pull",
+    "docker compose -f compose.vps.yml up -d",
+  ].join("\n")
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{t("updates.dialog.title", { version: status.latestVersion ?? "" })}</DialogTitle>
+          <DialogDescription>
+            {t("updates.docker.description", { image: status.upstreamImage ?? "" })}
+          </DialogDescription>
+        </DialogHeader>
+
+        {status.releaseNotes && (
+          <pre className="max-h-60 overflow-auto rounded-lg bg-muted p-3 text-xs whitespace-pre-wrap">
+            {status.releaseNotes}
+          </pre>
+        )}
+
+        <ol className="flex list-decimal flex-col gap-2 pl-5 text-sm text-muted-foreground">
+          <li>
+            {t("updates.docker.step1")}
+            <pre className="mt-1 overflow-auto rounded-lg bg-muted p-3 text-xs text-foreground">{commands}</pre>
+          </li>
+          <li>
+            {t("updates.docker.step2Before")}
+            <code className="text-foreground">MAKISEND_VERSION</code>
+            {t("updates.docker.step2After", { version: status.latestVersion ?? "" })}
+          </li>
+          <li>{t("updates.docker.step3")}</li>
+        </ol>
+
+        <DialogFooter>
+          <a className={buttonVariants({ variant: "outline" })} href={DOCKER_UPDATE_GUIDE} target="_blank" rel="noreferrer">
+            {t("updates.dialog.guide")}
+          </a>
+          {status.releaseUrl && (
+            <a className={buttonVariants()} href={status.releaseUrl} target="_blank" rel="noreferrer">
+              {t("updates.dialog.openRelease")}
+            </a>
           )}
         </DialogFooter>
       </DialogContent>

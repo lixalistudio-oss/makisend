@@ -87,7 +87,7 @@ Tell the user to store `ENCRYPTION_KEY` and `BETTER_AUTH_SECRET` in their passwo
 
 ## 7. Verify, then hand over
 
-- `curl -sI <url>/` answers the dashboard; `curl -s <url>/openapi.json` answers JSON; `curl -s <url>/api/setup-status` answers `{"needsSetup":true}`.
+- `curl -sI <url>/` answers the dashboard; `curl -s <url>/openapi.json` answers JSON; `curl -s <url>/api/setup-status` answers `{"needsSetup":true}`. A `configError` field (`ENCRYPTION_KEY_MISSING` / `ENCRYPTION_KEY_INVALID`, with the offending variable names) means the encryption secret is unusable: fix it before anything else (the dashboard sends visitors to `/encryption-key`, which explains how).
 - The **user** opens `<url>/setup` and creates the administrator (the first account is the only one). Do it right after the deploy: until then, anyone who reaches the URL can claim the instance.
 - After that, a second sign-up must answer 403.
 

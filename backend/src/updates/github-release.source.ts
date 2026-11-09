@@ -4,7 +4,7 @@ import type { IReleaseSource, ReleaseInfo } from "./updates.types";
 /** Release notes are shown in a dashboard dialog: keep the row and the response small. */
 export const MAX_RELEASE_NOTES = 4000;
 
-type Fetcher = (input: string, init?: RequestInit) => Promise<Response>;
+export type Fetcher = (input: string, init?: RequestInit) => Promise<Response>;
 
 interface GitHubRelease {
   tag_name?: unknown;
@@ -18,6 +18,9 @@ interface GitHubRelease {
 
 const asString = (value: unknown): string | null => (typeof value === "string" && value ? value : null);
 
+/** Sent with every outbound update-check request (GitHub refuses requests without a User-Agent). */
+export const USER_AGENT = `MakiSend/${APP_VERSION} (update check)`;
+
 /**
  * Reads `GET /repos/{repo}/releases/latest` from the public GitHub API: the newest release
  * that is neither a draft nor a prerelease. No token: the repository must be public, and the
@@ -30,17 +33,25 @@ export class GitHubReleaseSource implements IReleaseSource {
     private readonly fetcher: Fetcher = (input, init) => fetch(input, init),
   ) {}
 
-  async latest(): Promise<ReleaseInfo | null> {
-    const res = await this.fetcher(`https://api.github.com/repos/${this.repository}/releases/latest`, {
+  latest(): Promise<ReleaseInfo | null> {
+    return this.read("releases/latest", "Latest release");
+  }
+
+  /** The release published under `tag` (`v0.4.0`), `null` when there is none. */
+  byTag(tag: string): Promise<ReleaseInfo | null> {
+    return this.read(`releases/tags/${encodeURIComponent(tag)}`, `Release ${tag}`);
+  }
+
+  private async read(path: string, label: string): Promise<ReleaseInfo | null> {
+    const res = await this.fetcher(`https://api.github.com/repos/${this.repository}/${path}`, {
       headers: {
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
-        // GitHub refuses requests without a User-Agent.
-        "User-Agent": `MakiSend/${APP_VERSION} (update check)`,
+        "User-Agent": USER_AGENT,
       },
     });
 
-    // 404: no published release yet (or a private repository, which looks the same).
+    // 404: no such release (or a private repository, which looks the same).
     if (res.status === 404) return null;
     if (!res.ok) {
       const limited = res.status === 403 || res.status === 429;
@@ -55,7 +66,7 @@ export class GitHubReleaseSource implements IReleaseSource {
     const tag = asString(release.tag_name);
     const version = tag ? normalizeVersion(tag) : null;
     if (!version) {
-      throw new Error(`Latest release tag is not a semantic version: ${tag ?? "(none)"}`);
+      throw new Error(`${label} tag is not a semantic version: ${tag ?? "(none)"}`);
     }
 
     const notes = asString(release.body);

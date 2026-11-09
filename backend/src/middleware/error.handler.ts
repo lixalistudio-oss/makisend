@@ -1,6 +1,6 @@
 import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
-import { AppError } from "@/core/errors";
+import { AppError, EncryptionKeyError } from "@/core/errors";
 import { pinoLogger } from "@/core/logger";
 
 export function errorHandler(error: Error, c: Context) {
@@ -14,6 +14,8 @@ export function errorHandler(error: Error, c: Context) {
       {
         success: false,
         error: error.message,
+        ...(error.code ? { code: error.code } : {}),
+        ...(error instanceof EncryptionKeyError ? { variables: error.variables } : {}),
       },
       error.statusCode as ContentfulStatusCode,
     );

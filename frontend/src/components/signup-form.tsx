@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { fetchApi } from "@/lib/api";
+import { fetchSetupStatus, goToEncryptionKeyPage, redirectOnConfigError } from "@/lib/instance-status";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -32,13 +33,11 @@ export function SignupForm({
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    fetchApi("/api/setup-status")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: { needsSetup: boolean } | null) => {
-        if (data && !data.needsSetup) window.location.replace("/login");
-        else setChecking(false);
-      })
-      .catch(() => setChecking(false));
+    fetchSetupStatus().then((status) => {
+      if (status?.configError) goToEncryptionKeyPage();
+      else if (status && !status.needsSetup) window.location.replace("/login");
+      else setChecking(false);
+    });
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -66,6 +65,7 @@ export function SignupForm({
       const data = await res.json().catch(() => null);
 
       if (!res.ok) {
+        if (redirectOnConfigError(data)) return;
         setError(data?.message || data?.error || t("auth.genericError"));
         return;
       }

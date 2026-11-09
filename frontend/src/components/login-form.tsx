@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { fetchApi } from "@/lib/api";
+import { fetchSetupStatus, goToEncryptionKeyPage, redirectOnConfigError } from "@/lib/instance-status";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -25,6 +26,7 @@ type Step = "password" | "second-factor" | "code";
 
 async function readError(res: Response, fallback: string) {
   const data = await res.json().catch(() => null);
+  redirectOnConfigError(data);
   return data?.message || data?.error || fallback;
 }
 
@@ -50,14 +52,13 @@ export function LoginForm({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // An unusable encryption key: explain how to fix it, signing in can only fail.
   // No account yet: the first connection sets the instance up.
   useEffect(() => {
-    fetchApi("/api/setup-status")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: { needsSetup: boolean } | null) => {
-        if (data?.needsSetup) window.location.replace("/setup");
-      })
-      .catch(() => {});
+    fetchSetupStatus().then((status) => {
+      if (status?.configError) goToEncryptionKeyPage();
+      else if (status?.needsSetup) window.location.replace("/setup");
+    });
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {

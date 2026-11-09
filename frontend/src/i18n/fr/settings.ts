@@ -26,7 +26,7 @@ export default {
   "settings.changing": "Modification...",
   "settings.changePassword": "Modifier le mot de passe",
   "settings.versionTitle": "Version de MakiSend",
-  "settings.versionDescription": "Vérifiée une fois par jour par rapport à la dernière version publiée sur GitHub. Définissez UPDATE_CHECK=off pour ne jamais contacter GitHub.",
+  "settings.versionDescription": "Vérifiée une fois par jour par rapport à la dernière version publiée : sur GitHub, ou dans le registre d'images avec l'image Docker. Définissez UPDATE_CHECK=off pour désactiver la vérification.",
   "settings.deleteAccount": "Supprimer le compte",
   "settings.deleteDescription": "Cette action est irréversible. Toutes vos configurations SMTP, clés API et journaux d'e-mails seront définitivement supprimés.",
   "settings.deleteConfirmTitle": "Êtes-vous absolument sûr ?",

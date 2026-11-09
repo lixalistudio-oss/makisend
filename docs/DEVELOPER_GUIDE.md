@@ -257,7 +257,25 @@ CI does not run `tsc`; run it manually before claiming typechecking is clean.
 | Auth | 401 missing, 403 invalid, session wiring |
 | Crypto | round-trip, fresh IV, empty string, malformed key |
 
-### 6.4 Adding a test file
+### 6.4 End-to-end attachment test
+
+```bash
+cd backend && pnpm test:e2e:attachments
+```
+
+Starts the Worker under `wrangler dev` (local D1, Queues and Workflows, nothing
+deployed) and sends two files through both doors: the dashboard's test send
+(`POST /smtp-config/:id/test-send`) and `POST /send-email` (queue, then
+workflow). The configuration targets Cloudflare Email Service; locally
+Miniflare writes every attachment the `send_email` binding receives to a file,
+which the test reads back and compares byte for byte. It also checks that a
+message without attachments carries none, and that both doors refuse the same
+invalid files. Report: `backend/test/e2e/reports/attachments.json`
+(deterministic, to diff between runs).
+`backend/test/e2e/send-email-attachments.e2e.test.ts` covers the SMTP path with
+a real TLS server.
+
+### 6.5 Adding a test file
 
 1. Put it under `backend/test/unit/<module>/`.
 2. Import `{ describe, it, expect, vi }` from `vitest` (globals exist but the
