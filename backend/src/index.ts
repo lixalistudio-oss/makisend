@@ -32,7 +32,7 @@ import {
 } from "@/send-rate-limit";
 import { sendEmailQueueConsumer } from "@/queue/send-email.consumer";
 import { runSmtpHealthChecks } from "@/smtp-config/smtp-health";
-import { openApiDocument } from "@/openapi";
+import { openApiDocument, SCALAR_CUSTOM_CSS } from "@/openapi";
 import { createUpdatesController, createUpdateService, runUpdateCheck, type UpdateService } from "@/updates";
 
 // --- Better Auth ---
@@ -257,6 +257,9 @@ app.get(
     pageTitle: "MakiSend API Reference",
     nonce: c.get("cspNonce"),
     theme: "default",
+    darkMode: true,
+    hideDarkModeToggle: false,
+    customCss: SCALAR_CUSTOM_CSS,
     cdn: "https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.75.1",
   })),
 );
