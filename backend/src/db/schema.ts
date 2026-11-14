@@ -51,6 +51,12 @@ export const emailContents = sqliteTable("email_contents", {
     .references(() => emailLogs.internalId, { onDelete: "cascade" }),
   textBody: text("text_body").notNull(),
   htmlBody: text("html_body").notNull(),
+  // Cc/Bcc/Reply-To addresses as `Mailbox[]` JSON, then AES-GCM encrypted like the bodies
+  // (hex). NULL when the caller sent none, which is the common case. Every one of these is
+  // declared in key-rotation.repository.ts, or a rotation would leave it on the old key.
+  cc: text("cc"),
+  bcc: text("bcc"),
+  replyTo: text("reply_to"),
   // No FK: deleting an SMTP config must not erase the content of emails already
   // queued with it; sending then fails with a permanent "config not found".
   smtpConfigId: text("smtp_config_id"),

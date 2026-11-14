@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { SmtpPresetPicker } from "@/components/smtp-preset-picker"
+import { capabilitiesFor } from "@/lib/smtp-capabilities"
 import { DialogFooter } from "@/components/ui/dialog"
 import { fetchApi } from "@/lib/api"
 import { useTranslation, type UiKey } from "@/i18n"
@@ -62,6 +63,9 @@ export function SmtpConfigForm({ editingId, initial, onSaved, onCancel }: Props)
   const [check, setCheck] = useState<CheckResult | null>(null)
   const [hint, setHint] = useState<UiKey | null>(null)
   const [preset, setPreset] = useState<SmtpPreset | null>(null)
+
+  // What the chosen provider does with the copies and the reply address. Null when it was never checked.
+  const capabilities = capabilitiesFor(preset?.id ?? null, hostname)
 
   const portNumber = Number(port)
   const touched = () => setCheck(null)
@@ -161,6 +165,17 @@ export function SmtpConfigForm({ editingId, initial, onSaved, onCancel }: Props)
           <FieldLabel htmlFor="preset">{t("smtp.provider")}</FieldLabel>
           <SmtpPresetPicker id="preset" value={preset} onChange={applyPreset} />
           {hint && <FieldDescription className="text-xs leading-snug sm:text-sm">{t(hint)}</FieldDescription>}
+          {/* Verified only: a provider that was not checked says nothing (docs/SMTP_CAPABILITIES.md). */}
+          {capabilities?.replyTo === "single" && (
+            <FieldDescription className="text-xs leading-snug sm:text-sm">
+              {t("smtp.capabilitySingleReply")}
+            </FieldDescription>
+          )}
+          {capabilities?.maxRecipients !== undefined && (
+            <FieldDescription className="text-xs leading-snug sm:text-sm">
+              {t("smtp.capabilityMaxRecipients", { count: capabilities.maxRecipients })}
+            </FieldDescription>
+          )}
         </Field>
 
         <Field data-invalid={!!errors.smtpHostname}>

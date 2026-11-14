@@ -50,6 +50,13 @@
       "when": 1792770361464,
       "tag": "0006_update_check",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1794623315317,
+      "tag": "0007_last_leo",
+      "breakpoints": true
     }
   ]
 }

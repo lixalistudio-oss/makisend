@@ -62,6 +62,10 @@ export default {
   "smtp.providerEmpty": "Aucun préréglage pour ce fournisseur. Renseignez son serveur ci-dessous.",
   "smtp.providerClear": "Effacer le fournisseur",
   "smtp.providerOpen": "Afficher les fournisseurs",
+  // Ce que le fournisseur choisi fait des copies et de l'adresse de réponse (docs/SMTP_CAPABILITIES.md).
+  "smtp.capabilitySingleReply":
+    "Ce fournisseur ne transmet qu'une seule adresse de réponse : si plusieurs sont fournies, seule la première part.",
+  "smtp.capabilityMaxRecipients": "Jusqu'à {count} destinataires par message, copies comprises.",
   "smtp.providerGroupService": "Services d'envoi",
   "smtp.providerGroupMailbox": "Messageries et hébergeurs",
   "smtp.providerGroupTesting": "Tests",

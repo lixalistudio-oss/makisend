@@ -9,6 +9,7 @@ import {
 } from "@/core/validation";
 import { TemplateVariablesDto } from "@/templates/templates.dto";
 import { AttachmentsDto } from "./attachments";
+import { MailboxListSchema, ReplyToSchema } from "./mailboxes";
 
 export const SendEmailDto = z
   .object({
@@ -18,6 +19,12 @@ export const SendEmailDto = z
       .max(MAX_EMAIL_LENGTH, {
         message: `Recipient email must be at most ${MAX_EMAIL_LENGTH} characters.`,
       }),
+
+    // Optional copies and an explicit reply address, in Resend's shape. Stored
+    // encrypted like the recipient: they are personal data too.
+    cc: MailboxListSchema.optional(),
+    bcc: MailboxListSchema.optional(),
+    reply_to: ReplyToSchema.optional(),
 
     subject: z
       .string()
@@ -65,6 +72,11 @@ export const SendTemplateEmailDto = z
       .max(MAX_EMAIL_LENGTH, {
         message: `Recipient email must be at most ${MAX_EMAIL_LENGTH} characters.`,
       }),
+
+    // Same optional copies and reply address as the inline shape.
+    cc: MailboxListSchema.optional(),
+    bcc: MailboxListSchema.optional(),
+    reply_to: ReplyToSchema.optional(),
 
     templateId: z
       .string()

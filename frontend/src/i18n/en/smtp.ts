@@ -61,6 +61,10 @@ export default {
   "smtp.providerEmpty": "No preset for this provider. Fill in its server below.",
   "smtp.providerClear": "Clear the provider",
   "smtp.providerOpen": "Show the providers",
+  // What the selected provider does with the copies and the reply address (docs/SMTP_CAPABILITIES.md).
+  "smtp.capabilitySingleReply":
+    "This provider carries a single reply address: if several are given, only the first is sent.",
+  "smtp.capabilityMaxRecipients": "Up to {count} recipients per message, copies included.",
   "smtp.providerGroupService": "Sending services",
   "smtp.providerGroupMailbox": "Mailboxes and hosting",
   "smtp.providerGroupTesting": "Testing",

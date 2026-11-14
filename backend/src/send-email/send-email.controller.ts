@@ -5,13 +5,29 @@ import { z } from "zod";
 import type { Bindings, UserInfoVariables } from "@/index";
 import { SendEmailPayloadDto } from "./send-email.dto";
 import { DEFAULT_ATTACHMENT_CONTENT_TYPE } from "./attachments";
+import { toMailboxArray } from "./mailboxes";
+import type { Mailbox } from "./mailboxes";
 import type { SendEmailDto, SendTemplateEmailDto } from "./send-email.dto";
 import type { SendEmailQueueMessage, IEmailRepository } from "./send-email.types";
 import type { ITemplateRepository } from "@/templates/templates.types";
 import { renderTemplateContent } from "@/templates/template-renderer";
 import { AppError } from "@/core/errors";
 import { encrypt } from "@/core/crypto";
+import type { KeyMaterial } from "@/core/crypto";
 import { createId } from "@paralleldrive/cuid2";
+
+/**
+ * A copy list is optional: no list stays NULL in the database, never the
+ * encryption of an empty array, so "no copies" and "copies" are told apart
+ * without decrypting anything.
+ */
+async function encryptMailboxes(
+  mailboxes: Mailbox[] | undefined,
+  keys: KeyMaterial,
+): Promise<string | null> {
+  if (!mailboxes || mailboxes.length === 0) return null;
+  return encrypt(JSON.stringify(mailboxes), keys);
+}
 
 /**
  * Loads the caller's template and renders it into the inline shape the rest of
@@ -38,6 +54,9 @@ async function resolveTemplatePayload(
     subject: rendered.subject,
     html: rendered.html,
     text: rendered.text,
+    ...(payload.cc ? { cc: payload.cc } : {}),
+    ...(payload.bcc ? { bcc: payload.bcc } : {}),
+    ...(payload.reply_to ? { reply_to: payload.reply_to } : {}),
     ...(payload.attachments ? { attachments: payload.attachments } : {}),
   };
 }
@@ -79,13 +98,17 @@ export function createSendEmailController(
           : payload;
 
       const repository = getEmailRepository();
+      const keys = resolveEncryptionKeys(c.env);
+      const cc = toMailboxArray(data.cc);
+      const bcc = toMailboxArray(data.bcc);
+      const replyTo = toMailboxArray(data.reply_to);
 
       // Pending log row first, so the email is visible on the dashboard from the
       // moment it is accepted — even if every later stage fails.
       const [encryptedTo, encryptedText, encryptedHtml] = await Promise.all([
-        encrypt(data.to, resolveEncryptionKeys(c.env)),
-        encrypt(data.text, resolveEncryptionKeys(c.env)),
-        encrypt(data.html, resolveEncryptionKeys(c.env)),
+        encrypt(data.to, keys),
+        encrypt(data.text, keys),
+        encrypt(data.html, keys),
       ]);
       await repository.createPendingEmailLog(emailId, userId, encryptedTo, data.subject, apiKeyId);
 
@@ -96,11 +119,13 @@ export function createSendEmailController(
           text: encryptedText,
           html: encryptedHtml,
           smtpConfigId,
+          cc: await encryptMailboxes(cc, keys),
+          bcc: await encryptMailboxes(bcc, keys),
+          replyTo: await encryptMailboxes(replyTo, keys),
         });
 
         // Attachments: base64 as received, encrypted, one row each (never in the queue).
         if (data.attachments && data.attachments.length > 0) {
-          const keys = resolveEncryptionKeys(c.env);
           const stored = await Promise.all(
             data.attachments.map(async (file) => ({
               filename: file.filename,

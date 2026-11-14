@@ -53,6 +53,38 @@ describe("CloudflareEmailTransport", () => {
     ]);
   });
 
+  it("C2 copies and a reply address reach the binding in its own address shape", async () => {
+    const binding = new RecordingBinding();
+    const transport = new CloudflareEmailTransport(binding, "noreply@getitaja.com");
+
+    await transport.send({
+      to: "dest@example.com",
+      subject: "Hi",
+      text: "plain",
+      html: "<p>rich</p>",
+      cc: [{ email: "cc@example.com", name: "Copie" }],
+      bcc: [{ email: "bcc@example.com" }],
+      replyTo: [
+        { email: "support@example.com", name: "Support" },
+        { email: "second@example.com" },
+      ],
+    });
+
+    // The binding takes one reply address, not a list: the first one is used.
+    expect(binding.sent).toEqual([
+      {
+        from: "noreply@getitaja.com",
+        to: "dest@example.com",
+        cc: [{ name: "Copie", email: "cc@example.com" }],
+        bcc: [{ name: "", email: "bcc@example.com" }],
+        replyTo: { name: "Support", email: "support@example.com" },
+        subject: "Hi",
+        text: "plain",
+        html: "<p>rich</p>",
+      },
+    ]);
+  });
+
   it("C2 a message with attachments hands the binding each file as an attachment, in order", async () => {
     const binding = new RecordingBinding();
     const transport = new CloudflareEmailTransport(binding, "noreply@getitaja.com");

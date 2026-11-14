@@ -1,4 +1,5 @@
 import type { SmtpCheckResult, SmtpSendResult, TestEmail } from "@/smtp-config/smtp-connection";
+import { toCloudflareMailboxes } from "./mailboxes";
 import type { EmailInput, EmailSendResult, IEmailTransport } from "./send-email.types";
 
 /**
@@ -17,6 +18,13 @@ export class CloudflareEmailTransport implements IEmailTransport {
     const { messageId } = await this.binding.send({
       from: this.senderEmail,
       to: input.to,
+      ...(input.cc && input.cc.length > 0 ? { cc: toCloudflareMailboxes(input.cc) } : {}),
+      ...(input.bcc && input.bcc.length > 0 ? { bcc: toCloudflareMailboxes(input.bcc) } : {}),
+      // The binding takes a single reply address (string or `{ name, email }`), not a
+      // list: the first one wins here. The SMTP transport carries every reply address.
+      ...(input.replyTo && input.replyTo.length > 0
+        ? { replyTo: toCloudflareMailboxes([input.replyTo[0]])[0] }
+        : {}),
       subject: input.subject,
       text: input.text,
       html: input.html,

@@ -469,6 +469,52 @@ describe("SendEmailWorkflow — full step execution", () => {
     await cleanupTestD1(mf);
   });
 
+  it("carries the stored copies and reply address through to the transport", async () => {
+    const emailId = "integration-copies-email-id";
+
+    await realRepository.createPendingEmailLog(
+      emailId,
+      "test-user-id",
+      await encrypt("gedeon@example.com", AES_KEY),
+      "Copies",
+    );
+    await realRepository.saveEmailContent(emailId, {
+      text: await encrypt("This is a test email body long enough.", AES_KEY),
+      html: await encrypt("<p>Copy content</p>", AES_KEY),
+      smtpConfigId: "smtp-config-integration",
+      cc: await encrypt(JSON.stringify([{ email: "cc@example.com" }]), AES_KEY),
+      bcc: await encrypt(JSON.stringify([{ email: "bcc@example.com", name: "Archive" }]), AES_KEY),
+      replyTo: await encrypt(JSON.stringify([{ email: "support@example.com" }]), AES_KEY),
+    });
+
+    const env = {
+      makisend_db: d1,
+      SEND_EMAIL_QUEUE: { send: vi.fn() },
+      SEND_EMAIL_DLQ: { send: mockDeadLetterSend },
+      AES_256_KEY: AES_KEY,
+    } as unknown as Bindings;
+
+    const workflow = new SendEmailWorkflow({} as never, env);
+    const step = {
+      do: async (_name: string, cfgOrFn: unknown, maybeFn?: unknown) => {
+        const fn = typeof cfgOrFn === "function" ? cfgOrFn : maybeFn;
+        return (fn as (ctx: { attempt: number }) => Promise<unknown>)({ attempt: 1 });
+      },
+    } as unknown as WorkflowStep;
+
+    const result = await workflow.run({ payload: { emailId } } as never, step);
+    expect(result).toMatchObject({ outcome: "sent" });
+
+    // Decrypted from D1 by the loader, then handed to the transport as-is.
+    expect(mockTransport.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cc: [{ email: "cc@example.com" }],
+        bcc: [{ email: "bcc@example.com", name: "Archive" }],
+        replyTo: [{ email: "support@example.com" }],
+      }),
+    );
+  });
+
   it("should execute all steps and persist to real D1", async () => {
     const emailId = "integration-test-email-id";
     const payload = { emailId };
