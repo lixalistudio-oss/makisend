@@ -59,6 +59,29 @@ describe("SmtpEmailTransport", () => {
     expect(mockClose).toHaveBeenCalledTimes(1);
   });
 
+  it("forwards copies and the reply address as nodemailer addresses", async () => {
+    const transport = new SmtpEmailTransport(config);
+
+    await transport.send({
+      ...email,
+      cc: [{ email: "cc@example.com" }],
+      bcc: [{ email: "bcc@example.com", name: "Archive" }],
+      replyTo: [{ email: "support@example.com", name: "Support" }],
+    });
+
+    // { name, address } objects, not pre-formatted strings: nodemailer quotes the headers.
+    expect(mockSendMail).toHaveBeenCalledWith({
+      from: config.senderEmail,
+      to: email.to,
+      cc: [{ name: "", address: "cc@example.com" }],
+      bcc: [{ name: "Archive", address: "bcc@example.com" }],
+      replyTo: [{ name: "Support", address: "support@example.com" }],
+      subject: email.subject,
+      text: email.text,
+      html: email.html,
+    });
+  });
+
   it("closes the transport when the send fails, so workerd does not hang", async () => {
     mockSendMail.mockRejectedValue(new Error("SMTP down"));
     const transport = new SmtpEmailTransport(config);

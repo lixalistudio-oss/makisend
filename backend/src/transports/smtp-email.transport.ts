@@ -1,6 +1,7 @@
 import type { Transporter } from "nodemailer";
 import type { SmtpConfig } from "@/config/config";
 import { createSmtpTransport } from "@/smtp-config/smtp-connection";
+import { toNodemailerMailboxes } from "@/send-email/mailboxes";
 import type { EmailInput, EmailSendResult, IEmailTransport } from "@/send-email/send-email.types";
 
 export class SmtpEmailTransport implements IEmailTransport {
@@ -18,6 +19,13 @@ export class SmtpEmailTransport implements IEmailTransport {
       const info = await this.transporter.sendMail({
         from: this.senderEmail,
         to: input.to,
+        // Objects, not "Name <address>" strings: nodemailer does its own header
+        // quoting, and a pre-formatted string would bypass it.
+        ...(input.cc && input.cc.length > 0 ? { cc: toNodemailerMailboxes(input.cc) } : {}),
+        ...(input.bcc && input.bcc.length > 0 ? { bcc: toNodemailerMailboxes(input.bcc) } : {}),
+        ...(input.replyTo && input.replyTo.length > 0
+          ? { replyTo: toNodemailerMailboxes(input.replyTo) }
+          : {}),
         subject: input.subject,
         text: input.text,
         html: input.html,

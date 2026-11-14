@@ -193,6 +193,9 @@ export async function runSendEmailFlow(
               subject: email.subject,
               text: email.text,
               html: cleanHtml(email.html),
+              ...(email.cc && email.cc.length > 0 ? { cc: email.cc } : {}),
+              ...(email.bcc && email.bcc.length > 0 ? { bcc: email.bcc } : {}),
+              ...(email.replyTo && email.replyTo.length > 0 ? { replyTo: email.replyTo } : {}),
               ...(email.attachments && email.attachments.length > 0 ? { attachments: email.attachments } : {}),
             });
 

@@ -1,12 +1,22 @@
 import type { EmailAttachment } from "./attachments";
+import type { Mailbox } from "./mailboxes";
 
 export type { EmailAttachment } from "./attachments";
+export type { Mailbox } from "./mailboxes";
 
 export interface EmailInput {
   to: string;
   subject: string;
   text: string;
   html: string;
+  /**
+   * Copies and an explicit reply address, already normalised to `Mailbox[]`.
+   * Absent when the caller sent none: the transports then build the exact same
+   * message they built before this feature existed.
+   */
+  cc?: Mailbox[];
+  bcc?: Mailbox[];
+  replyTo?: Mailbox[];
   /** Absent or empty: a message without attachments. */
   attachments?: EmailAttachment[];
 }
@@ -79,6 +89,11 @@ export interface StoredEmailContent {
   text: string;
   html: string;
   smtpConfigId?: string | null;
+  /** JSON-encoded `Mailbox[]`, encrypted. NULL when the caller sent no copies. */
+  cc?: string | null;
+  bcc?: string | null;
+  /** JSON-encoded `Mailbox[]`, encrypted. NULL when the reply address is the sender's. */
+  replyTo?: string | null;
 }
 
 /** An email as read back from D1: `to`, `text` and `html` are encrypted, `subject` is clear. */
@@ -88,6 +103,9 @@ export interface StoredEmail {
   text: string;
   html: string;
   smtpConfigId: string | null;
+  cc: string | null;
+  bcc: string | null;
+  replyTo: string | null;
 }
 
 /** An email ready to be sent: decrypted, plus the SMTP configuration it was queued with. */

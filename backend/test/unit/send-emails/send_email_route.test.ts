@@ -147,6 +147,59 @@ describe("SendEmailController", () => {
       expect(json.emailId).toBe(message.emailId);
     });
 
+    it("should store the copies and the reply address encrypted, reply_to as a list", async () => {
+      const res = await app.request("/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: "gedeon@example.com",
+          subject: "Avec copies",
+          text: "This text body is long enough to pass validation.",
+          html: "<p>Copies.</p>",
+          cc: ["cc@example.com"],
+          bcc: [{ email: "bcc@example.com", name: "Archive" }],
+          reply_to: "support@example.com",
+        }),
+      }, queueEnv(mockQueueSend));
+
+      expect(res.status).toBe(202);
+      const [, content] = mockRepository.saveEmailContent.mock.calls[0] as [
+        string,
+        { cc: string; bcc: string; replyTo: string },
+      ];
+
+      // Encrypted at rest, like the bodies: the plaintext never reaches D1.
+      expect(content.cc).not.toContain("cc@example.com");
+      expect(content.replyTo).not.toContain("support@example.com");
+
+      expect(JSON.parse(await decrypt(content.cc, AES_KEY))).toEqual([{ email: "cc@example.com" }]);
+      expect(JSON.parse(await decrypt(content.bcc, AES_KEY))).toEqual([
+        { email: "bcc@example.com", name: "Archive" },
+      ]);
+      // A single reply address is stored as a one-item list.
+      expect(JSON.parse(await decrypt(content.replyTo, AES_KEY))).toEqual([
+        { email: "support@example.com" },
+      ]);
+    });
+
+    it("should return 400 when a copy address is invalid", async () => {
+      const res = await app.request("/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: "gedeon@example.com",
+          subject: "Copie invalide",
+          text: "This text body is long enough to pass validation.",
+          html: "<p>Copies.</p>",
+          cc: ["not-an-email"],
+        }),
+      }, queueEnv(mockQueueSend));
+
+      expect(res.status).toBe(400);
+      expect(mockQueueSend).not.toHaveBeenCalled();
+      expect(mockRepository.saveEmailContent).not.toHaveBeenCalled();
+    });
+
     it("should return 500 when the queue refuses the message", async () => {
       mockQueueSend.mockRejectedValue(new Error("queue unavailable"));
 

@@ -49,7 +49,7 @@ Moving a call over:
 | `to` (string or array) | One address per request |
 | `subject`, `html`, `text` | Same names; `text` and `html` are both required |
 | `attachments` (`filename`, `content`, `content_type`) | Same shape; `path` (a URL to fetch) is refused |
-| `cc`, `bcc`, `reply_to`, `headers`, `tags`, `scheduled_at` | Not supported yet |
+| `cc`, `bcc`, `reply_to` | Same names and shapes: `cc`/`bcc` take up to 10 addresses, `reply_to` one address or a list. Cloudflare Email Service keeps the first reply address: the binding carries one |
 | `200` with an `id` | `202` with an `emailId`; the outcome shows in the dashboard logs |
 
 ---

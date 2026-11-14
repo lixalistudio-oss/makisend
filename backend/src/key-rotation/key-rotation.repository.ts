@@ -13,6 +13,11 @@ export const ENCRYPTED_COLUMNS: readonly EncryptedColumn[] = [
   { table: "email_logs", primaryKey: "internalId", column: "to" },
   { table: "email_contents", primaryKey: "email_id", column: "text_body" },
   { table: "email_contents", primaryKey: "email_id", column: "html_body" },
+  // Cc/Bcc/Reply-To as encrypted `Mailbox[]` JSON (NULL when the caller sent none: the
+  // rotation query skips empty cells, and a NULL never matches `NOT LIKE`).
+  { table: "email_contents", primaryKey: "email_id", column: "cc" },
+  { table: "email_contents", primaryKey: "email_id", column: "bcc" },
+  { table: "email_contents", primaryKey: "email_id", column: "reply_to" },
   // The file as base64, encrypted (POST /send-email `attachments`).
   { table: "email_attachments", primaryKey: "id", column: "content" },
 ];
