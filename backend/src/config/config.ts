@@ -14,11 +14,33 @@ export interface SmtpConfig {
 export interface UserConfig {
   userId: string;
 }
+/** Webhook URL rules that depend on the deployment (src/webhooks/webhook-url.ts). */
+export interface WebhookConfig {
+  /** `WEBHOOK_ALLOW_INSECURE_URLS=true`: accepts http: and local/private hosts. Local dev only. */
+  allowInsecureUrls: boolean;
+  /** `WEBHOOK_ALLOWED_HOSTS`: when set, only these hostnames are accepted (careful self-hosts). */
+  allowedHosts: readonly string[];
+}
+
 export interface Config {
   aesKey: EncryptionKeys;
   db: D1Database;
   better_auth_url: string;
   better_auth_secret: string;
+}
+
+type WebhookBindings = Pick<Bindings, "WEBHOOK_ALLOW_INSECURE_URLS" | "WEBHOOK_ALLOWED_HOSTS">;
+
+/** Only the exact value "true" opens the insecure mode: a typo keeps the safe default. */
+export function resolveWebhookConfig(env: WebhookBindings): WebhookConfig {
+  const allowedHosts = (env.WEBHOOK_ALLOWED_HOSTS ?? "")
+    .split(",")
+    .map((host) => host.trim().toLowerCase().replace(/\.$/, ""))
+    .filter(Boolean);
+  return {
+    allowInsecureUrls: env.WEBHOOK_ALLOW_INSECURE_URLS?.trim().toLowerCase() === "true",
+    allowedHosts: [...new Set(allowedHosts)],
+  };
 }
 
 type EncryptionKeyBindings = Pick<Bindings, "ENCRYPTION_KEY" | "ENCRYPTION_KEY_PREVIOUS" | "AES_256_KEY">;

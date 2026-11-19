@@ -28,6 +28,17 @@ export interface SendEmailFlowDeps {
   loadEmail: (emailId: string) => Promise<EmailToSend>;
   resolveTransport: (smtpConfigId: string | null) => Promise<IEmailTransport>;
   deadLetterQueue?: Queue<SendEmailQueueMessage>;
+  /** Signed webhooks of the final status (src/webhooks). Absent: no webhook is published. */
+  webhooks?: FinalStatusPublisher;
+}
+
+/** Why an email ended failed, sent to webhook receivers as `failureKind`. */
+export type FailureKind = "permanent" | "transient_exhausted" | "config" | "internal";
+
+/** What the flow needs from src/webhooks/webhook-publisher.ts (kept narrow for the tests). */
+export interface FinalStatusPublisher {
+  hasEnabledEndpoints(emailId: string): Promise<boolean>;
+  publishFinalStatus(emailId: string, status: "sent" | "failed", failureKind?: FailureKind | null): Promise<number>;
 }
 
 export type SendEmailFlowOutcome =
@@ -54,8 +65,14 @@ interface SendReceipt {
   messageId?: string;
   durationMs?: number;
   reason?: string;
+  /** For a rejection: a MakiSend configuration problem ("config") or the SMTP side ("permanent"). */
+  failureKind?: "permanent" | "config";
   attempt: number;
 }
+
+/** Return value of the bookkeeping steps: whether the email's owner has webhooks to notify. */
+const NOTIFY = "notify";
+const NO_WEBHOOKS = "no-webhooks";
 
 function toClassifiableError(err: unknown): ClassifiableError {
   return {
@@ -106,6 +123,38 @@ export async function runSendEmailFlow(
   let delivered:
     | { messageId: string; durationMs: number; attempt: number }
     | null = null;
+  let webhooksPublished = false;
+
+  /**
+   * Asked inside the bookkeeping step, so an email whose owner has no enabled endpoint costs no
+   * extra Workflow step. An error answers "notify": the publish step checks again by itself.
+   */
+  const webhookCheck = async (): Promise<string> => {
+    if (!deps.webhooks) return NO_WEBHOOKS;
+    try {
+      return (await deps.webhooks.hasEnabledEndpoints(emailId)) ? NOTIFY : NO_WEBHOOKS;
+    } catch (err) {
+      pinoLogger.error({ err, emailId }, "Could not check for webhook endpoints");
+      return NOTIFY;
+    }
+  };
+
+  /**
+   * B1 of signed webhooks: runs only AFTER the final status is written. Its own step, so a D1
+   * hiccup is retried, and replaying it is harmless (unique (email, endpoint) + pending re-read).
+   * A failure here never changes the email's outcome: it is logged, and that is all.
+   */
+  const publishWebhooks = async (status: "sent" | "failed", failureKind: FailureKind | null) => {
+    if (!deps.webhooks || webhooksPublished) return;
+    webhooksPublished = true;
+    try {
+      await step.do("publish-webhooks", DB_STEP_CONFIG, async () => {
+        return await deps.webhooks!.publishFinalStatus(emailId, status, failureKind);
+      });
+    } catch (err) {
+      pinoLogger.error({ err, emailId, status }, "Failed to publish the final-status webhooks");
+    }
+  };
 
   /** Final failure: failed history row, dead-letter queue, terminal outcome. */
   const declareUndeliverable = async (
@@ -113,20 +162,22 @@ export async function runSendEmailFlow(
     attempt: number,
     summary: string,
     outcome: "rejected" | "dead_lettered" = "dead_lettered",
+    failureKind: FailureKind = "internal",
   ): Promise<SendEmailFlowOutcome> => {
     pinoLogger.error({ emailId, attempt, reason }, "Email delivery abandoned");
 
     // These are steps so a transient D1/DLQ hiccup is retried; failure to
     // record does not prevent the other side effect from being attempted.
+    let notify = NOTIFY;
     try {
-      await step.do("record-failure", DB_STEP_CONFIG, async () => {
+      notify = await step.do("record-failure", DB_STEP_CONFIG, async () => {
         await deps.repository.saveEmailHistory(
           emailId,
           "failed",
           `${summary}: ${reason}`,
           attempt,
         );
-        return emailId;
+        return await webhookCheck();
       });
     } catch (err) {
       pinoLogger.error({ err, emailId }, "Failed to persist final failure history");
@@ -140,6 +191,8 @@ export async function runSendEmailFlow(
     } catch (err) {
       pinoLogger.error({ err, emailId }, "Failed to publish email to the dead-letter queue");
     }
+
+    if (notify === NOTIFY) await publishWebhooks("failed", failureKind);
 
     return { outcome, reason, attempt };
   };
@@ -234,6 +287,8 @@ export async function runSendEmailFlow(
               const rejectedReceipt: SendReceipt = {
                 kind: "rejected",
                 reason: permanent,
+                // An AppError here is MakiSend's own refusal (configuration missing or disabled).
+                failureKind: err instanceof AppError ? "config" : "permanent",
                 attempt,
               };
               return JSON.stringify(rejectedReceipt);
@@ -252,6 +307,8 @@ export async function runSendEmailFlow(
         failureReason(err),
         lastAttempt,
         `Delivery abandoned after ${lastAttempt} attempt${lastAttempt === 1 ? "" : "s"}`,
+        "dead_lettered",
+        "transient_exhausted",
       );
     }
 
@@ -263,6 +320,7 @@ export async function runSendEmailFlow(
         receipt.attempt,
         "Delivery rejected permanently",
         "rejected",
+        receipt.failureKind ?? "permanent",
       );
     }
 
@@ -277,8 +335,9 @@ export async function runSendEmailFlow(
     // history insert rewrites the same values. If the step fails after the
     // SMTP provider accepted the message, report the send as successful rather
     // than dead-lettering a duplicate-prone email.
+    let notify = NOTIFY;
     try {
-      await step.do("record-delivery", DB_STEP_CONFIG, async () => {
+      notify = await step.do("record-delivery", DB_STEP_CONFIG, async () => {
         await deps.repository.completeEmailLog(
           emailId,
           delivered!.messageId,
@@ -291,7 +350,7 @@ export async function runSendEmailFlow(
           undefined,
           delivered!.attempt,
         );
-        return emailId;
+        return await webhookCheck();
       });
     } catch (err) {
       pinoLogger.error(
@@ -299,6 +358,8 @@ export async function runSendEmailFlow(
         "Email was sent but delivery bookkeeping failed",
       );
     }
+
+    if (notify === NOTIFY) await publishWebhooks("sent", null);
 
     return { outcome: "sent", ...delivered };
   } catch (err) {
@@ -308,6 +369,7 @@ export async function runSendEmailFlow(
         { err, emailId },
         "Email was sent but the workflow failed during bookkeeping",
       );
+      await publishWebhooks("sent", null);
       return { outcome: "sent", ...delivered };
     }
 

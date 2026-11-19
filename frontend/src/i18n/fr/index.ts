@@ -12,6 +12,7 @@ import updates from "./updates"
 import apiDocs from "./apiDocs"
 import star from "./star"
 import encryptionKey from "./encryptionKey"
+import webhooks from "./webhooks"
 
 export default {
   ...common,
@@ -28,4 +29,5 @@ export default {
   ...apiDocs,
   ...star,
   ...encryptionKey,
+  ...webhooks,
 }

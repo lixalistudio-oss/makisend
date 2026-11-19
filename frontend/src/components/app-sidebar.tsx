@@ -21,6 +21,7 @@ import {
   KeyIcon,
   FileTextIcon,
   LayoutTemplateIcon,
+  WebhookIcon,
   BookOpenIcon,
   Settings2Icon,
 } from "lucide-react"
@@ -52,6 +53,11 @@ const data: Record<"navMain" | "navSecondary", { titleKey: UiKey; url: string; i
       titleKey: "nav.templates",
       url: "/dashboard/templates",
       icon: <LayoutTemplateIcon />,
+    },
+    {
+      titleKey: "nav.webhooks",
+      url: "/dashboard/webhooks",
+      icon: <WebhookIcon />,
     },
   ],
   navSecondary: [

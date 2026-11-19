@@ -15,6 +15,11 @@ export const ENCRYPTED_COLUMNS: readonly EncryptedColumn[] = [
   { table: "email_contents", primaryKey: "email_id", column: "html_body" },
   // The file as base64, encrypted (POST /send-email `attachments`).
   { table: "email_attachments", primaryKey: "id", column: "content" },
+  // Webhook endpoints: the URL (it can carry a token) and the signing secrets.
+  // previous_secret is NULL outside a rotation; NULL never matches `<> ''`, so it is skipped.
+  { table: "webhook_endpoints", primaryKey: "id", column: "url" },
+  { table: "webhook_endpoints", primaryKey: "id", column: "secret" },
+  { table: "webhook_endpoints", primaryKey: "id", column: "previous_secret" },
 ];
 
 const quote = (identifier: string) => `"${identifier}"`;

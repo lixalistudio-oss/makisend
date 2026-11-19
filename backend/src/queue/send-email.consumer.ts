@@ -3,6 +3,8 @@ import { createDatabase } from "@/db/connection";
 import { SendEmailRepository } from "@/send-email/send-email.repository";
 import type { Bindings } from "@/index";
 import type { SendEmailQueueMessage } from "@/send-email/send-email.types";
+import { WebhookPublisher } from "@/webhooks/webhook-publisher";
+import { WebhookRepository } from "@/webhooks/webhooks.repository";
 
 // Backoff schedule for *consumer-level* retries (when `create()` itself throws,
 // e.g. the Workflows API is briefly unavailable). Formula: 5s * 2^attempts,
@@ -39,7 +41,9 @@ export async function sendEmailQueueConsumer(
   batch: MessageBatch<SendEmailQueueMessage>,
   env: Bindings,
 ): Promise<void> {
-  const repository = new SendEmailRepository(createDatabase(env.makisend_db));
+  const db = createDatabase(env.makisend_db);
+  const repository = new SendEmailRepository(db);
+  const webhooks = new WebhookPublisher(new WebhookRepository(db), env.WEBHOOK_QUEUE);
 
   for (const msg of batch.messages) {
     const emailId = msg.body?.emailId;
@@ -96,6 +100,17 @@ export async function sendEmailQueueConsumer(
           pinoLogger.error(
             { err: historyErr, emailId },
             "Failed to persist DLQ failure history",
+          );
+        }
+
+        // The workflow never ran, so it will never publish: this is the email's final status.
+        // After the history row, and never allowed to change what happens to the message.
+        try {
+          await webhooks.publishFinalStatus(emailId, "failed", "internal");
+        } catch (webhookErr) {
+          pinoLogger.error(
+            { err: webhookErr, emailId },
+            "Failed to publish the final-status webhooks",
           );
         }
       }

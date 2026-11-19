@@ -306,6 +306,115 @@ describe("runSendEmailFlow", () => {
     expect(result).toMatchObject({ outcome: "dead_lettered", attempt: 1 });
   });
 
+  describe("signed webhooks (B1 publication)", () => {
+    const hasEnabledEndpoints = vi.fn();
+    const publishFinalStatus = vi.fn();
+    const webhooks = { hasEnabledEndpoints, publishFinalStatus };
+
+    /** Records each step's name and what its callback returned. */
+    function recordingStep(options: StepStubOptions = {}) {
+      const inner = stepStub(options);
+      const calls: { name: string; result: unknown }[] = [];
+      const step = {
+        async do(name: string, cfgOrFn: unknown, maybeFn?: unknown) {
+          const result = await (inner.do as (...args: unknown[]) => Promise<unknown>)(name, cfgOrFn, maybeFn);
+          calls.push({ name, result });
+          return result;
+        },
+      } as unknown as WorkflowStep;
+      return { step, calls };
+    }
+
+    const runWith = (step: WorkflowStep) => runSendEmailFlow(buildDeps({ webhooks }), payload, step);
+
+    beforeEach(() => {
+      hasEnabledEndpoints.mockResolvedValue(true);
+      publishFinalStatus.mockResolvedValue(2);
+    });
+
+    it("publishes email.sent in its own step, after the sent status is written", async () => {
+      const { step, calls } = recordingStep();
+      const result = await runWith(step);
+
+      expect(calls.map((c) => c.name)).toEqual(["prepare-email", "send-mail-via-nodemailer", "record-delivery", "publish-webhooks"]);
+      expect(publishFinalStatus).toHaveBeenCalledExactlyOnceWith(emailId, "sent", null);
+      const sentRow = mockRepository.saveEmailHistory.mock.invocationCallOrder.at(-1)!;
+      expect(publishFinalStatus.mock.invocationCallOrder[0]).toBeGreaterThan(sentRow);
+      expect(mockRepository.completeEmailLog.mock.invocationCallOrder[0]).toBeLessThan(
+        publishFinalStatus.mock.invocationCallOrder[0],
+      );
+      expect(result).toMatchObject({ outcome: "sent" });
+    });
+
+    it("every step returns a primitive (workerd#6925), the publish step a number", async () => {
+      const { step, calls } = recordingStep();
+      await runWith(step);
+      for (const { result } of calls) expect(["string", "number"]).toContain(typeof result);
+      expect(calls.find((c) => c.name === "publish-webhooks")!.result).toBe(2);
+    });
+
+    it("costs no extra step when the owner has no enabled endpoint", async () => {
+      hasEnabledEndpoints.mockResolvedValue(false);
+      const { step, calls } = recordingStep();
+      await runWith(step);
+      expect(calls.map((c) => c.name)).toEqual(["prepare-email", "send-mail-via-nodemailer", "record-delivery"]);
+      expect(publishFinalStatus).not.toHaveBeenCalled();
+    });
+
+    it("still publishes when the endpoint check itself fails (the publisher checks again)", async () => {
+      hasEnabledEndpoints.mockRejectedValue(new Error("D1 hiccup"));
+      await runWith(recordingStep().step);
+      expect(publishFinalStatus).toHaveBeenCalledOnce();
+    });
+
+    it("a publication failure never changes the email's outcome", async () => {
+      publishFinalStatus.mockRejectedValue(new Error("queue down"));
+      const result = await runWith(recordingStep().step);
+      expect(result).toMatchObject({ outcome: "sent", messageId: "<mock-id@gmail.com>" });
+      expect(mockDeadLetterSend).not.toHaveBeenCalled();
+    });
+
+    it("still publishes email.sent when the bookkeeping step failed after delivery", async () => {
+      mockRepository.completeEmailLog.mockRejectedValue(new Error("D1 unavailable"));
+      const result = await runWith(recordingStep().step);
+      expect(result).toMatchObject({ outcome: "sent" });
+      expect(publishFinalStatus).toHaveBeenCalledExactlyOnceWith(emailId, "sent", null);
+    });
+
+    it.each([
+      [
+        "permanent SMTP error",
+        () => mockSend.mockRejectedValue(Object.assign(new Error("Invalid login: 535 5.7.8"), { code: "EAUTH" })),
+        "permanent",
+      ],
+      [
+        "missing SMTP configuration",
+        () => mockResolveTransport.mockRejectedValue(new AppError(404, "SMTP configuration not found")),
+        "config",
+      ],
+      ["transient errors until the budget is spent", () => mockSend.mockRejectedValue(new Error("SMTP down")), "transient_exhausted"],
+      ["email that cannot be prepared", () => mockLoadEmail.mockRejectedValue(new AppError(404, "Email not found")), "internal"],
+    ])("publishes email.failed after the failed status for a %s (%s)", async (_label, arrange, kind) => {
+      arrange();
+      const { step, calls } = recordingStep({ sendAttempts: SEND_MAX_ATTEMPTS });
+      await runWith(step);
+
+      expect(publishFinalStatus).toHaveBeenCalledExactlyOnceWith(emailId, "failed", kind);
+      const names = calls.map((c) => c.name);
+      expect(names.indexOf("publish-webhooks")).toBeGreaterThan(names.indexOf("record-failure"));
+      const failedRow = mockRepository.saveEmailHistory.mock.calls.findIndex((call) => call[1] === "failed");
+      expect(publishFinalStatus.mock.invocationCallOrder[0]).toBeGreaterThan(
+        mockRepository.saveEmailHistory.mock.invocationCallOrder[failedRow],
+      );
+    });
+
+    it("publishes nothing without the webhooks dependency", async () => {
+      const configs: Record<string, unknown> = {};
+      await run({ configs });
+      expect(Object.keys(configs)).not.toContain("publish-webhooks");
+    });
+  });
+
   it("still returns a terminal outcome when the dead-letter publish fails", async () => {
     mockResolveTransport.mockRejectedValue(
       new AppError(404, "SMTP configuration not found"),

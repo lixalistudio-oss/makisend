@@ -131,6 +131,43 @@ describe("sendEmailQueueConsumer", () => {
     expect(histories[0].error).toContain("Workflow unavailable");
   });
 
+  it("publishes email.failed (internal) when the workflow never started, after the failed row", async () => {
+    const d1 = env.makisend_db;
+    await d1.batch([
+      d1.prepare(`INSERT INTO "user" (id, email, email_verified, created_at, updated_at) VALUES ('wh-user', 'w@h.io', 1, 0, 0)`),
+      d1.prepare(`INSERT INTO "email_logs" ("internalId", user_id, "to", subject, created_at) VALUES ('never-started', 'wh-user', 'enc', 'Hi', '2026-11-12T10:00:00Z')`),
+      d1.prepare(`INSERT INTO "webhook_endpoints" (id, user_id, url, secret) VALUES ('wh-1', 'wh-user', 'enc-url', 'enc-secret')`),
+    ]);
+    const sendBatch = vi.fn().mockResolvedValue(undefined);
+    const withQueue = { ...env, WEBHOOK_QUEUE: { sendBatch } } as unknown as Bindings;
+    mockCreate.mockRejectedValue(new Error("Workflow unavailable"));
+    const msg = buildMessage(message("never-started"), 4);
+
+    await sendEmailQueueConsumer({ messages: [msg] } as never, withQueue);
+
+    const delivery = await d1
+      .prepare(`SELECT id, event_type, failure_kind, status FROM "webhook_deliveries" WHERE email_id = 'never-started'`)
+      .first<{ id: string; event_type: string; failure_kind: string; status: string }>();
+    expect(delivery).toMatchObject({ event_type: "email.failed", failure_kind: "internal", status: "pending" });
+    expect(sendBatch).toHaveBeenCalledExactlyOnceWith([{ body: { deliveryId: delivery!.id } }]);
+    // The message's own fate is unchanged: it still goes on to the DLQ.
+    expect(msg.retry).toHaveBeenCalledWith({ delaySeconds: 80 });
+  });
+
+  it("does not publish before the last attempt, and a publish failure does not change the retry", async () => {
+    mockCreate.mockRejectedValue(new Error("Workflow unavailable"));
+    const sendBatch = vi.fn().mockRejectedValue(new Error("queue down"));
+    const withQueue = { ...env, WEBHOOK_QUEUE: { sendBatch } } as unknown as Bindings;
+
+    const early = buildMessage(message("never-started"), 2);
+    await sendEmailQueueConsumer({ messages: [early] } as never, withQueue);
+    expect(sendBatch).not.toHaveBeenCalled();
+
+    const last = buildMessage(message("never-started"), 4);
+    await sendEmailQueueConsumer({ messages: [last] } as never, withQueue);
+    expect(last.retry).toHaveBeenCalledWith({ delaySeconds: 80 });
+  });
+
   it("continues processing the batch after a message fails", async () => {
     mockCreate
       .mockRejectedValueOnce(new Error("boom"))

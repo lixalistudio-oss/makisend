@@ -2,6 +2,8 @@ import { resolveEncryptionKeys } from "@/config/config";
 import { WorkflowEntrypoint } from "cloudflare:workers";
 import type { WorkflowEvent, WorkflowStep } from "cloudflare:workers";
 import { createDatabase } from "@/db/connection";
+import { WebhookPublisher } from "@/webhooks/webhook-publisher";
+import { WebhookRepository } from "@/webhooks/webhooks.repository";
 import { SendEmailRepository } from "@/send-email/send-email.repository";
 import { loadEmailForSending } from "@/send-email/send-email.loader";
 import { resolveTransportFor } from "@/send-email/transport-resolver";
@@ -40,7 +42,8 @@ export class SendEmailWorkflow extends WorkflowEntrypoint<Bindings, SendEmailPar
     const env = this.env;
     // Fresh repository per run: the instance may outlive the isolate that
     // started it, so nothing may be cached across durable executions.
-    const repository = new SendEmailRepository(createDatabase(env.makisend_db));
+    const db = createDatabase(env.makisend_db);
+    const repository = new SendEmailRepository(db);
 
     return runSendEmailFlow(
       {
@@ -50,6 +53,7 @@ export class SendEmailWorkflow extends WorkflowEntrypoint<Bindings, SendEmailPar
         resolveTransport: (smtpConfigId) =>
           resolveTransportFor(env, smtpConfigId ?? undefined),
         deadLetterQueue: env.SEND_EMAIL_DLQ,
+        webhooks: new WebhookPublisher(new WebhookRepository(db), env.WEBHOOK_QUEUE),
       },
       event.payload,
       step,

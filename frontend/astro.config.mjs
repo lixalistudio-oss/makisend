@@ -26,6 +26,8 @@ export default defineConfig({
         "/email-logs": backendUrl,
         "/templates": backendUrl,
         "/updates": backendUrl,
+        // Webhook endpoints API. A prefix match: it does not catch the /dashboard/webhooks page.
+        "/webhooks": backendUrl,
         "/dashboard/stats": backendUrl,
         "/dashboard/by-config": backendUrl,
         "/dashboard/recent": backendUrl,

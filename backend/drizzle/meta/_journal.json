@@ -50,6 +50,13 @@
       "when": 1792770361464,
       "tag": "0006_update_check",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1794503366216,
+      "tag": "0007_webhooks",
+      "breakpoints": true
     }
   ]
 }

@@ -14,7 +14,9 @@ async function legacyCiphertext(plainText: string, keyHex: string): Promise<stri
   return JSON.stringify({ iv, data });
 }
 
-describe("KeyRotationService (real D1)", () => {
+// Each run makes two queries per ENCRYPTED_COLUMNS entry on a real D1 (Miniflare): fine alone
+// (1-2 s), but over the default 5 s when the whole suite shares the machine.
+describe("KeyRotationService (real D1)", { timeout: 20_000 }, () => {
   let mf: Miniflare;
   let d1: D1Database;
 

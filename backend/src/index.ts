@@ -34,6 +34,15 @@ import { sendEmailQueueConsumer } from "@/queue/send-email.consumer";
 import { runSmtpHealthChecks } from "@/smtp-config/smtp-health";
 import { openApiDocument, SCALAR_CUSTOM_CSS } from "@/openapi";
 import { createUpdatesController, createUpdateService, runUpdateCheck, type UpdateService } from "@/updates";
+import {
+  createWebhooksController,
+  runWebhookSweep,
+  WebhookRepository,
+  WebhooksService,
+  type IWebhookRepository,
+  type WebhookQueueMessage,
+} from "@/webhooks";
+import { isWebhookBatch, webhookQueueConsumer } from "@/queue/webhook.consumer";
 
 // --- Better Auth ---
 import { createAuth } from "@/lib/auth";
@@ -43,7 +52,14 @@ import { createDatabase } from "@/db/connection";
 import { SendEmailRepository } from "@/send-email/send-email.repository";
 
 // --- Type imports ---
-import { checkEncryptionKeys, resolveEncryptionKeys, type SmtpConfig, type UserConfig } from "./config/config";
+import {
+  checkEncryptionKeys,
+  resolveEncryptionKeys,
+  resolveWebhookConfig,
+  type SmtpConfig,
+  type UserConfig,
+  type WebhookConfig,
+} from "./config/config";
 import type { EncryptionKeys } from "@/core/crypto";
 import { runKeyRotation, KEY_ROTATION_CRON } from "@/key-rotation";
 import { needsSetup } from "@/lib/owner-lock";
@@ -86,9 +102,18 @@ export type Bindings = {
   UPDATE_SOURCE_IMAGE?: string;
   // This instance's own copy of the repo (`owner/name`): links "Update" to its sync workflow.
   MAKISEND_REPOSITORY?: string;
+  // "true" lets webhook URLs use http: and local/private hosts. Local development only:
+  // it reopens SSRF towards the machine and its network. Unset or anything else: off.
+  WEBHOOK_ALLOW_INSECURE_URLS?: string;
+  // Optional comma-separated allowlist of webhook hostnames, for self-hosts that want it.
+  WEBHOOK_ALLOWED_HOSTS?: string;
   SEND_EMAIL_QUEUE: Queue<SendEmailQueueMessage>;
   SEND_EMAIL_DLQ: Queue<SendEmailQueueMessage>;
   SEND_EMAIL_WORKFLOW: Workflow;
+  // Signed webhooks of the final status (src/webhooks): one { deliveryId } per receiver.
+  // Optional so an install whose wrangler config predates it still sends email: deliveries then
+  // stay pending (the publish step logs the missing binding) and the daily sweep fails them.
+  WEBHOOK_QUEUE?: Queue<WebhookQueueMessage>;
   // Cloudflare Email Service. Optional: unused unless an SMTP configuration points at
   // smtp.mx.cloudflare.net, which only this binding can reach from a Worker.
   EMAIL?: SendEmail;
@@ -147,6 +172,7 @@ const deps = {
   emailLogRepository: null as IEmailLogRepository | null,
   dashboardRepository: null as IDashboardRepository | null,
   templateRepository: null as ITemplateRepository | null,
+  webhookRepository: null as IWebhookRepository | null,
   idempotencyRepository: null as IIdempotencyRepository | null,
   sendRateLimitRepository: null as ISendRateLimitRepository | null,
   sendRateLimit: null as SendRateLimit | null,
@@ -155,6 +181,9 @@ const deps = {
   emailLogService: null as EmailLogService | null,
   dashboardService: null as DashboardService | null,
   templateService: null as TemplateService | null,
+  webhooksService: null as WebhooksService | null,
+  webhookConfig: null as WebhookConfig | null,
+  webhookQueue: undefined as Queue<WebhookQueueMessage> | undefined,
   idempotencyService: null as IdempotencyService | null,
   updateService: null as UpdateService | null,
   aesKey: null as EncryptionKeys | null,
@@ -172,6 +201,9 @@ const deps = {
     this.emailLogRepository = new EmailLogRepository(db);
     this.dashboardRepository = new DashboardRepository(db);
     this.templateRepository = new TemplateRepository(db);
+    this.webhookRepository = new WebhookRepository(db);
+    this.webhookConfig = resolveWebhookConfig(env);
+    this.webhookQueue = env.WEBHOOK_QUEUE;
     this.idempotencyRepository = new IdempotencyRepository(db);
     this.sendRateLimitRepository = new SendRateLimitRepository(db);
     this.sendRateLimit = parseSendRateLimit(env.SEND_RATE_LIMIT);
@@ -191,6 +223,9 @@ const deps = {
     this.emailLogService = new EmailLogService(this.emailLogRepository!, this.aesKey!);
     this.dashboardService = new DashboardService(this.dashboardRepository!, this.aesKey!);
     this.templateService = new TemplateService(this.templateRepository!);
+    this.webhooksService = new WebhooksService(this.webhookRepository!, this.aesKey!, this.webhookConfig!, {
+      queue: this.webhookQueue,
+    });
     this.idempotencyService = new IdempotencyService(this.idempotencyRepository!);
   },
 };
@@ -398,6 +433,15 @@ app.use("/templates*", async (c, next) => {
 });
 app.route("/templates", templatesController);
 
+// Mount webhooks controller with session auth (endpoints the final status of each email is posted to).
+// "/webhooks*" covers both /webhooks and /webhooks/:id… (tested in webhooks.http.test.ts).
+const webhooksController = createWebhooksController(() => deps.webhooksService!);
+app.use("/webhooks*", async (c, next) => {
+  const auth = getAuthInstance(c.env, c.req.url);
+  return sessionMiddleware(auth)(c, next);
+});
+app.route("/webhooks", webhooksController);
+
 // New-release check, shown as a banner on the dashboard (session auth).
 const updatesController = createUpdatesController(() => deps.updateService!);
 app.use("/updates/*", async (c, next) => {
@@ -414,7 +458,14 @@ export { app };
 export { SendEmailWorkflow } from "@/workflows";
 export default {
   fetch: app.fetch,
-  queue: sendEmailQueueConsumer,
+  // One `queue` handler for every consumed queue: dispatched on the batch (name or body shape,
+  // since the Deploy button lets users rename queues).
+  queue: async (batch: MessageBatch<unknown>, env: Bindings) => {
+    if (isWebhookBatch(batch)) {
+      return webhookQueueConsumer(batch as MessageBatch<WebhookQueueMessage>, env);
+    }
+    return sendEmailQueueConsumer(batch as MessageBatch<SendEmailQueueMessage>, env);
+  },
   scheduled: async (
     _controller: ScheduledController,
     env: Bindings,
@@ -428,5 +479,6 @@ export default {
     }
     ctx.waitUntil(runSmtpHealthChecks(env));
     ctx.waitUntil(runUpdateCheck(env));
+    ctx.waitUntil(runWebhookSweep(env));
   },
 };

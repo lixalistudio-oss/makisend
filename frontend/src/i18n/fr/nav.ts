@@ -6,6 +6,7 @@ export default {
   "nav.apiKeys": "Clés d'API",
   "nav.emailLogs": "Journal des e-mails",
   "nav.templates": "Modèles",
+  "nav.webhooks": "Webhooks",
   "nav.apiReference": "Référence de l'API",
   "nav.settings": "Paramètres",
   "nav.toggleSidebar": "Afficher ou masquer la barre latérale",
@@ -24,6 +25,7 @@ export default {
   "nav.title.apiKeys": "Clés d'API - MakiSend",
   "nav.title.emailLogs": "Journal des e-mails - MakiSend",
   "nav.title.templates": "Modèles - MakiSend",
+  "nav.title.webhooks": "Webhooks - MakiSend",
   "nav.title.apiDocs": "Référence de l'API - MakiSend",
   "nav.title.settings": "Paramètres - MakiSend",
 } satisfies Record<keyof typeof en, string>
