@@ -34,6 +34,8 @@ function buildApp() {
   const mockQueueSend = vi.fn().mockResolvedValue(undefined);
 
   const mockRepository = {
+    // Off by default, like a fresh account.
+    isOpenTrackingEnabled: vi.fn().mockResolvedValue(false),
     createPendingEmailLog: vi.fn().mockResolvedValue(undefined),
     completeEmailLog: vi.fn().mockResolvedValue(undefined),
     saveEmailHistory: vi.fn().mockResolvedValue(undefined),
@@ -125,6 +127,7 @@ describe("SendEmailController", () => {
         expect.any(String),
         "Testing Feature Modules",
         "key-123",
+        { trackingToken: null },
       );
 
       const message = mockQueueSend.mock.calls[0][0] as SendEmailQueueMessage;
@@ -317,6 +320,7 @@ describe("SendEmailController", () => {
         expect.any(String),
         "Bienvenue Joel !",
         "key-123",
+        { trackingToken: null },
       );
 
       // Rendered content is stored encrypted — the workflow and SMTP layer never
@@ -376,6 +380,7 @@ describe("SendEmailController", () => {
         expect.any(String),
         "Order 123",
         "key-123",
+        { trackingToken: null },
       );
     });
 
@@ -505,6 +510,161 @@ describe("SendEmailController", () => {
       expect(mockQueueSend).not.toHaveBeenCalled();
       const json = (await res.json()) as { error: string };
       expect(json.error).toContain("line breaks");
+    });
+  });
+
+  describe("open tracking (trackOpens + account setting)", () => {
+    const inline = {
+      to: "gedeon@example.com",
+      subject: "Tracked or not",
+      text: "This text body is long enough to pass validation.",
+      html: "<p>Hello</p>",
+    };
+
+    function send(body: Record<string, unknown>) {
+      return app.request(
+        "https://makisend.example.workers.dev/send-email",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        },
+        queueEnv(mockQueueSend),
+      );
+    }
+
+    function pendingOptions() {
+      return mockRepository.createPendingEmailLog.mock.calls[0][5] as { trackingToken: string | null };
+    }
+
+    function queuedMessage() {
+      return mockQueueSend.mock.calls[0][0] as SendEmailQueueMessage;
+    }
+
+    function expectUntracked() {
+      expect(pendingOptions()).toEqual({ trackingToken: null });
+      expect(queuedMessage()).toEqual({ emailId: expect.any(String) });
+    }
+
+    function expectTracked() {
+      expect(pendingOptions().trackingToken).toMatch(/^[A-Za-z0-9]{43}$/);
+      expect(queuedMessage()).toEqual({
+        emailId: expect.any(String),
+        trackingBaseUrl: "https://makisend.example.workers.dev",
+      });
+    }
+
+    it("account off, trackOpens omitted: not tracked", async () => {
+      const res = await send(inline);
+
+      expect(res.status).toBe(202);
+      expect(mockRepository.isOpenTrackingEnabled).toHaveBeenCalledWith(USER_ID);
+      expectUntracked();
+    });
+
+    it("account off, trackOpens false: not tracked, the setting is not even read", async () => {
+      const res = await send({ ...inline, trackOpens: false });
+
+      expect(res.status).toBe(202);
+      expect(mockRepository.isOpenTrackingEnabled).not.toHaveBeenCalled();
+      expectUntracked();
+    });
+
+    it("account off, trackOpens true: 400 with a stable code, nothing written or queued", async () => {
+      const res = await send({ ...inline, trackOpens: true });
+
+      expect(res.status).toBe(400);
+      const json = (await res.json()) as { error: string; code: string };
+      expect(json.code).toBe("open_tracking_disabled");
+      expect(json.error).toContain("Open tracking is disabled");
+      expect(mockRepository.createPendingEmailLog).not.toHaveBeenCalled();
+      expect(mockRepository.saveEmailContent).not.toHaveBeenCalled();
+      expect(mockQueueSend).not.toHaveBeenCalled();
+    });
+
+    it("account on, trackOpens omitted: tracked by default", async () => {
+      mockRepository.isOpenTrackingEnabled.mockResolvedValue(true);
+
+      const res = await send(inline);
+
+      expect(res.status).toBe(202);
+      expectTracked();
+    });
+
+    it("account on, trackOpens true: tracked", async () => {
+      mockRepository.isOpenTrackingEnabled.mockResolvedValue(true);
+
+      const res = await send({ ...inline, trackOpens: true });
+
+      expect(res.status).toBe(202);
+      expectTracked();
+    });
+
+    it("account on, trackOpens false: not tracked", async () => {
+      mockRepository.isOpenTrackingEnabled.mockResolvedValue(true);
+
+      const res = await send({ ...inline, trackOpens: false });
+
+      expect(res.status).toBe(202);
+      expectUntracked();
+    });
+
+    it("gives every tracked email its own token", async () => {
+      mockRepository.isOpenTrackingEnabled.mockResolvedValue(true);
+
+      await send(inline);
+      await send(inline);
+
+      const [first, second] = mockRepository.createPendingEmailLog.mock.calls.map(
+        (call) => (call[5] as { trackingToken: string }).trackingToken,
+      );
+      expect(first).not.toBe(second);
+    });
+
+    it("never stores the pixel: the HTML saved in D1 is the one received", async () => {
+      mockRepository.isOpenTrackingEnabled.mockResolvedValue(true);
+
+      await send(inline);
+
+      expect((await storedContent(mockRepository)).html).toBe(inline.html);
+    });
+
+    it("applies to a template send too", async () => {
+      mockRepository.isOpenTrackingEnabled.mockResolvedValue(true);
+      mockTemplateRepository.findById.mockResolvedValue(OWNED_TEMPLATE);
+
+      const res = await send({
+        to: "joel@example.com",
+        templateId: "tpl-1",
+        variables: { username: "Joel", email: "joel@example.com" },
+        trackOpens: true,
+      });
+
+      expect(res.status).toBe(202);
+      expectTracked();
+    });
+
+    it("rejects a template send asking for tracking on an account without it", async () => {
+      mockTemplateRepository.findById.mockResolvedValue(OWNED_TEMPLATE);
+
+      const res = await send({
+        to: "joel@example.com",
+        templateId: "tpl-1",
+        variables: { username: "Joel", email: "joel@example.com" },
+        trackOpens: true,
+      });
+
+      expect(res.status).toBe(400);
+      expect(mockQueueSend).not.toHaveBeenCalled();
+    });
+
+    it("rejects a trackOpens that is not a boolean", async () => {
+      const res = await send({ ...inline, trackOpens: "yes" });
+
+      expect(res.status).toBe(400);
+      const json = (await res.json()) as { error: string };
+      expect(json.error).toBe("Validation failed");
+      expect(mockRepository.isOpenTrackingEnabled).not.toHaveBeenCalled();
     });
   });
 });

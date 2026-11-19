@@ -20,6 +20,7 @@ const EXPECTED_PATHS = [
   "/api-keys/{id}",
   "/email-logs",
   "/email-logs/{id}",
+  "/t/o/{token}",
   "/dashboard/stats",
   "/dashboard/by-config",
   "/dashboard/by-api-key",

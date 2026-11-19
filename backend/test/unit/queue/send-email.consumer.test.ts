@@ -63,6 +63,21 @@ describe("sendEmailQueueConsumer", () => {
     expect(msg.retry).not.toHaveBeenCalled();
   });
 
+  it("hands an open-tracked email's base URL over to the workflow", async () => {
+    const msg = buildMessage({
+      emailId: "email-id-123",
+      trackingBaseUrl: "https://makisend.example.workers.dev",
+    });
+
+    await sendEmailQueueConsumer({ messages: [msg] } as never, env);
+
+    expect(mockCreate).toHaveBeenCalledWith({
+      id: "email-id-123",
+      params: { emailId: "email-id-123", trackingBaseUrl: "https://makisend.example.workers.dev" },
+    });
+    expect(msg.ack).toHaveBeenCalledTimes(1);
+  });
+
   it("acks a duplicate delivery when the workflow instance already exists", async () => {
     mockCreate.mockRejectedValue(new Error("instance already exists"));
     mockGet.mockResolvedValue({ id: "email-id-123" });

@@ -158,6 +158,7 @@ export const openApiDocument = {
     { name: "SMTP Config", description: "Manage encrypted SMTP or Cloudflare Email Service credentials." },
     { name: "API Keys", description: "Manage per-configuration API keys." },
     { name: "Email Logs", description: "Inspect delivery logs and history." },
+    { name: "Open Tracking", description: "Public tracking pixel that records when an email is opened." },
     { name: "Dashboard", description: "Aggregated delivery metrics." },
     { name: "Templates", description: "Reusable email templates with variables." },
     { name: "Updates", description: "Whether a newer MakiSend release is published." },
@@ -170,7 +171,7 @@ export const openApiDocument = {
         summary: "Queue a transactional email",
         operationId: "sendEmail",
         description:
-          "Accepts either inline content (`subject`, `text`, `html`) or a `templateId` plus `variables`. The two shapes are mutually exclusive. Both accept optional `attachments`. HTML is sanitized before delivery. Send the optional `Idempotency-Key` header to make retries safe.",
+          "Accepts either inline content (`subject`, `text`, `html`) or a `templateId` plus `variables`. The two shapes are mutually exclusive. Both accept optional `attachments`. HTML is sanitized before delivery. Send the optional `Idempotency-Key` header to make retries safe. The optional `trackOpens` boolean controls open tracking for this email. Omitted, the account setting decides. `trackOpens: false` skips tracking even when the account enables it; `trackOpens: true` on an account with tracking disabled is rejected with a 400 and the code `open_tracking_disabled`. Tracking adds an invisible image to the HTML copy that is sent; plain-text-only emails are never tracked.",
         security: apiKeySecurity,
         parameters: [idempotencyKeyParameter],
         requestBody: {
@@ -228,6 +229,41 @@ export const openApiDocument = {
             content: { "application/json": { schema: schemaRef("Error") } },
           },
           500: responseRef("ServerError"),
+        },
+      },
+    },
+    "/t/o/{token}": {
+      get: {
+        tags: ["Open Tracking"],
+        summary: "Record an email open",
+        operationId: "trackEmailOpen",
+        description:
+          "Loaded by the recipient's mail client through the tracking image. Public: no credentials. Always answers with the same 1x1 GIF, whether the token is known or not, and whether the write was throttled or not, so the response reveals nothing about the token.",
+        security: [],
+        parameters: [
+          {
+            name: "token",
+            in: "path",
+            required: true,
+            description: "Random token that identifies one tracked email.",
+            schema: { type: "string" },
+          },
+        ],
+        responses: {
+          200: {
+            description: "1x1 transparent GIF.",
+            headers: {
+              "Cache-Control": {
+                description: "Always `no-store`, so each open reaches the server.",
+                schema: { type: "string" },
+              },
+            },
+            content: {
+              "image/gif": {
+                schema: { type: "string", format: "binary" },
+              },
+            },
+          },
         },
       },
     },
@@ -987,6 +1023,10 @@ export const openApiDocument = {
           "smtpConfigId",
           "createdAt",
           "history",
+          "trackingEnabled",
+          "firstOpenedAt",
+          "lastOpenedAt",
+          "openCount",
         ],
         properties: {
           internalId: { type: "string" },
@@ -1008,6 +1048,24 @@ export const openApiDocument = {
           },
           createdAt: { type: "string", format: "date-time" },
           history: { type: "array", items: schemaRef("EmailHistory") },
+          trackingEnabled: {
+            type: "boolean",
+            description: "Whether open tracking was active when this email was sent. Fixed at send time.",
+          },
+          firstOpenedAt: {
+            type: ["string", "null"],
+            format: "date-time",
+            description: "First recorded open. Null when not opened or not tracked.",
+          },
+          lastOpenedAt: {
+            type: ["string", "null"],
+            format: "date-time",
+            description: "Last recorded open. Null when not opened or not tracked.",
+          },
+          openCount: {
+            type: "integer",
+            description: "Recorded opens. Can be lower than the real count because of the per-email write throttle.",
+          },
         },
       },
       EmailLogEnvelope: {

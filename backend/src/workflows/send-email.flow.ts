@@ -2,6 +2,7 @@ import type { WorkflowStep } from "cloudflare:workers";
 import { AppError } from "@/core/errors";
 import { pinoLogger } from "@/core/logger";
 import { cleanHtml } from "@/core/html-sanitizer";
+import { appendTrackingPixel, buildPixelUrl } from "@/open-tracking";
 import {
   classifyEmailError,
   friendlyErrorMessage,
@@ -95,6 +96,32 @@ function failureReason(err: unknown): string {
  * false "code had hung" cancellation in workerd (workerd#6925 /
  * workers-sdk#14959).
  */
+/**
+ * The HTML that goes out: sanitized, then, for an open-tracked email, followed by the pixel. The
+ * pixel is added after `cleanHtml` so the sanitizer can neither strip nor alter it, and the stored
+ * HTML is never modified. A tracked email without a usable base URL (a message queued before this
+ * field existed) is still sent, without the pixel: tracking must never block delivery.
+ */
+export function htmlToSend(
+  email: EmailToSend,
+  trackingBaseUrl: string | undefined,
+  emailId: string,
+): string {
+  const html = cleanHtml(email.html);
+  if (!email.trackingToken) return html;
+
+  if (trackingBaseUrl) {
+    try {
+      return appendTrackingPixel(html, buildPixelUrl(trackingBaseUrl, email.trackingToken));
+    } catch (err) {
+      pinoLogger.warn({ err, emailId }, "Invalid tracking base URL; sending without the pixel");
+      return html;
+    }
+  }
+  pinoLogger.warn({ emailId }, "Tracked email has no tracking base URL; sending without the pixel");
+  return html;
+}
+
 export async function runSendEmailFlow(
   deps: SendEmailFlowDeps,
   payload: SendEmailQueueMessage,
@@ -192,7 +219,7 @@ export async function runSendEmailFlow(
               to: email.to,
               subject: email.subject,
               text: email.text,
-              html: cleanHtml(email.html),
+              html: htmlToSend(email, payload.trackingBaseUrl, emailId),
               ...(email.attachments && email.attachments.length > 0 ? { attachments: email.attachments } : {}),
             });
 

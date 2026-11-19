@@ -20,9 +20,16 @@ export interface PendingEmailLogOptions {
   source?: "api" | "test";
   /** Set for a test (the configuration it went through); API sends reach theirs through the key. */
   smtpConfigId?: string | null;
+  /**
+   * Set when the email is open-tracked: the row is written with `tracking_enabled = true` and this
+   * token, which the pixel URL carries. Absent or null: an untracked email.
+   */
+  trackingToken?: string | null;
 }
 
 export interface IEmailRepository {
+  /** The account-wide open tracking switch (`user.open_tracking_enabled`); false for an unknown user. */
+  isOpenTrackingEnabled(userId: string): Promise<boolean>;
   /**
    * Inserts the log row at enqueue time (smtp_id/sent_at stay NULL until the
    * email is actually delivered). This is what makes failed sends listable.
@@ -88,11 +95,15 @@ export interface StoredEmail {
   text: string;
   html: string;
   smtpConfigId: string | null;
+  /** NULL when the email is not open-tracked. */
+  trackingToken: string | null;
 }
 
 /** An email ready to be sent: decrypted, plus the SMTP configuration it was queued with. */
 export interface EmailToSend extends EmailInput {
   smtpConfigId: string | null;
+  /** Present when the email is open-tracked: the workflow adds the pixel after sanitizing. */
+  trackingToken?: string | null;
 }
 
 export interface IEmailTransport {
@@ -106,5 +117,10 @@ export interface IEmailTransport {
  */
 export interface SendEmailQueueMessage {
   emailId: string;
+  /**
+   * Only for an open-tracked email: the origin the send request arrived on. The workflow has no
+   * request of its own, so this is how it learns where the pixel URL must point. Not PII.
+   */
+  trackingBaseUrl?: string;
 }
 

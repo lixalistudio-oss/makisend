@@ -51,9 +51,11 @@ export async function sendEmailQueueConsumer(
     }
 
     try {
+      // An open-tracked email also hands over the origin its pixel URL must point to.
+      const trackingBaseUrl = msg.body.trackingBaseUrl;
       await env.SEND_EMAIL_WORKFLOW.create({
         id: emailId,
-        params: { emailId },
+        params: typeof trackingBaseUrl === "string" ? { emailId, trackingBaseUrl } : { emailId },
       });
       // Only ack after create() succeeded: an early ack would drop the email
       // if the Worker crashed between ack and create.

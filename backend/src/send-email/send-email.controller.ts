@@ -11,7 +11,42 @@ import type { ITemplateRepository } from "@/templates/templates.types";
 import { renderTemplateContent } from "@/templates/template-renderer";
 import { AppError } from "@/core/errors";
 import { encrypt } from "@/core/crypto";
+import { pinoLogger } from "@/core/logger";
+import { generateTrackingToken } from "@/open-tracking";
 import { createId } from "@paralleldrive/cuid2";
+
+/** Machine-readable code of the 400 sent when `trackOpens: true` meets an account with tracking off. */
+export const OPEN_TRACKING_DISABLED_CODE = "open_tracking_disabled";
+
+/**
+ * Whether this email is open-tracked. The account setting is the master switch: the request may
+ * only narrow it (`false`) or confirm it (`true`). Asking for tracking on an account that has it
+ * off is an error, so the caller never believes an email is tracked when it is not.
+ */
+async function decideOpenTracking(
+  repository: IEmailRepository,
+  userId: string,
+  apiKeyId: string,
+  requested: boolean | undefined,
+): Promise<boolean> {
+  if (requested === false) return false;
+
+  const accountEnabled = await repository.isOpenTrackingEnabled(userId);
+  if (accountEnabled) return true;
+
+  if (requested === true) {
+    pinoLogger.warn(
+      { userId, apiKeyId },
+      "Rejected trackOpens: open tracking is disabled for this account",
+    );
+    throw new AppError(
+      400,
+      "Open tracking is disabled for this account. Enable it in the settings, or omit trackOpens.",
+      OPEN_TRACKING_DISABLED_CODE,
+    );
+  }
+  return false;
+}
 
 /**
  * Loads the caller's template and renders it into the inline shape the rest of
@@ -80,6 +115,10 @@ export function createSendEmailController(
 
       const repository = getEmailRepository();
 
+      // Decided before anything is written: a rejected trackOpens leaves no log row behind.
+      const tracked = await decideOpenTracking(repository, userId, apiKeyId, payload.trackOpens);
+      const trackingToken = tracked ? generateTrackingToken() : null;
+
       // Pending log row first, so the email is visible on the dashboard from the
       // moment it is accepted — even if every later stage fails.
       const [encryptedTo, encryptedText, encryptedHtml] = await Promise.all([
@@ -87,7 +126,9 @@ export function createSendEmailController(
         encrypt(data.text, resolveEncryptionKeys(c.env)),
         encrypt(data.html, resolveEncryptionKeys(c.env)),
       ]);
-      await repository.createPendingEmailLog(emailId, userId, encryptedTo, data.subject, apiKeyId);
+      await repository.createPendingEmailLog(emailId, userId, encryptedTo, data.subject, apiKeyId, {
+        trackingToken,
+      });
 
       // Bodies stay in D1, encrypted. The queue message only carries the id, so
       // no PII travels through Cloudflare Queues or Workflows state.
@@ -120,7 +161,11 @@ export function createSendEmailController(
         throw err;
       }
 
-      const message: SendEmailQueueMessage = { emailId };
+      // A tracked email also carries the origin this request arrived on: the workflow has no
+      // request of its own and needs it to build the absolute pixel URL.
+      const message: SendEmailQueueMessage = trackingToken
+        ? { emailId, trackingBaseUrl: new URL(c.req.url).origin }
+        : { emailId };
 
       // Buffered in Cloudflare Queues first; the consumer starts the
       // SendEmailWorkflow from it.

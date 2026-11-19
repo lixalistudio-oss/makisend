@@ -10,6 +10,10 @@ import {
 import { TemplateVariablesDto } from "@/templates/templates.dto";
 import { AttachmentsDto } from "./attachments";
 
+// Open tracking for this email. Omitted: the account setting decides. `true` on an account with
+// tracking off is rejected (400); `false` skips tracking even when the account enables it.
+const TrackOpensDto = z.boolean({ message: "trackOpens must be a boolean." }).optional();
+
 export const SendEmailDto = z
   .object({
     to: z
@@ -50,6 +54,8 @@ export const SendEmailDto = z
 
     // Resend's shape: `[{ filename, content (base64), content_type? }]`. See attachments.ts.
     attachments: AttachmentsDto.optional(),
+
+    trackOpens: TrackOpensDto,
   })
   .strict();
 
@@ -79,6 +85,8 @@ export const SendTemplateEmailDto = z
 
     // Same as the inline shape: a templated email can carry files too.
     attachments: AttachmentsDto.optional(),
+
+    trackOpens: TrackOpensDto,
   })
   .strict();
 
