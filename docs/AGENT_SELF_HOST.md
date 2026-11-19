@@ -77,6 +77,7 @@ Generate locally, pipe straight into the Worker, never print or log a value, nev
 | `BETTER_AUTH_URL` | the Worker's public URL |
 | `FRONTEND_URL` | the same URL (dashboard and API share one origin) |
 | `SEND_RATE_LIMIT` | optional, recommended: e.g. `100/min` (see step 8) |
+| `OPEN_TRACKING_BASE_URL` | optional: the public origin open-tracking pixels point to (see step 8). Unset: the origin each send request arrives on |
 
 ```bash
 cf workers secrets update ENCRYPTION_KEY --worker <worker> --type secret_text --text "$(openssl rand -hex 32)"
@@ -102,7 +103,8 @@ Apply these, tell the user what each protects, and ask before anything that chan
 5. **Key rotation, never replacement**: to change `ENCRYPTION_KEY`, follow `AGENTS.md` → "Key rotation" (`ENCRYPTION_KEY_PREVIOUS`, hourly cron, wait for `remaining: 0`).
 6. **Sender domain**: SPF, DKIM and DMARC on the domain used as sender; MakiSend does not set them.
 7. **SMTP credentials**: a dedicated SMTP user or app password for MakiSend, not a personal mailbox password.
-8. **Optional, if the dashboard should not be public**: put Cloudflare Access in front of the dashboard paths, and leave `/send-email`, `/openapi.json` and `/docs` reachable for API clients. Ask first: it changes how the user signs in.
+8. **Optional, if the dashboard should not be public**: put Cloudflare Access in front of the dashboard paths, and leave `/send-email`, `/openapi.json` and `/docs` reachable for API clients. Ask first: it changes how the user signs in. Also leave `/t/o/*` public: it is the open-tracking pixel, loaded by recipients' mail clients without any credentials.
+9. **Open tracking** (off by default, Settings > Open tracking): each tracked email carries a pixel URL that stays in the recipient's mailbox for good. If API clients reach the Worker through several hostnames, or through a proxy that rewrites the host, set `OPEN_TRACKING_BASE_URL` to the one public origin that must receive opens, and keep it reachable. The pixel token appears in Cloudflare's invocation logs; it only lets its holder inflate one email's open count.
 9. **Updates**: pull upstream, rerun step 1, apply new migrations (step 4), redeploy (step 5). Watch `pnpm audit --prod`.
 
 ## Done when

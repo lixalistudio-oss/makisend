@@ -81,6 +81,10 @@ export type Bindings = {
   // Optional per-API-key send quota on POST /send-email, e.g. "100/min" or "5000/day".
   // Unset (the default): no quota. Over the limit: 429 + Retry-After.
   SEND_RATE_LIMIT?: string;
+  // Optional public origin the open-tracking pixel points to (e.g. "https://mail.example.com" or a
+  // dedicated "https://track.example.com" routed to this Worker). Unset, or not an http(s) URL:
+  // the origin the POST /send-email request arrived on.
+  OPEN_TRACKING_BASE_URL?: string;
   // New-release check (src/updates): "off" stops every outbound request. Unset: on.
   UPDATE_CHECK?: string;
   // "registry": a new version is the newest version tag of UPDATE_SOURCE_IMAGE (set by the

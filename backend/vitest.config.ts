@@ -28,6 +28,12 @@ export default defineConfig({
     setupFiles: ['./test/setup.ts'], 
     
     // Tells Vitest where to look for your test files
-    include: ['test/**/*.{test,spec}.ts'], 
+    include: ['test/**/*.{test,spec}.ts'],
+
+    // Many files start a Miniflare D1 and hash passwords with Better Auth (scrypt): on a busy
+    // machine a few of them crossed the 5 s default and failed at random. 15 s keeps a real hang
+    // visible without flaky failures.
+    testTimeout: 15_000,
+    hookTimeout: 15_000,
   },
 });

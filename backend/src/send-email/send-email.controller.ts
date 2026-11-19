@@ -15,6 +15,25 @@ import { pinoLogger } from "@/core/logger";
 import { generateTrackingToken } from "@/open-tracking";
 import { createId } from "@paralleldrive/cuid2";
 
+/**
+ * Where a tracked email's pixel points: `OPEN_TRACKING_BASE_URL` when it is a valid http(s) URL (a
+ * stable or dedicated domain), else the origin this request arrived on. The URL stays in the
+ * recipient's mailbox for good, so a configured domain must keep reaching this Worker.
+ */
+export function resolveTrackingBaseUrl(configured: string | undefined, requestUrl: string): string {
+  const value = configured?.trim();
+  if (value) {
+    try {
+      const url = new URL(value);
+      if (url.protocol === "https:" || url.protocol === "http:") return url.origin;
+    } catch {
+      // Falls through to the warning below.
+    }
+    pinoLogger.warn("OPEN_TRACKING_BASE_URL is not an http(s) URL; the pixel uses the request origin");
+  }
+  return new URL(requestUrl).origin;
+}
+
 /** Machine-readable code of the 400 sent when `trackOpens: true` meets an account with tracking off. */
 export const OPEN_TRACKING_DISABLED_CODE = "open_tracking_disabled";
 
@@ -161,10 +180,10 @@ export function createSendEmailController(
         throw err;
       }
 
-      // A tracked email also carries the origin this request arrived on: the workflow has no
-      // request of its own and needs it to build the absolute pixel URL.
+      // A tracked email also carries the pixel's base URL (configured, else this request's origin):
+      // the workflow has no request of its own and needs it to build the absolute pixel URL.
       const message: SendEmailQueueMessage = trackingToken
-        ? { emailId, trackingBaseUrl: new URL(c.req.url).origin }
+        ? { emailId, trackingBaseUrl: resolveTrackingBaseUrl(c.env.OPEN_TRACKING_BASE_URL, c.req.url) }
         : { emailId };
 
       // Buffered in Cloudflare Queues first; the consumer starts the

@@ -666,5 +666,42 @@ describe("SendEmailController", () => {
       expect(json.error).toBe("Validation failed");
       expect(mockRepository.isOpenTrackingEnabled).not.toHaveBeenCalled();
     });
+
+    function sendWithBase(base: string | undefined) {
+      return app.request(
+        "https://makisend.example.workers.dev/send-email",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(inline),
+        },
+        { ...queueEnv(mockQueueSend), OPEN_TRACKING_BASE_URL: base },
+      );
+    }
+
+    it("points the pixel at OPEN_TRACKING_BASE_URL when it is set", async () => {
+      mockRepository.isOpenTrackingEnabled.mockResolvedValue(true);
+
+      await sendWithBase("https://track.example.com/ignored/path");
+
+      expect(queuedMessage().trackingBaseUrl).toBe("https://track.example.com");
+    });
+
+    it.each([["not a url"], ["ftp://track.example.com"], ["   "]])(
+      "falls back to the request origin when OPEN_TRACKING_BASE_URL is unusable (%j)",
+      async (base) => {
+        mockRepository.isOpenTrackingEnabled.mockResolvedValue(true);
+
+        await sendWithBase(base);
+
+        expect(queuedMessage().trackingBaseUrl).toBe("https://makisend.example.workers.dev");
+      },
+    );
+
+    it("ignores OPEN_TRACKING_BASE_URL for an untracked email", async () => {
+      await sendWithBase("https://track.example.com");
+
+      expect(queuedMessage()).toEqual({ emailId: expect.any(String) });
+    });
   });
 });
