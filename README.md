@@ -18,7 +18,7 @@ Your app sends one authenticated `POST /send-email`. MakiSend encrypts and queue
 - **Inbox, not spam.** In our tests, MakiSend emails land in the inbox once SPF, DKIM and DMARC are set on the sender domain.
 - **Fast enough to feel instant.** 300â€“400 ms from queue to SMTP provider in the best cases, about 2 s in the worst (see [Delivery speed](#delivery-speed)).
 - **Private by default.** Recipients, bodies, attachments and SMTP credentials are encrypted with AES-256-GCM before they reach D1.
-- **Built for teams of one.** Per-user API keys, optional send quota, idempotency keys, 2FA, and a dashboard with logs, metrics and templates.
+- **Built for teams of one.** Per-user API keys, optional send quota, idempotency keys, 2FA, opt-in open tracking, and a dashboard with logs, metrics and templates.
 - **Feels like Resend.** Bearer API key, `Idempotency-Key`, and the same `attachments` format, so moving a client over is a matter of a few fields (see [Coming from Resend](#coming-from-resend)).
 
 > **Status: early.** The sending pipeline, dashboard and security basics work end to end. Webhooks, bounce tracking and multi-provider failover are not built yet (see [Known limitations](#known-limitations-and-constraints) and [Roadmap](#roadmap)).
@@ -49,6 +49,7 @@ Moving a call over:
 | `to` (string or array) | One address per request |
 | `subject`, `html`, `text` | Same names; `text` and `html` are both required |
 | `attachments` (`filename`, `content`, `content_type`) | Same shape; `path` (a URL to fetch) is refused |
+| Open tracking (per domain, `email.opened` webhook) | Per account (Settings > Open tracking) and per request (`trackOpens`); opens show in the dashboard logs, no webhook yet |
 | `cc`, `bcc`, `reply_to`, `headers`, `tags`, `scheduled_at` | Not supported yet |
 | `200` with an `id` | `202` with an `emailId`; the outcome shows in the dashboard logs |
 
@@ -155,6 +156,7 @@ Set in `backend/.env` locally, as Worker secrets once deployed:
 | `BETTER_AUTH_SECRET` | Signs sessions and encrypts the TOTP secrets (changing it breaks existing 2FA set-ups) |
 | `BETTER_AUTH_URL`, `FRONTEND_URL` | Worker URL and allowed frontend origin. Optional once deployed: the dashboard and the API share one origin, so the request's origin is used |
 | `SEND_RATE_LIMIT` | Optional per-API-key send quota, e.g. `100/min` or `5000/day` (`s`, `min`, `hour`, `day`). Over it: `429` with `Retry-After`. Unset: no quota |
+| `OPEN_TRACKING_BASE_URL` | Optional. Public origin the [open-tracking](#open-tracking) pixel points to, e.g. a stable custom domain routed to the Worker. Unset, or not an http(s) URL: the origin each send request arrives on |
 | `UPDATE_CHECK` | Optional. `off` stops the daily new-release check (see [Updates](#updates)) |
 | `MAKISEND_REPOSITORY` | Optional. Your copy of the repository (`owner/name`): the dashboard's **Update** button opens its sync workflow. The Deploy button pre-fills `lixalistudio-oss/makisend`, which counts as unset |
 | `UPDATE_SOURCE_REPOSITORY` | Optional. Read releases from another repository. Default `lixalistudio-oss/makisend` |
@@ -211,14 +213,15 @@ The Worker serves its own reference: a guide in the dashboard (`/dashboard/api-d
 | `POST` | `/smtp-config/{id}/test-send` | Session | Sends a test email (logged as `test`, never counted in the dashboard totals) |
 | `GET/POST` | `/api-keys` | Session | Lists / creates an API key linked to a configuration (several keys can share one) |
 | `DELETE` | `/api-keys/{id}` | Session | Revokes an API key |
-| `GET` | `/email-logs`, `/email-logs/{id}` | Session | Paginated logs (filters `status`, `smtpConfigId`, `apiKeyId`, `to`) / one log and its history |
+| `GET` | `/email-logs`, `/email-logs/{id}` | Session | Paginated logs (filters `status`, `smtpConfigId`, `apiKeyId`, `to`) / one log, its history and its opens |
+| `GET` | `/t/o/{token}` | None (public) | Open-tracking pixel loaded by the recipient's mail client; always answers a 1x1 GIF |
 | `GET` | `/dashboard/stats`, `/by-config`, `/by-api-key`, `/recent`, `/errors` | Session | Delivery metrics (API sends only) |
 | `GET/POST` | `/templates` | Session | Lists / creates a template |
 | `GET/PUT/DELETE` | `/templates/{id}` | Session | Reads / updates / deletes a template |
 | `POST` | `/templates/{id}/preview` | Session | Renders the template with sample variables |
 | `GET` | `/updates/status` | Session | Installed and latest versions (`?refresh=true` checks now) |
 
-`/api/auth/*` is served by Better Auth (sign-in, session, sign-out, 2FA).
+`/api/auth/*` is served by Better Auth (sign-in, session, sign-out, 2FA, and `update-user` for the open-tracking setting).
 
 ### `POST /send-email`
 
@@ -242,9 +245,25 @@ Send the API key as `x-api-key: <KEY>` or `Authorization: Bearer <KEY>`.
 | `subject` | At least 3 characters |
 | `text` | At least 10 characters |
 | `html` | Not empty; sanitized before sending |
+| `trackOpens` | Optional boolean, see [Open tracking](#open-tracking). Omitted: the account setting decides |
 | `attachments` | Optional. At most 5 files of 512 KB each (decoded). `content` is standard base64 without line breaks; `content_type` defaults to `application/octet-stream`; `filename` is at most 200 characters, without `/`, `\` or control characters. Resend's `path` (a URL to fetch) is refused |
 
 Instead of `subject`/`text`/`html`, send `templateId` and `variables`: the template is rendered before queueing, and a missing variable answers `400` with the missing names. Mixing both shapes, or sending an unknown field, is rejected. Attachments work with both shapes: they are stored encrypted in D1, one row per file, never go through the queue, and are sent by SMTP and by the Cloudflare `send_email` binding alike.
+
+### Open tracking
+
+Off by default. Turn it on in **Settings > Open tracking**: every email sent through the API then carries an invisible 1x1 image, and its log in the dashboard shows the first open, the last one and the number of opens. The account setting decides; `trackOpens` in the request can only narrow it:
+
+| Account setting | `trackOpens` | Result |
+|---|---|---|
+| Off | omitted or `false` | Not tracked |
+| Off | `true` | `400`, code `open_tracking_disabled` |
+| On | omitted or `true` | Tracked |
+| On | `false` | Not tracked |
+
+The decision is fixed when the email is sent: turning the setting on or off later never changes past emails, and an email sent untracked says so in its log instead of reading as never opened. The image is added after the HTML is sanitized, to the copy that is sent; the stored HTML is unchanged, and test sends from the dashboard are never tracked. Its URL is `<origin>/t/o/<token>`, with a random 43-character token per email; the origin is the one the send request arrived on, or `OPEN_TRACKING_BASE_URL`. That URL stays in the recipient's mailbox, so keep the domain reachable.
+
+An open means the image was loaded, not that the email was read: Apple Mail preloads images (opens that did not happen), Gmail caches them (re-opens it may not report), and mail apps that block images report nothing. MakiSend records at most one open per email every 30 seconds.
 
 ---
 
@@ -283,6 +302,7 @@ The dashboard shows a banner when a newer release is published, and **Settings â
 - **One account**: the first connection (`/setup`) creates the only account; every later creation is refused (403), atomically, on every creation path. Deleting the account makes the instance configurable again.
 - **Two-factor authentication**: TOTP from Settings, with backup codes and an optional 30-day trusted device. Once it is on, the account can opt in to sign in with email + code only (off by default, one use per code, 10 wrong codes lock the account for 15 minutes).
 - **Inputs and transport**: Zod `.strict()` validation, HTML cleaned with `sanitize-html`, verified TLS (`rejectUnauthorized: true`).
+- **Open-tracking pixel**: `/t/o/{token}` is public by design (mail clients have no credentials). It answers the same GIF for a valid, unknown, malformed or throttled token, so it reveals nothing, and it never logs the token. Cloudflare's own invocation logs still record the full URL; a token only lets its holder inflate one email's open count.
 
 **Limitations:**
 
@@ -328,13 +348,13 @@ Two things the free plan does not give you:
 - **No fixed outbound IP**: Workers connect from shared, changing Cloudflare IPs, so a provider that requires IP allow-listing will refuse sends. Disable allow-listing and rely on the SMTP credentials, or run the service on a server with a fixed IP.
 - **Asynchronous only**: the outcome of a send is visible in the dashboard logs, not in the `202` response.
 - **One SMTP provider per configuration**: no multi-provider routing or failover.
-- **No tracking**: no bounce, open or click tracking; only send logs.
+- **No bounce or click tracking**: opens are tracked when the account turns it on, and stay approximate by nature (see [Open tracking](#open-tracking)).
 - **D1** is serverless SQLite: possible latency, not suited to very high volumes without caching.
 - **Deliverability**: SPF, DKIM, DMARC and IP reputation depend on the SMTP provider and the sender domain.
 
 ## Roadmap
 
-Available today: everything above (API-key sending, async pipeline with retries and DLQ, per-configuration SMTP, templates with the React Email builder or pasted TSX, encrypted logs, idempotency, health checks, dashboard metrics, OpenAPI docs, CI and deployment).
+Available today: everything above (API-key sending, async pipeline with retries and DLQ, per-configuration SMTP, templates with the React Email builder or pasted TSX, opt-in open tracking, encrypted logs, idempotency, health checks, dashboard metrics, OpenAPI docs, CI and deployment).
 
 Next:
 
