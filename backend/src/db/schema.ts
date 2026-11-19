@@ -23,12 +23,25 @@ export const emailLogs = sqliteTable("email_logs", {
   // configuration keeps the history. NULL for API sends, whose configuration is their key's.
   smtpConfigId: text("smtp_config_id"),
   createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
+  // Open tracking. `tracking_enabled` is the decision taken at send time: the account setting can
+  // change later, and the open rate must only count the emails that carried the pixel.
+  trackingEnabled: integer("tracking_enabled", { mode: "boolean" }).notNull().default(false),
+  // Random token in the pixel URL; NULL when the email is not tracked. Not encrypted: the pixel
+  // route looks it up by equality, and it carries no personal data.
+  trackingToken: text("tracking_token"),
+  // ISO timestamps, like sent_at. last_opened_at also drives the per-email write throttle.
+  firstOpenedAt: text("first_opened_at"),
+  lastOpenedAt: text("last_opened_at"),
+  openCount: integer("open_count").notNull().default(0),
 },
   (table) => [
     // Every dashboard query filters on user_id (+ optional created_at window);
     // without this the whole table is scanned on each load.
     index("emailLogs_userId_createdAt_idx").on(table.userId, table.createdAt),
     index("emailLogs_apiKeyId_idx").on(table.apiKeyId),
+    // The pixel route finds the email by its token on every open. SQLite allows several NULLs
+    // in a unique index, so untracked emails do not collide.
+    uniqueIndex("emailLogs_trackingToken_idx").on(table.trackingToken),
   ],
 );
 
@@ -134,6 +147,9 @@ export const user = sqliteTable("user", {
   // Opt-in, set from Settings with the password: lets the account sign in with email + an
   // authenticator code, without the password (src/lib/totp-sign-in.ts).
   totpPasswordless: integer("totp_passwordless", { mode: "boolean" }).default(false).notNull(),
+  // Account-wide open tracking switch, read at send time. Off by default: when it is off,
+  // no email is tracked and `track_opens: true` in a send request is rejected.
+  openTrackingEnabled: integer("open_tracking_enabled", { mode: "boolean" }).default(false).notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" })
     .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
     .notNull(),
