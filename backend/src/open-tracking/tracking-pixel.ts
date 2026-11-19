@@ -1,5 +1,16 @@
+/** Where the public pixel controller is mounted. */
+export const TRACKING_PIXEL_ROUTE = "/t/o";
+
 /** Path of the public pixel route; the token follows it. */
-export const TRACKING_PIXEL_PATH = "/t/o/";
+export const TRACKING_PIXEL_PATH = `${TRACKING_PIXEL_ROUTE}/`;
+
+/**
+ * The same URL with a pixel token replaced by `[redacted]`, for logs: the token is the only key to
+ * an email's open counter, so it never goes to the request log. Other URLs are returned unchanged.
+ */
+export function redactTrackingToken(url: string): string {
+  return url.replace(/\/t\/o\/[^/?#]*/, `${TRACKING_PIXEL_PATH}[redacted]`);
+}
 
 /**
  * Absolute URL of an email's pixel. The base is the origin the send request arrived on: the mail

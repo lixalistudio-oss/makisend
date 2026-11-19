@@ -1,10 +1,12 @@
 import { createMiddleware } from "hono/factory";
 import { pinoLogger } from "@/core/logger";
+import { redactTrackingToken } from "@/open-tracking/tracking-pixel";
 
 export function requestLoggerMiddleware() {
   return createMiddleware(async (c, next) => {
     const method = c.req.method;
-    const url = c.req.url;
+    // An open-tracking pixel URL carries its token in the path: never logged.
+    const url = redactTrackingToken(c.req.url);
 
     pinoLogger.info({ method, url }, "New HTTP request incoming");
 

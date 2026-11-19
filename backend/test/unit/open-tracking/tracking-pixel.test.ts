@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appendTrackingPixel, buildPixelUrl } from "@/open-tracking";
+import { appendTrackingPixel, buildPixelUrl, redactTrackingToken } from "@/open-tracking";
 
 const TOKEN = "AbC123".padEnd(43, "x");
 
@@ -53,5 +53,22 @@ describe("appendTrackingPixel", () => {
     const html = appendTrackingPixel("<p>Hi</p>", 'https://x.test/t/o/a"onerror="b');
     expect(html).toContain('src="https://x.test/t/o/a&quot;onerror=&quot;b"');
     expect(html).not.toContain('"onerror="');
+  });
+});
+
+describe("redactTrackingToken", () => {
+  it("hides the token of a pixel URL", () => {
+    expect(redactTrackingToken(`https://x.test/t/o/${TOKEN}`)).toBe("https://x.test/t/o/[redacted]");
+  });
+
+  it("hides it before a query string too", () => {
+    expect(redactTrackingToken(`https://x.test/t/o/${TOKEN}?utm=1`)).toBe(
+      "https://x.test/t/o/[redacted]?utm=1",
+    );
+  });
+
+  it("leaves every other URL as it is", () => {
+    expect(redactTrackingToken("https://x.test/send-email")).toBe("https://x.test/send-email");
+    expect(redactTrackingToken("https://x.test/email-logs/abc")).toBe("https://x.test/email-logs/abc");
   });
 });

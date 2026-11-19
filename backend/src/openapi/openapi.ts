@@ -238,7 +238,7 @@ export const openApiDocument = {
         summary: "Record an email open",
         operationId: "trackEmailOpen",
         description:
-          "Loaded by the recipient's mail client through the tracking image. Public: no credentials. Always answers with the same 1x1 GIF, whether the token is known or not, and whether the write was throttled or not, so the response reveals nothing about the token.",
+          "Loaded by the recipient's mail client through the tracking image. Public: no credentials. Records at most one open per email every 30 seconds; requests in between are answered but not counted, and a `HEAD` request is never counted. Always answers with the same 1x1 GIF, whether the token is known or not, and whether the write was throttled or not, so the response reveals nothing about the token.",
         security: [],
         parameters: [
           {
