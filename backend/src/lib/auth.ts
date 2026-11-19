@@ -40,6 +40,17 @@ export function createAuth(env: Bindings) {
       enabled: true,
     },
     user: {
+      additionalFields: {
+        // Account-wide open tracking switch (user.open_tracking_enabled). Returned by
+        // get-session and set from Settings with POST /api/auth/update-user
+        // { openTrackingEnabled }: a user may only change their own value.
+        openTrackingEnabled: {
+          type: "boolean",
+          required: false,
+          defaultValue: false,
+          input: true,
+        },
+      },
       // Lets the settings page POST /api/auth/change-email { newEmail }.
       // sign-up leaves emailVerified=false and no verification flow is
       // configured, so updateEmailWithoutVerification applies: the email is

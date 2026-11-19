@@ -76,4 +76,11 @@ export default {
   "settings.errorSignInMethod": "Impossible de modifier la méthode de connexion",
   "settings.passwordlessEnabled": "Vous pouvez désormais vous connecter avec un code d'authentification uniquement",
   "settings.passwordlessDisabled": "Mot de passe de nouveau requis pour se connecter",
+  "settings.openTrackingTitle": "Suivi des ouvertures",
+  "settings.openTrackingDescription": "Savoir quand les e-mails envoyés par l'API sont ouverts.",
+  "settings.openTrackingLabel": "Suivre l'ouverture des e-mails",
+  "settings.openTrackingHint": "Ajoute une image invisible à chaque e-mail envoyé par l'API. Une requête peut toujours s'en passer avec \"trackOpens\": false. Tant que ce réglage est désactivé, une requête envoyant \"trackOpens\": true est refusée. Ne concerne que les nouveaux e-mails.",
+  "settings.openTrackingEnabled": "Suivi des ouvertures activé pour les nouveaux e-mails",
+  "settings.openTrackingDisabled": "Suivi des ouvertures désactivé pour les nouveaux e-mails",
+  "settings.errorOpenTracking": "Impossible de modifier le suivi des ouvertures",
 } satisfies Record<keyof typeof en, string>

@@ -30,6 +30,10 @@ const mockLog: EmailLogWithHistory = {
   source: "api",
   smtpConfigId: null,
   createdAt: new Date().toISOString(),
+  trackingEnabled: false,
+  firstOpenedAt: null,
+  lastOpenedAt: null,
+  openCount: 0,
   history: [
     {
       id: "h1",

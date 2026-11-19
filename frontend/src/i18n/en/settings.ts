@@ -75,4 +75,11 @@ export default {
   "settings.errorSignInMethod": "Could not change the sign-in method",
   "settings.passwordlessEnabled": "You can now sign in with an authenticator code only",
   "settings.passwordlessDisabled": "Password required again to sign in",
+  "settings.openTrackingTitle": "Open tracking",
+  "settings.openTrackingDescription": "Know when the emails you send through the API are opened.",
+  "settings.openTrackingLabel": "Track email opens",
+  "settings.openTrackingHint": "Adds an invisible image to each email sent through the API. A request can still skip it with \"trackOpens\": false. While this is off, a request sending \"trackOpens\": true is refused. Applies to new emails only.",
+  "settings.openTrackingEnabled": "Open tracking is on for new emails",
+  "settings.openTrackingDisabled": "Open tracking is off for new emails",
+  "settings.errorOpenTracking": "Could not change open tracking",
 }

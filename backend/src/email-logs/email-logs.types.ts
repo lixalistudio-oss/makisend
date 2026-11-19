@@ -12,6 +12,12 @@ export interface EmailLogRecord {
   /** Set for a test (the configuration it went through), NULL for an API send. */
   smtpConfigId: string | null;
   createdAt: string;
+  /** Whether open tracking was on when the email was sent. The tracking token is never exposed. */
+  trackingEnabled: boolean;
+  firstOpenedAt: string | null;
+  lastOpenedAt: string | null;
+  /** Recorded opens; at most one per 30 seconds, so a lower bound of the real count. */
+  openCount: number;
 }
 
 export interface EmailHistoryRecord {
