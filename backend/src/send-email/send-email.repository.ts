@@ -38,8 +38,9 @@ export class SendEmailRepository implements IEmailRepository {
       source: options.source ?? "api",
       smtpConfigId: options.smtpConfigId ?? null,
       // The tracking decision is frozen here, at send time: the account setting may change later.
-      trackingEnabled: options.trackingToken != null,
-      trackingToken: options.trackingToken ?? null,
+      trackingEnabled: options.tracking != null,
+      trackingToken: options.tracking?.token ?? null,
+      trackingBaseUrl: options.tracking?.baseUrl ?? null,
       // smtp_id / sent_at remain NULL until completeEmailLog() runs
     });
   }
@@ -108,6 +109,7 @@ export class SendEmailRepository implements IEmailRepository {
         html: emailContents.htmlBody,
         smtpConfigId: emailContents.smtpConfigId,
         trackingToken: emailLogs.trackingToken,
+        trackingBaseUrl: emailLogs.trackingBaseUrl,
       })
       .from(emailContents)
       .innerJoin(emailLogs, eq(emailLogs.internalId, emailContents.emailId))

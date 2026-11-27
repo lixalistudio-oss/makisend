@@ -328,14 +328,13 @@ describe("runSendEmailFlow", () => {
       return (mockSend.mock.calls[0][0] as { html: string }).html;
     }
 
-    it("adds the pixel to a tracked email, pointing at the base URL from the payload", async () => {
-      mockLoadEmail.mockResolvedValue({ ...storedEmail, trackingToken: TOKEN });
+    const tracking = { token: TOKEN, baseUrl: BASE };
 
-      const result = await runSendEmailFlow(
-        buildDeps(),
-        { emailId, trackingBaseUrl: BASE },
-        stepStub(),
-      );
+    it("adds the pixel to a tracked email, pointing at the origin stored with its token", async () => {
+      mockLoadEmail.mockResolvedValue({ ...storedEmail, tracking });
+
+      // The payload only carries the id: everything the pixel needs comes from D1.
+      const result = await run();
 
       expect(result.outcome).toBe("sent");
       expect(sentHtml()).toContain(`<img src="${BASE}/t/o/${TOKEN}"`);
@@ -346,10 +345,10 @@ describe("runSendEmailFlow", () => {
       mockLoadEmail.mockResolvedValue({
         ...storedEmail,
         html: '<p>Hi</p><img src="https://cdn.test/a.png" width="600"><script>alert(1)</script>',
-        trackingToken: TOKEN,
+        tracking,
       });
 
-      await runSendEmailFlow(buildDeps(), { emailId, trackingBaseUrl: BASE }, stepStub());
+      await run();
 
       const html = sentHtml();
       expect(html).not.toContain("<script>");
@@ -360,30 +359,17 @@ describe("runSendEmailFlow", () => {
     });
 
     it("sends an untracked email without any pixel", async () => {
-      mockLoadEmail.mockResolvedValue({ ...storedEmail, trackingToken: null });
+      mockLoadEmail.mockResolvedValue({ ...storedEmail });
 
-      await runSendEmailFlow(buildDeps(), { emailId, trackingBaseUrl: BASE }, stepStub());
+      await run();
 
       expect(sentHtml()).not.toContain("/t/o/");
     });
 
-    it("still sends a tracked email that has no base URL, without the pixel", async () => {
-      mockLoadEmail.mockResolvedValue({ ...storedEmail, trackingToken: TOKEN });
+    it("still sends a tracked email whose stored origin is invalid, without the pixel", async () => {
+      mockLoadEmail.mockResolvedValue({ ...storedEmail, tracking: { token: TOKEN, baseUrl: "not a url" } });
 
       const result = await run();
-
-      expect(result.outcome).toBe("sent");
-      expect(sentHtml()).not.toContain("/t/o/");
-    });
-
-    it("still sends a tracked email whose base URL is invalid, without the pixel", async () => {
-      mockLoadEmail.mockResolvedValue({ ...storedEmail, trackingToken: TOKEN });
-
-      const result = await runSendEmailFlow(
-        buildDeps(),
-        { emailId, trackingBaseUrl: "not a url" },
-        stepStub(),
-      );
 
       expect(result.outcome).toBe("sent");
       expect(sentHtml()).not.toContain("/t/o/");

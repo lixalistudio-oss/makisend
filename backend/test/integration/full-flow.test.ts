@@ -238,7 +238,7 @@ describe("POST /send-email — HTTP layer integration", () => {
       expect(json.message).toBe("Email queued");
     });
 
-    it("tracks opens when the account enables it: token in D1, base URL through queue and workflow", async () => {
+    it("tracks opens when the account enables it: token and pixel origin on the row, id-only messages", async () => {
       const d1 = await mf.getD1Database("makisend_db");
       await db.update(user).set({ openTrackingEnabled: true }).where(eq(user.id, "test-user-id-001"));
 
@@ -254,15 +254,18 @@ describe("POST /send-email — HTTP layer integration", () => {
       const [log] = await db.select().from(emailLogs).where(eq(emailLogs.internalId, emailId)).all();
       expect(log.trackingEnabled).toBe(true);
       expect(log.trackingToken).toMatch(/^[A-Za-z0-9]{43}$/);
+      expect(log.trackingBaseUrl).toBe("http://localhost");
       expect(log.openCount).toBe(0);
       expect(log.firstOpenedAt).toBeNull();
 
       const message = mockQueueSend.mock.calls[0][0] as SendEmailQueueMessage;
-      expect(message).toEqual({ emailId, trackingBaseUrl: "http://localhost" });
+      // Nothing about tracking travels through the queue: a message rebuilt from the id alone (a
+      // DLQ replay) finds the same pixel origin.
+      expect(message).toEqual({ emailId });
 
-      // The workflow reads the token back with the email.
+      // The workflow reads the token and its origin back with the email.
       const loaded = await loadEmailForSending(emailRepository, AES_KEY, emailId);
-      expect(loaded.trackingToken).toBe(log.trackingToken);
+      expect(loaded.tracking).toEqual({ token: log.trackingToken, baseUrl: "http://localhost" });
 
       await sendEmailQueueConsumer(
         {
@@ -273,7 +276,7 @@ describe("POST /send-email — HTTP layer integration", () => {
       );
       expect(mockWorkflowCreate).toHaveBeenCalledWith({
         id: emailId,
-        params: { emailId, trackingBaseUrl: "http://localhost" },
+        params: { emailId },
       });
     });
 

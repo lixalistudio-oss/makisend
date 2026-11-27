@@ -21,10 +21,18 @@ export interface PendingEmailLogOptions {
   /** Set for a test (the configuration it went through); API sends reach theirs through the key. */
   smtpConfigId?: string | null;
   /**
-   * Set when the email is open-tracked: the row is written with `tracking_enabled = true` and this
-   * token, which the pixel URL carries. Absent or null: an untracked email.
+   * Set when the email is open-tracked: the row is written with `tracking_enabled = true`, the token
+   * the pixel URL carries and the origin it points to. One object, so a row can never get the token
+   * without the origin. Absent or null: an untracked email.
    */
-  trackingToken?: string | null;
+  tracking?: EmailTracking | null;
+}
+
+/** What a tracked email needs to build its pixel URL: `<baseUrl>/t/o/<token>`. */
+export interface EmailTracking {
+  token: string;
+  /** An http(s) origin: `OPEN_TRACKING_BASE_URL`, else the origin of the send request. */
+  baseUrl: string;
 }
 
 export interface IEmailRepository {
@@ -95,15 +103,16 @@ export interface StoredEmail {
   text: string;
   html: string;
   smtpConfigId: string | null;
-  /** NULL when the email is not open-tracked. */
+  /** Both NULL when the email is not open-tracked. */
   trackingToken: string | null;
+  trackingBaseUrl: string | null;
 }
 
 /** An email ready to be sent: decrypted, plus the SMTP configuration it was queued with. */
 export interface EmailToSend extends EmailInput {
   smtpConfigId: string | null;
   /** Present when the email is open-tracked: the workflow adds the pixel after sanitizing. */
-  trackingToken?: string | null;
+  tracking?: EmailTracking;
 }
 
 export interface IEmailTransport {
@@ -117,10 +126,5 @@ export interface IEmailTransport {
  */
 export interface SendEmailQueueMessage {
   emailId: string;
-  /**
-   * Only for an open-tracked email: the origin the send request arrived on. The workflow has no
-   * request of its own, so this is how it learns where the pixel URL must point. Not PII.
-   */
-  trackingBaseUrl?: string;
 }
 

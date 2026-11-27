@@ -29,6 +29,10 @@ export const emailLogs = sqliteTable("email_logs", {
   // Random token in the pixel URL; NULL when the email is not tracked. Not encrypted: the pixel
   // route looks it up by equality, and it carries no personal data.
   trackingToken: text("tracking_token"),
+  // Origin the pixel URL points to, written with the token: `OPEN_TRACKING_BASE_URL`, else the
+  // origin of the send request. Kept on the row and not in the queue message, so every path that
+  // starts the workflow finds it, and `tracking_enabled = true` always means the pixel went out.
+  trackingBaseUrl: text("tracking_base_url"),
   // ISO timestamps, like sent_at. last_opened_at also drives the per-email write throttle.
   firstOpenedAt: text("first_opened_at"),
   lastOpenedAt: text("last_opened_at"),

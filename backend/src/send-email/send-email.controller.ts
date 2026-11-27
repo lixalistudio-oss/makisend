@@ -136,7 +136,14 @@ export function createSendEmailController(
 
       // Decided before anything is written: a rejected trackOpens leaves no log row behind.
       const tracked = await decideOpenTracking(repository, userId, apiKeyId, payload.trackOpens);
-      const trackingToken = tracked ? generateTrackingToken() : null;
+      // Token and pixel origin are stored together on the log row, so whatever starts the workflow
+      // later finds both: a tracked email always goes out with its pixel.
+      const tracking = tracked
+        ? {
+            token: generateTrackingToken(),
+            baseUrl: resolveTrackingBaseUrl(c.env.OPEN_TRACKING_BASE_URL, c.req.url),
+          }
+        : null;
 
       // Pending log row first, so the email is visible on the dashboard from the
       // moment it is accepted — even if every later stage fails.
@@ -146,7 +153,7 @@ export function createSendEmailController(
         encrypt(data.html, resolveEncryptionKeys(c.env)),
       ]);
       await repository.createPendingEmailLog(emailId, userId, encryptedTo, data.subject, apiKeyId, {
-        trackingToken,
+        tracking,
       });
 
       // Bodies stay in D1, encrypted. The queue message only carries the id, so
@@ -180,11 +187,7 @@ export function createSendEmailController(
         throw err;
       }
 
-      // A tracked email also carries the pixel's base URL (configured, else this request's origin):
-      // the workflow has no request of its own and needs it to build the absolute pixel URL.
-      const message: SendEmailQueueMessage = trackingToken
-        ? { emailId, trackingBaseUrl: resolveTrackingBaseUrl(c.env.OPEN_TRACKING_BASE_URL, c.req.url) }
-        : { emailId };
+      const message: SendEmailQueueMessage = { emailId };
 
       // Buffered in Cloudflare Queues first; the consumer starts the
       // SendEmailWorkflow from it.

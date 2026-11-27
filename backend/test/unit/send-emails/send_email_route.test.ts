@@ -127,7 +127,7 @@ describe("SendEmailController", () => {
         expect.any(String),
         "Testing Feature Modules",
         "key-123",
-        { trackingToken: null },
+        { tracking: null },
       );
 
       const message = mockQueueSend.mock.calls[0][0] as SendEmailQueueMessage;
@@ -320,7 +320,7 @@ describe("SendEmailController", () => {
         expect.any(String),
         "Bienvenue Joel !",
         "key-123",
-        { trackingToken: null },
+        { tracking: null },
       );
 
       // Rendered content is stored encrypted — the workflow and SMTP layer never
@@ -380,7 +380,7 @@ describe("SendEmailController", () => {
         expect.any(String),
         "Order 123",
         "key-123",
-        { trackingToken: null },
+        { tracking: null },
       );
     });
 
@@ -534,7 +534,9 @@ describe("SendEmailController", () => {
     }
 
     function pendingOptions() {
-      return mockRepository.createPendingEmailLog.mock.calls[0][5] as { trackingToken: string | null };
+      return mockRepository.createPendingEmailLog.mock.calls[0][5] as {
+        tracking: { token: string; baseUrl: string } | null;
+      };
     }
 
     function queuedMessage() {
@@ -542,16 +544,17 @@ describe("SendEmailController", () => {
     }
 
     function expectUntracked() {
-      expect(pendingOptions()).toEqual({ trackingToken: null });
+      expect(pendingOptions()).toEqual({ tracking: null });
       expect(queuedMessage()).toEqual({ emailId: expect.any(String) });
     }
 
     function expectTracked() {
-      expect(pendingOptions().trackingToken).toMatch(/^[A-Za-z0-9]{43}$/);
-      expect(queuedMessage()).toEqual({
-        emailId: expect.any(String),
-        trackingBaseUrl: "https://makisend.example.workers.dev",
+      // Token and origin are written together on the row; the queue message stays id-only.
+      expect(pendingOptions().tracking).toEqual({
+        token: expect.stringMatching(/^[A-Za-z0-9]{43}$/),
+        baseUrl: "https://makisend.example.workers.dev",
       });
+      expect(queuedMessage()).toEqual({ emailId: expect.any(String) });
     }
 
     it("account off, trackOpens omitted: not tracked", async () => {
@@ -616,7 +619,7 @@ describe("SendEmailController", () => {
       await send(inline);
 
       const [first, second] = mockRepository.createPendingEmailLog.mock.calls.map(
-        (call) => (call[5] as { trackingToken: string }).trackingToken,
+        (call) => (call[5] as { tracking: { token: string } }).tracking.token,
       );
       expect(first).not.toBe(second);
     });
@@ -684,7 +687,7 @@ describe("SendEmailController", () => {
 
       await sendWithBase("https://track.example.com/ignored/path");
 
-      expect(queuedMessage().trackingBaseUrl).toBe("https://track.example.com");
+      expect(pendingOptions().tracking?.baseUrl).toBe("https://track.example.com");
     });
 
     it.each([["not a url"], ["ftp://track.example.com"], ["   "]])(
@@ -694,7 +697,7 @@ describe("SendEmailController", () => {
 
         await sendWithBase(base);
 
-        expect(queuedMessage().trackingBaseUrl).toBe("https://makisend.example.workers.dev");
+        expect(pendingOptions().tracking?.baseUrl).toBe("https://makisend.example.workers.dev");
       },
     );
 

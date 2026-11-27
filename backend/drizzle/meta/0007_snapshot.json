@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "c93282c6-f023-4240-9c9e-3fe6c0a705d2",
+  "id": "11dc0f18-7e5a-4021-b792-74fe11d7b166",
   "prevId": "4bb839d6-cfc2-4aa5-8c81-5fd3b673931d",
   "tables": {
     "account": {
@@ -648,6 +648,13 @@
         },
         "tracking_token": {
           "name": "tracking_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "tracking_base_url": {
+          "name": "tracking_base_url",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
