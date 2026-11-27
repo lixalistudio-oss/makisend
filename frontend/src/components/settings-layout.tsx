@@ -7,6 +7,7 @@ import { SessionGuard } from "@/components/session-guard"
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Switch } from "@/components/ui/switch"
 import { Field, FieldGroup, FieldLabel, FieldDescription } from "@/components/ui/field"
 import {
   Card,
@@ -362,20 +363,18 @@ export function SettingsLayout() {
             </CardHeader>
             <CardContent>
               <Field>
-                <label className="flex items-start gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    className="mt-1"
-                    checked={openTracking === true}
-                    disabled={openTracking === null || savingOpenTracking}
-                    onChange={(e) => handleToggleOpenTracking(e.target.checked)}
-                  />
+                <label className="flex items-center justify-between gap-4 text-sm">
                   <span>
                     {t("settings.openTrackingLabel")}
                     <span className="block text-muted-foreground">
                       {t("settings.openTrackingHint")}
                     </span>
                   </span>
+                  <Switch
+                    checked={openTracking === true}
+                    disabled={openTracking === null || savingOpenTracking}
+                    onCheckedChange={(checked) => handleToggleOpenTracking(checked)}
+                  />
                 </label>
               </Field>
             </CardContent>
