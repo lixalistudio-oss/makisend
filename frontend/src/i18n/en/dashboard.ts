@@ -10,6 +10,9 @@ export default {
   "dashboard.cards.rate": "Delivery rate",
   "dashboard.cards.rateDescription": "Success percentage",
   "dashboard.cards.rateValue": "{rate}%",
+  "dashboard.cards.openRate": "Open rate",
+  "dashboard.cards.openRateDescription": "{opened} of {tracked} tracked emails opened",
+  "dashboard.cards.openRateEmpty": "No tracked email sent yet",
 
   // chart-area-interactive
   "dashboard.chart.title": "Emails sent",

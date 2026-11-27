@@ -263,6 +263,8 @@ Off by default. Turn it on in **Settings > Open tracking**: every email sent thr
 
 The decision is fixed when the email is sent: turning the setting on or off later never changes past emails, and an email sent untracked says so in its log instead of reading as never opened. The image is added after the HTML is sanitized, to the copy that is sent; the stored HTML is unchanged, and test sends from the dashboard are never tracked. Its URL is `<origin>/t/o/<token>`, with a random 43-character token per email; the origin is the one the send request arrived on, or `OPEN_TRACKING_BASE_URL`. That URL stays in the recipient's mailbox, so keep the domain reachable.
 
+The dashboard shows the account's **open rate**: the tracked emails that were delivered and opened at least once, divided by the tracked emails that were delivered (`openRate`, `openedCount` and `trackedSentCount` in `GET /dashboard/stats`). Untracked emails and failed ones are left out, since neither can be opened; emails are picked by when they were sent, with all their opens, so the rate of the last days still rises for a while. With no tracked email delivered, the rate is `null` and the card shows a dash.
+
 An open means the image was loaded, not that the email was read: Apple Mail preloads images (opens that did not happen), Gmail caches them (re-opens it may not report), and mail apps that block images report nothing. MakiSend records at most one open per email every 30 seconds.
 
 ---

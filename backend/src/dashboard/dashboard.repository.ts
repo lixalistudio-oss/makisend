@@ -14,6 +14,11 @@ export class DashboardRepository implements IDashboardRepository {
         totalSent: sql<number>`count(distinct ${emailLogs.internalId})`,
         successCount: sql<number>`count(distinct case when ${emailHistories.status} = 'sent' then ${emailLogs.internalId} end)`,
         failureCount: sql<number>`count(distinct case when ${emailHistories.status} = 'failed' then ${emailLogs.internalId} end)`,
+        // Open rate, in the same pass. The window is the one above (when the email was accepted,
+        // seconds before it is sent): an email sent in the window counts with all its opens, even
+        // later ones, and an old email opened today stays out, so the rate never exceeds 100 %.
+        trackedSentCount: sql<number>`count(distinct case when ${emailLogs.trackingEnabled} = 1 and ${emailHistories.status} = 'sent' then ${emailLogs.internalId} end)`,
+        openedCount: sql<number>`count(distinct case when ${emailLogs.trackingEnabled} = 1 and ${emailHistories.status} = 'sent' and ${emailLogs.openCount} > 0 then ${emailLogs.internalId} end)`,
       })
       .from(emailLogs)
       .leftJoin(emailHistories, eq(emailHistories.emailId, emailLogs.internalId))
@@ -23,8 +28,12 @@ export class DashboardRepository implements IDashboardRepository {
     const successCount = Number(rows[0]?.successCount ?? 0);
     const failureCount = Number(rows[0]?.failureCount ?? 0);
     const successRate = totalSent > 0 ? Math.round((successCount / totalSent) * 100) : 0;
+    const trackedSentCount = Number(rows[0]?.trackedSentCount ?? 0);
+    const openedCount = Number(rows[0]?.openedCount ?? 0);
+    // null rather than 0: "nothing to measure" must not read as "nobody opened anything".
+    const openRate = trackedSentCount > 0 ? Math.round((openedCount / trackedSentCount) * 100) : null;
 
-    return { totalSent, successCount, failureCount, successRate };
+    return { totalSent, successCount, failureCount, successRate, trackedSentCount, openedCount, openRate };
   }
 
   async getByConfig(userId: string, days?: number): Promise<SmtpConfigBreakdown[]> {

@@ -16,6 +16,11 @@ interface Stats {
   successCount: number
   failureCount: number
   successRate: number
+  // Open rate: delivered emails that carried the pixel, and those opened at least once. openRate
+  // is null when no tracked email was sent (shown as a dash, never as 0 %).
+  trackedSentCount?: number
+  openedCount?: number
+  openRate?: number | null
 }
 
 export function SectionCards() {
@@ -47,12 +52,29 @@ export function SectionCards() {
       value: t("dashboard.cards.rateValue", { rate: (stats?.successRate ?? 0).toLocaleString(locale) }),
       description: t("dashboard.cards.rateDescription"),
     },
+    {
+      id: "opens",
+      title: t("dashboard.cards.openRate"),
+      value: stats?.openRate == null
+        ? "—"
+        : t("dashboard.cards.rateValue", { rate: stats.openRate.toLocaleString(locale) }),
+      description: stats?.openRate == null
+        ? t("dashboard.cards.openRateEmpty")
+        : t("dashboard.cards.openRateDescription", {
+            opened: count(stats.openedCount ?? 0),
+            tracked: count(stats.trackedSentCount ?? 0),
+          }),
+    },
   ]
 
   return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+    <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
       {cards.map((card) => (
-        <Card key={card.id} className="@container/card min-w-0">
+        <Card
+          key={card.id}
+          // Five cards: on two columns the last one takes the full row instead of sitting alone.
+          className={`@container/card min-w-0 ${card.id === "opens" ? "col-span-2 lg:col-span-1" : ""}`}
+        >
           <CardHeader>
             <CardDescription>{card.title}</CardDescription>
             <CardTitle className="font-heading text-[1.75rem] leading-tight font-medium tracking-[-0.03em] tabular-nums @[250px]/card:text-4xl">

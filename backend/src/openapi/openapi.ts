@@ -171,7 +171,7 @@ export const openApiDocument = {
         summary: "Queue a transactional email",
         operationId: "sendEmail",
         description:
-          "Accepts either inline content (`subject`, `text`, `html`) or a `templateId` plus `variables`. The two shapes are mutually exclusive. Both accept optional `attachments`. HTML is sanitized before delivery. Send the optional `Idempotency-Key` header to make retries safe. The optional `trackOpens` boolean controls open tracking for this email. Omitted, the account setting decides. `trackOpens: false` skips tracking even when the account enables it; `trackOpens: true` on an account with tracking disabled is rejected with a 400 and the code `open_tracking_disabled`. Tracking adds an invisible image to the HTML copy that is sent; plain-text-only emails are never tracked.",
+          "Accepts either inline content (`subject`, `text`, `html`) or a `templateId` plus `variables`. The two shapes are mutually exclusive. Both accept optional `attachments`. HTML is sanitized before delivery. Send the optional `Idempotency-Key` header to make retries safe. The optional `trackOpens` boolean controls open tracking for this email. Omitted, the account setting decides. `trackOpens: false` skips tracking even when the account enables it; `trackOpens: true` on an account with tracking disabled is rejected with a 400 and the code `open_tracking_disabled`. Tracking adds an invisible image to the HTML copy that is sent; the stored HTML is unchanged.",
         security: apiKeySecurity,
         parameters: [idempotencyKeyParameter],
         requestBody: {
@@ -1055,7 +1055,8 @@ export const openApiDocument = {
           firstOpenedAt: {
             type: ["string", "null"],
             format: "date-time",
-            description: "First recorded open. Null when not opened or not tracked.",
+            description:
+              "First recorded open. Null when not opened or not tracked. A mail app that preloads images (Apple Mail Privacy Protection) records it on delivery, before anyone reads the email.",
           },
           lastOpenedAt: {
             type: ["string", "null"],
@@ -1064,7 +1065,8 @@ export const openApiDocument = {
           },
           openCount: {
             type: "integer",
-            description: "Recorded opens. Can be lower than the real count because of the per-email write throttle.",
+            description:
+              "Recorded loads of the tracking image, at most one per 30 seconds. An estimate, in both directions: higher than real reads when a mail app preloads images (Apple Mail Privacy Protection) or a scanner fetches them, lower when Gmail serves a cached copy, the app blocks images, or several opens fall within 30 seconds.",
           },
         },
       },
@@ -1151,12 +1153,36 @@ export const openApiDocument = {
       },
       DashboardStats: {
         type: "object",
-        required: ["totalSent", "successCount", "failureCount", "successRate"],
+        required: [
+          "totalSent",
+          "successCount",
+          "failureCount",
+          "successRate",
+          "trackedSentCount",
+          "openedCount",
+          "openRate",
+        ],
         properties: {
           totalSent: { type: "integer" },
           successCount: { type: "integer" },
           failureCount: { type: "integer" },
           successRate: { type: "integer", minimum: 0, maximum: 100 },
+          trackedSentCount: {
+            type: "integer",
+            description:
+              "Emails that carried the open-tracking pixel and were delivered: the open rate's denominator. Untracked and failed emails are left out.",
+          },
+          openedCount: {
+            type: "integer",
+            description: "Among `trackedSentCount`, the emails opened at least once.",
+          },
+          openRate: {
+            type: ["integer", "null"],
+            minimum: 0,
+            maximum: 100,
+            description:
+              "Rounded `openedCount / trackedSentCount` percentage, null when no tracked email was sent in the window. Emails are picked by when they were sent, with all their opens, even later ones. An estimate: see `openCount` on an email log.",
+          },
         },
       },
       UpdateStatus: {

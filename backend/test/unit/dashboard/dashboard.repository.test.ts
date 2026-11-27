@@ -66,6 +66,14 @@ describe("DashboardRepository", () => {
     }
   }
 
+  /** Marks an email as open-tracked at send time, with `opens` recorded opens. */
+  async function track(internalId: string, opens = 0) {
+    await db.run(sql`update email_logs set tracking_enabled = 1, tracking_token = ${`tok-${internalId}`},
+                       tracking_base_url = 'https://mail.example.com', open_count = ${opens},
+                       first_opened_at = ${opens > 0 ? since(0) : null}
+                     where internalId = ${internalId}`);
+  }
+
   describe("getStats", () => {
     it("counts sent and failed emails in SQL", async () => {
       await addEmail("e1", userId, ["received", "sent"]);
@@ -92,7 +100,10 @@ describe("DashboardRepository", () => {
                        values ('test-ko', ${userId}, null, 'enc_to', 's', 'test', 'cfg-1', ${since(0)})`);
       await db.run(sql`insert into email_histories (id, email_id, status, error, created_at) values ('t-h2', 'test-ko', 'failed', 'Authentication', ${since(0)})`);
 
-      expect(await repo.getStats(userId, 7)).toEqual({ totalSent: 1, successCount: 1, failureCount: 0, successRate: 100 });
+      expect(await repo.getStats(userId, 7)).toEqual({
+        totalSent: 1, successCount: 1, failureCount: 0, successRate: 100,
+        trackedSentCount: 0, openedCount: 0, openRate: null,
+      });
       expect(await repo.getErrors(userId, 7, 10), "a failed test is not an API delivery error").toEqual([]);
       // ...but it is part of the recent activity the person just did.
       expect((await repo.getRecent(userId, 20)).map((r) => r.internalId).sort()).toEqual(["api-ok", "test-ko", "test-ok"]);
@@ -100,7 +111,10 @@ describe("DashboardRepository", () => {
 
     it("returns zeroes for a user with no emails", async () => {
       const stats = await repo.getStats("nobody", 7);
-      expect(stats).toEqual({ totalSent: 0, successCount: 0, failureCount: 0, successRate: 0 });
+      expect(stats).toEqual({
+        totalSent: 0, successCount: 0, failureCount: 0, successRate: 0,
+        trackedSentCount: 0, openedCount: 0, openRate: null,
+      });
     });
 
     it("respects the days window", async () => {
@@ -109,6 +123,74 @@ describe("DashboardRepository", () => {
 
       const stats = await repo.getStats(userId, 7);
       expect(stats.totalSent).toBe(1);
+    });
+  });
+
+  describe("getStats open rate", () => {
+    it("divides the opened emails by the tracked emails that were actually sent", async () => {
+      await addEmail("opened-1", userId, ["received", "sent"]);
+      await track("opened-1", 3);
+      await addEmail("opened-2", userId, ["received", "sent"]);
+      await track("opened-2", 1);
+      await addEmail("unopened", userId, ["received", "sent"]);
+      await track("unopened");
+      // Sent but not tracked: nobody can tell whether it was opened, so it is left out entirely.
+      await addEmail("untracked", userId, ["received", "sent"]);
+      // Tracked but never delivered: it could not be opened, so it does not lower the rate.
+      await addEmail("tracked-failed", userId, ["received", "attempt_failed", "failed"]);
+      await track("tracked-failed");
+      await addEmail("tracked-pending", userId, ["received", "processing"]);
+      await track("tracked-pending");
+
+      const stats = await repo.getStats(userId, 7);
+
+      expect(stats.trackedSentCount).toBe(3);
+      expect(stats.openedCount).toBe(2);
+      expect(stats.openRate).toBe(67);
+      // The delivery figures are unchanged by tracking.
+      expect(stats.totalSent).toBe(6);
+      expect(stats.successCount).toBe(4);
+    });
+
+    it("counts an email opened many times once", async () => {
+      await addEmail("many", userId, ["received", "sent"]);
+      await track("many", 40);
+
+      const stats = await repo.getStats(userId, 7);
+
+      expect(stats).toMatchObject({ trackedSentCount: 1, openedCount: 1, openRate: 100 });
+    });
+
+    it("is null, not 0 %, when no tracked email was sent", async () => {
+      await addEmail("untracked", userId, ["received", "sent"]);
+
+      const stats = await repo.getStats(userId, 7);
+
+      expect(stats).toMatchObject({ trackedSentCount: 0, openedCount: 0, openRate: null });
+    });
+
+    it("filters on the send date: an old email opened today stays out of the window", async () => {
+      await addEmail("old", userId, ["sent"], 30);
+      await track("old", 1);
+      await addEmail("new", userId, ["received", "sent"]);
+      await track("new");
+
+      const stats = await repo.getStats(userId, 7);
+
+      expect(stats).toMatchObject({ trackedSentCount: 1, openedCount: 0, openRate: 0 });
+    });
+
+    it("follows the API key scope and leaves other users out", async () => {
+      await addEmail("k1", userId, ["received", "sent"], 0, "key-1");
+      await track("k1", 1);
+      await addEmail("k2", userId, ["received", "sent"], 0, "key-2");
+      await track("k2");
+      await addEmail("other", otherUser, ["sent"], 0, "key-1");
+      await track("other", 1);
+
+      expect(await repo.getStats(userId, 7, "key-1")).toMatchObject({ trackedSentCount: 1, openedCount: 1, openRate: 100 });
+      expect(await repo.getStats(userId, 7, "key-2")).toMatchObject({ trackedSentCount: 1, openedCount: 0, openRate: 0 });
+      expect(await repo.getStats(userId, 7)).toMatchObject({ trackedSentCount: 2, openedCount: 1, openRate: 50 });
     });
   });
 
@@ -207,8 +289,8 @@ describe("DashboardRepository", () => {
       const key2 = await repo.getStats(userId, 7, "key-2");
       const all = await repo.getStats(userId, 7);
 
-      expect(key1).toEqual({ totalSent: 2, successCount: 2, failureCount: 0, successRate: 100 });
-      expect(key2).toEqual({ totalSent: 1, successCount: 0, failureCount: 1, successRate: 0 });
+      expect(key1).toMatchObject({ totalSent: 2, successCount: 2, failureCount: 0, successRate: 100 });
+      expect(key2).toMatchObject({ totalSent: 1, successCount: 0, failureCount: 1, successRate: 0 });
       expect(all.totalSent).toBe(3);
     });
 
