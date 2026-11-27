@@ -319,4 +319,60 @@ describe("runSendEmailFlow", () => {
       reason: "SMTP configuration not found",
     });
   });
+
+  describe("open tracking pixel", () => {
+    const TOKEN = "Tr4ck1ngT0ken".padEnd(43, "z");
+    const BASE = "https://makisend.example.workers.dev";
+
+    function sentHtml(): string {
+      return (mockSend.mock.calls[0][0] as { html: string }).html;
+    }
+
+    const tracking = { token: TOKEN, baseUrl: BASE };
+
+    it("adds the pixel to a tracked email, pointing at the origin stored with its token", async () => {
+      mockLoadEmail.mockResolvedValue({ ...storedEmail, tracking });
+
+      // The payload only carries the id: everything the pixel needs comes from D1.
+      const result = await run();
+
+      expect(result.outcome).toBe("sent");
+      expect(sentHtml()).toContain(`<img src="${BASE}/t/o/${TOKEN}"`);
+      expect(sentHtml().startsWith("<p>HTML content for testing</p>")).toBe(true);
+    });
+
+    it("adds the pixel after sanitizing: the user's HTML is cleaned, the pixel is untouched", async () => {
+      mockLoadEmail.mockResolvedValue({
+        ...storedEmail,
+        html: '<p>Hi</p><img src="https://cdn.test/a.png" width="600"><script>alert(1)</script>',
+        tracking,
+      });
+
+      await run();
+
+      const html = sentHtml();
+      expect(html).not.toContain("<script>");
+      // The pixel comes last, exactly as built: the sanitizer never saw it.
+      expect(html.endsWith(
+        `<img src="${BASE}/t/o/${TOKEN}" width="1" height="1" alt="" style="display:block;border:0;width:1px;height:1px">`,
+      )).toBe(true);
+    });
+
+    it("sends an untracked email without any pixel", async () => {
+      mockLoadEmail.mockResolvedValue({ ...storedEmail });
+
+      await run();
+
+      expect(sentHtml()).not.toContain("/t/o/");
+    });
+
+    it("still sends a tracked email whose stored origin is invalid, without the pixel", async () => {
+      mockLoadEmail.mockResolvedValue({ ...storedEmail, tracking: { token: TOKEN, baseUrl: "not a url" } });
+
+      const result = await run();
+
+      expect(result.outcome).toBe("sent");
+      expect(sentHtml()).not.toContain("/t/o/");
+    });
+  });
 });

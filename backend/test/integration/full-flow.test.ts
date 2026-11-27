@@ -237,6 +237,63 @@ describe("POST /send-email — HTTP layer integration", () => {
       expect(json.success).toBe(true);
       expect(json.message).toBe("Email queued");
     });
+
+    it("tracks opens when the account enables it: token and pixel origin on the row, id-only messages", async () => {
+      const d1 = await mf.getD1Database("makisend_db");
+      await db.update(user).set({ openTrackingEnabled: true }).where(eq(user.id, "test-user-id-001"));
+
+      const res = await app.request("/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": testApiKey },
+        body: JSON.stringify(validPayload),
+      }, mockEnvWithD1(d1));
+
+      expect(res.status).toBe(202);
+      const { emailId } = (await res.json()) as { emailId: string };
+
+      const [log] = await db.select().from(emailLogs).where(eq(emailLogs.internalId, emailId)).all();
+      expect(log.trackingEnabled).toBe(true);
+      expect(log.trackingToken).toMatch(/^[A-Za-z0-9]{43}$/);
+      expect(log.trackingBaseUrl).toBe("http://localhost");
+      expect(log.openCount).toBe(0);
+      expect(log.firstOpenedAt).toBeNull();
+
+      const message = mockQueueSend.mock.calls[0][0] as SendEmailQueueMessage;
+      // Nothing about tracking travels through the queue: a message rebuilt from the id alone (a
+      // DLQ replay) finds the same pixel origin.
+      expect(message).toEqual({ emailId });
+
+      // The workflow reads the token and its origin back with the email.
+      const loaded = await loadEmailForSending(emailRepository, AES_KEY, emailId);
+      expect(loaded.tracking).toEqual({ token: log.trackingToken, baseUrl: "http://localhost" });
+
+      await sendEmailQueueConsumer(
+        {
+          messages: [{ body: message, attempts: 1, ack: vi.fn(), retry: vi.fn() }],
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any,
+        mockEnvWithD1(d1),
+      );
+      expect(mockWorkflowCreate).toHaveBeenCalledWith({
+        id: emailId,
+        params: { emailId },
+      });
+    });
+
+    it("rejects trackOpens: true when the account has tracking off, and writes nothing", async () => {
+      const d1 = await mf.getD1Database("makisend_db");
+
+      const res = await app.request("/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": testApiKey },
+        body: JSON.stringify({ ...validPayload, trackOpens: true }),
+      }, mockEnvWithD1(d1));
+
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { code: string }).code).toBe("open_tracking_disabled");
+      expect(await db.select().from(emailLogs).all()).toHaveLength(0);
+      expect(mockQueueSend).not.toHaveBeenCalled();
+    });
   });
 
   describe("idempotency", () => {

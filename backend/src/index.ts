@@ -32,7 +32,7 @@ import {
 } from "@/send-rate-limit";
 import { sendEmailQueueConsumer } from "@/queue/send-email.consumer";
 import { runSmtpHealthChecks } from "@/smtp-config/smtp-health";
-import { openApiDocument } from "@/openapi";
+import { openApiDocument, SCALAR_CUSTOM_CSS } from "@/openapi";
 import { createUpdatesController, createUpdateService, runUpdateCheck, type UpdateService } from "@/updates";
 
 // --- Better Auth ---
@@ -41,6 +41,12 @@ import { createAuth } from "@/lib/auth";
 // --- Database & repository imports ---
 import { createDatabase } from "@/db/connection";
 import { SendEmailRepository } from "@/send-email/send-email.repository";
+import {
+  createOpenTrackingController,
+  OpenTrackingRepository,
+  TRACKING_PIXEL_ROUTE,
+  type IOpenTrackingRepository,
+} from "@/open-tracking";
 
 // --- Type imports ---
 import { checkEncryptionKeys, resolveEncryptionKeys, type SmtpConfig, type UserConfig } from "./config/config";
@@ -75,6 +81,10 @@ export type Bindings = {
   // Optional per-API-key send quota on POST /send-email, e.g. "100/min" or "5000/day".
   // Unset (the default): no quota. Over the limit: 429 + Retry-After.
   SEND_RATE_LIMIT?: string;
+  // Optional public origin the open-tracking pixel points to (e.g. "https://mail.example.com" or a
+  // dedicated "https://track.example.com" routed to this Worker). Unset, or not an http(s) URL:
+  // the origin the POST /send-email request arrived on.
+  OPEN_TRACKING_BASE_URL?: string;
   // New-release check (src/updates): "off" stops every outbound request. Unset: on.
   UPDATE_CHECK?: string;
   // "registry": a new version is the newest version tag of UPDATE_SOURCE_IMAGE (set by the
@@ -149,6 +159,7 @@ const deps = {
   templateRepository: null as ITemplateRepository | null,
   idempotencyRepository: null as IIdempotencyRepository | null,
   sendRateLimitRepository: null as ISendRateLimitRepository | null,
+  openTrackingRepository: null as IOpenTrackingRepository | null,
   sendRateLimit: null as SendRateLimit | null,
   smtpConfigService: null as SmtpConfigService | null,
   apiKeyService: null as ApiKeyService | null,
@@ -174,6 +185,7 @@ const deps = {
     this.templateRepository = new TemplateRepository(db);
     this.idempotencyRepository = new IdempotencyRepository(db);
     this.sendRateLimitRepository = new SendRateLimitRepository(db);
+    this.openTrackingRepository = new OpenTrackingRepository(db);
     this.sendRateLimit = parseSendRateLimit(env.SEND_RATE_LIMIT);
     this.aesKey = resolveEncryptionKeys(env);
     this.emailBinding = env.EMAIL;
@@ -257,6 +269,9 @@ app.get(
     pageTitle: "MakiSend API Reference",
     nonce: c.get("cspNonce"),
     theme: "default",
+    darkMode: true,
+    hideDarkModeToggle: false,
+    customCss: SCALAR_CUSTOM_CSS,
     cdn: "https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.75.1",
   })),
 );
@@ -402,6 +417,11 @@ app.use("/updates/*", async (c, next) => {
   return sessionMiddleware(auth)(c, next);
 });
 app.route("/updates", updatesController);
+
+// Public open-tracking pixel, loaded by the recipient's mail client: no API key, no session. It sits
+// outside /send-email on purpose, whose middleware would demand a key the mail client never has.
+const openTrackingController = createOpenTrackingController(() => deps.openTrackingRepository!);
+app.route(TRACKING_PIXEL_ROUTE, openTrackingController);
 
 // Worker entrypoint: HTTP requests via Hono, queue messages via the consumer.
 // The Hono app is also exported by name so tests can call `app.request(...)`.

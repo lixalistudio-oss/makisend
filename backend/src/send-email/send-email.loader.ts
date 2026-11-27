@@ -40,6 +40,10 @@ export async function loadEmailForSending(
     text,
     html,
     smtpConfigId: stored.smtpConfigId,
+    // Only on a tracked email, like attachments: an untracked email keeps its former shape.
+    ...(stored.trackingToken && stored.trackingBaseUrl
+      ? { tracking: { token: stored.trackingToken, baseUrl: stored.trackingBaseUrl } }
+      : {}),
     ...(attachments.length > 0 ? { attachments } : {}),
   };
 }

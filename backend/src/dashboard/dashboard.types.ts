@@ -3,6 +3,16 @@ export interface DashboardStats {
   successCount: number;
   failureCount: number;
   successRate: number;
+  /**
+   * Open rate denominator: emails that carried the tracking pixel (`tracking_enabled`, fixed at
+   * send time) AND were delivered. Untracked emails cannot be known as opened or not, and a tracked
+   * email that failed never reached a mailbox, so neither may lower the rate.
+   */
+  trackedSentCount: number;
+  /** Among `trackedSentCount`, the emails with at least one recorded open. */
+  openedCount: number;
+  /** Rounded percentage, `openedCount / trackedSentCount`; null when no tracked email was sent. */
+  openRate: number | null;
 }
 
 export interface SmtpConfigBreakdown {

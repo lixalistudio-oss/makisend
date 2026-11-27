@@ -12,6 +12,25 @@ import {
   MAX_TEXT_LENGTH,
 } from "@/core/validation";
 
+const isTipTapDocument = (value: unknown): boolean =>
+  Boolean(value && typeof value === "object" && (value as { type?: unknown }).type === "doc");
+
+/**
+ * What the visual builder stores (frontend `template-editor.tsx`): the v2 envelope
+ * `{ version: 2, theme: "basic" | "minimal", content: <TipTap doc> }`, or a legacy raw
+ * TipTap document saved before the envelope existed. The Worker only stores it.
+ */
+const isEditorDocument = (value: unknown): boolean => {
+  if (isTipTapDocument(value)) return true;
+  if (!value || typeof value !== "object") return false;
+  const envelope = value as { version?: unknown; theme?: unknown; content?: unknown };
+  return (
+    envelope.version === 2 &&
+    (envelope.theme === "basic" || envelope.theme === "minimal") &&
+    isTipTapDocument(envelope.content)
+  );
+};
+
 // Caps mirror send-email.dto: the rendered subject/text/html end up in a single
 // Cloudflare Queue message (128 KB limit).
 const EditorJson = z
@@ -24,13 +43,12 @@ const EditorJson = z
   .refine(
     (value) => {
       try {
-        const parsed = JSON.parse(value) as { type?: unknown } | null;
-        return Boolean(parsed && typeof parsed === "object" && parsed.type === "doc");
+        return isEditorDocument(JSON.parse(value));
       } catch {
         return false;
       }
     },
-    { message: "Editor content must be a valid TipTap document." },
+    { message: "Editor content must be a builder document ({ version: 2, theme, content }) or a TipTap document." },
   );
 
 const Source = z

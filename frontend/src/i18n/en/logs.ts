@@ -48,6 +48,13 @@ export default {
   "logs.detail.queuedAt": "Queued at",
   "logs.detail.timeline": "Email timeline",
   "logs.detail.attempt": "attempt {count}",
+  "logs.detail.opens": "Opens",
+  "logs.detail.opensNotTracked": "Open tracking was off when this email was sent.",
+  "logs.detail.firstOpened": "First opened",
+  "logs.detail.lastOpened": "Last opened",
+  "logs.detail.openCount": "Times opened",
+  "logs.detail.notOpened": "Not opened yet",
+  "logs.detail.opensHint": "Approximate. Some mail apps load images for the reader (Apple Mail, Gmail), others block them. An open is counted at most once every 30 seconds.",
 
   // statuses (badges)
   "logs.status.received": "received",

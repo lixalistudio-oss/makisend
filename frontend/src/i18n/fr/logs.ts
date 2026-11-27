@@ -49,6 +49,13 @@ export default {
   "logs.detail.queuedAt": "En file d'attente depuis le",
   "logs.detail.timeline": "Chronologie de l'e-mail",
   "logs.detail.attempt": "tentative {count}",
+  "logs.detail.opens": "Ouvertures",
+  "logs.detail.opensNotTracked": "Le suivi des ouvertures était désactivé lors de l'envoi de cet e-mail.",
+  "logs.detail.firstOpened": "Première ouverture",
+  "logs.detail.lastOpened": "Dernière ouverture",
+  "logs.detail.openCount": "Nombre d'ouvertures",
+  "logs.detail.notOpened": "Pas encore ouvert",
+  "logs.detail.opensHint": "Valeur approximative. Certaines messageries chargent les images à la place du lecteur (Apple Mail, Gmail), d'autres les bloquent. Une ouverture est comptée au plus toutes les 30 secondes.",
 
   // statuses (badges)
   "logs.status.received": "reçu",

@@ -7,6 +7,7 @@ import { SessionGuard } from "@/components/session-guard"
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Switch } from "@/components/ui/switch"
 import { Field, FieldGroup, FieldLabel, FieldDescription } from "@/components/ui/field"
 import {
   Card,
@@ -24,7 +25,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { KeyIcon } from "lucide-react"
+import { KeyIcon, MailOpenIcon } from "lucide-react"
 import { fetchApi } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { useTheme } from "@/lib/theme"
@@ -52,6 +53,9 @@ export function SettingsLayout() {
   const [savingProfile, setSavingProfile] = useState(false)
   const [savingPassword, setSavingPassword] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  // null until the session is read: the box stays disabled rather than showing a guess.
+  const [openTracking, setOpenTracking] = useState<boolean | null>(null)
+  const [savingOpenTracking, setSavingOpenTracking] = useState(false)
 
   useEffect(() => {
     fetchApi("/api/auth/get-session")
@@ -59,9 +63,36 @@ export function SettingsLayout() {
       .then((data) => {
         const user = data?.data?.user ?? data?.user
         if (user?.email) setEmail(user.email)
+        if (user) setOpenTracking(user.openTrackingEnabled === true)
       })
       .catch(() => {})
   }, [])
+
+  const handleToggleOpenTracking = async (enabled: boolean) => {
+    const previous = openTracking
+    setOpenTracking(enabled)
+    setSavingOpenTracking(true)
+    try {
+      const res = await fetchApi("/api/auth/update-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ openTrackingEnabled: enabled }),
+      })
+
+      if (!res.ok) {
+        setOpenTracking(previous)
+        toast.error(await readErrorMessage(res, t("settings.errorOpenTracking")))
+        return
+      }
+
+      toast.success(enabled ? t("settings.openTrackingEnabled") : t("settings.openTrackingDisabled"))
+    } catch {
+      setOpenTracking(previous)
+      toast.error(t("settings.networkError"))
+    } finally {
+      setSavingOpenTracking(false)
+    }
+  }
 
   const handleSaveProfile = async () => {
     const target = email.trim()
@@ -317,6 +348,37 @@ export function SettingsLayout() {
           </Card>
 
           <TwoFactorCard />
+
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <MailOpenIcon className="size-5 text-muted-foreground" />
+                <div>
+                  <CardTitle>{t("settings.openTrackingTitle")}</CardTitle>
+                  <CardDescription>
+                    {t("settings.openTrackingDescription")}
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <Field>
+                <label className="flex items-center justify-between gap-4 text-sm">
+                  <span>
+                    {t("settings.openTrackingLabel")}
+                    <span className="block text-muted-foreground">
+                      {t("settings.openTrackingHint")}
+                    </span>
+                  </span>
+                  <Switch
+                    checked={openTracking === true}
+                    disabled={openTracking === null || savingOpenTracking}
+                    onCheckedChange={(checked) => handleToggleOpenTracking(checked)}
+                  />
+                </label>
+              </Field>
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader>

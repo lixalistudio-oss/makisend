@@ -172,6 +172,11 @@ export class EmailLogRepository implements IEmailLogRepository {
       smtpConfigId: row.smtpConfigId ?? null,
       emailProcessingTimeMs: row.emailProcessingTimeMs,
       createdAt: row.createdAt,
+      // Open tracking. row.trackingToken is deliberately left out: it is the key of the pixel URL.
+      trackingEnabled: row.trackingEnabled === true,
+      firstOpenedAt: row.firstOpenedAt ?? null,
+      lastOpenedAt: row.lastOpenedAt ?? null,
+      openCount: row.openCount ?? 0,
     };
   }
 

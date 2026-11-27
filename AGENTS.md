@@ -68,6 +68,12 @@ src/
 │   ├── error-classifier.ts     # Permanent/transient verdicts + human-readable messages
 │   └── send-email.types.ts     # Interfaces / contracts
 ├── idempotency/                # HTTP Idempotency-Key for POST /send-email
+├── open-tracking/              # Email open tracking: token, pixel URL/tag, public GET /t/o/:token
+│   ├── tracking-token.ts       # 43-char token (better-auth/crypto generateRandomString) + format check
+│   ├── tracking-pixel.ts       # Pixel URL, <img> insertion after sanitizing, token redaction for logs
+│   ├── tracking-gif.ts         # The 42-byte transparent GIF
+│   ├── open-tracking.repository.ts # One UPDATE per open, 30 s per-email throttle in the WHERE clause
+│   └── open-tracking.controller.ts # Public pixel route, always the same GIF
 ├── send-rate-limit/            # Optional per-API-key send quota (SEND_RATE_LIMIT)
 ├── openapi/                    # OpenAPI 3.1 document (request schemas generated from Zod DTOs)
 ├── smtp-config/                # SMTP configs, TLS/port validation, connection checks
@@ -143,6 +149,7 @@ Copy `.env.example` to `.env` and fill in:
 | `BETTER_AUTH_URL` | Backend URL of the Worker (e.g. `http://localhost:8787`) |
 | `FRONTEND_URL` | Frontend origin allowed for CORS / redirects |
 | `SEND_RATE_LIMIT` | Optional per-API-key send quota (`100/min`, `5000/day`). Unset: no quota |
+| `OPEN_TRACKING_BASE_URL` | Optional public origin the open-tracking pixel points to (a stable or dedicated domain routed to the Worker). Unset or not an http(s) URL: the origin the `POST /send-email` request arrived on. Keep it reachable: the URL stays in every sent email |
 
 Not environment variables anymore:
 
@@ -173,6 +180,7 @@ Even though the runtime remains **Hono** (not NestJS), the code organization is 
 ## Design system
 
 - `DESIGN.md` (repository root) is the source of truth for the dashboard and the website. Read it before any UI change.
+- `brand/DESIGN.md` is the brand kit: logo files, colors, type and logo rules. Read it before touching the logo, favicons or brand assets; it overrides any design skill's own choices.
 - Tokens live in `frontend/src/styles/global.css`, mapped onto shadcn variables. `--brand*` is MakiSend green; shadcn's `--accent` stays a neutral hover fill. Use `bg-brand-subtle text-brand-strong` for active or selected states, `text-brand` for links, `text-success` / `text-warning` / `text-destructive` for statuses (always with their word).
 - No Tailwind palette classes (`text-green-600`...), no `font-semibold` / `font-bold`, no `uppercase` or wide tracking, sentence case labels, one primary button per surface.
 - Controls are 44px high (`h-11`), cards use `rounded-2xl` (34px), panels `rounded-xl` (26px), controls `rounded-lg` (18px).
@@ -226,6 +234,24 @@ Tests: `test/unit/auth/auth-routes.test.ts` (single account, races, 2FA, passwor
 
 **Never replace the key outright once the database holds data**: SMTP credentials, recipients and bodies become unreadable. Every encrypted column must be listed in `ENCRYPTED_COLUMNS` (`src/key-rotation/key-rotation.repository.ts`). The daily cron (`17 3 * * *`) still runs the SMTP health checks; `scheduled` dispatches on the expression.
 
+### Open tracking
+
+Opt-in per account: `user.open_tracking_enabled` (off by default), a Better Auth `additionalFields` entry set from Settings with `POST /api/auth/update-user { openTrackingEnabled }` and returned by `get-session`. The account setting is the master switch; `trackOpens` in `POST /send-email` (both inline and template shapes) can only narrow it:
+
+| Account | `trackOpens` | Result |
+|---|---|---|
+| off | absent / `false` | not tracked |
+| off | `true` | `400`, code `open_tracking_disabled`, logged; nothing written or queued |
+| on | absent / `true` | tracked |
+| on | `false` | not tracked |
+
+- **At send time** (`send-email.controller.ts`): a tracked email gets a token (`generateRandomString(43, "a-z", "A-Z", "0-9")`, about 256 bits, stored in clear because the route looks it up by equality and it unlocks nothing) and `tracking_enabled = true`, frozen on the row: the open rate's denominator never changes when the setting does. The pixel origin (`OPEN_TRACKING_BASE_URL`, else the request origin) is written on the same row, in `tracking_base_url`, because the workflow has no request of its own. Token and origin are one `tracking` option of `createPendingEmailLog`, so a row never gets one without the other, and the queue message stays `{ emailId }` for every email: a message rebuilt from the id (DLQ replay) still sends the pixel.
+- **In the workflow** (`htmlToSend` in `send-email.flow.ts`): the `<img>` is added **after** `cleanHtml`, to the HTML copy that is sent only, before `</body>` or at the end. The stored HTML never changes. The loader returns `tracking: { token, baseUrl }` only when both columns are set; an origin that cannot be parsed still sends the email, without the pixel: tracking never blocks delivery.
+- **Pixel route** `GET /t/o/:token` (public, mounted outside `/send-email`, no key, no session): a malformed token never reaches D1; otherwise one `UPDATE` sets `first_opened_at` (once), `last_opened_at` and `open_count + 1`, only if the last recorded open is at least 30 s old (the throttle lives in the `WHERE`, so simultaneous opens count once). `HEAD` is never counted. The answer is always the same 42-byte GIF with `Cache-Control: no-store`: unknown, throttled, malformed or a D1 error look identical.
+- **Open rate** (`getStats` in `dashboard.repository.ts`, same query and window as the delivery figures): `trackedSentCount` = `tracking_enabled` AND a `sent` history row, `openedCount` = those with `open_count > 0`, `openRate` = rounded percentage, `null` when `trackedSentCount` is 0 (never 0 %). The window filters on `created_at`, so an email counts with all its later opens and the rate never exceeds 100 %. Shown as the fifth card of the dashboard (`section-cards.tsx`).
+- **Logs**: `GET /email-logs` returns `trackingEnabled`, `firstOpenedAt`, `lastOpenedAt`, `openCount`, never the token. The request logger replaces the token by `[redacted]`. **Not redacted**: Cloudflare's own invocation logs (`observability.invocation_logs` in `wrangler.jsonc`) and the `wrangler dev` access log record the full URL. A token only lets its holder inflate one email's counter.
+- **Accuracy**: an open means the image was loaded. Apple Mail Privacy Protection preloads it (false opens), Gmail's image proxy caches it (missed re-opens), clients blocking images count nothing. No global rate limit on the pixel route yet.
+
 ### Current security limitations
 
 - **Send quota is opt-in (`SEND_RATE_LIMIT`)**: Better Auth's per-key quota stays off (`apiKeyOptions.rateLimit.enabled = false` in `src/lib/auth.ts`, which also overrides the quota stamped on existing keys). The instance owner can set `SEND_RATE_LIMIT=<count>/<s|min|hour|day>`: `src/send-rate-limit/` counts sends per API key in a fixed window (`send_rate_limit` table, one atomic UPSERT per send) and answers `429` + `Retry-After` past it. It runs after API-key auth and **before** idempotency, so a 429 is never stored as a key's replayable response. Unset: no quota and no table write; a malformed value is a 500, never unlimited.
@@ -266,6 +292,8 @@ Tests: `test/unit/auth/auth-routes.test.ts` (single account, races, 2FA, passwor
   - API key middleware (401/403 + context wiring, inactive SMTP config refusal)
   - SMTP host/port validation, transport options, error classification
   - SMTP check/test-send endpoints and per-config transport resolution
+  - Open tracking: token and pixel helpers, the `trackOpens` decision table, base URL resolution, pixel after sanitizing, the pixel route (`test/integration/open-tracking.test.ts`: 30 s throttle on real D1, simultaneous opens, token never logged) and the account setting + log fields (`test/integration/open-tracking-settings.test.ts`)
+- Timeouts: `testTimeout` / `hookTimeout` are 15 s (Miniflare D1 and Better Auth password hashing crossed the 5 s default on a busy machine)
 - Mocks are reset in `beforeEach`
 - Run `pnpm test:run` before committing
 
@@ -281,6 +309,7 @@ Tests: `test/unit/auth/auth-routes.test.ts` (single account, races, 2FA, passwor
 - **Attachments, end to end**: the same Resend-shaped `attachments` are accepted by `POST /send-email` and by the dashboard's test send (`POST /smtp-config/:id/test-send`, "Attach a file" in `smtp-test-send-dialog.tsx`); both validate through `send-email/attachments.ts` (`AttachmentsDto`) and both senders carry them (SMTP and the Cloudflare `send_email` binding). The frontend repeats the limits in `frontend/src/lib/attachments.ts` (keep them equal). `pnpm test:e2e:attachments` (`test/e2e/run-attachments.sh` + `attachments.ts`) runs the real Worker under `wrangler dev`, sends files through both doors to a Cloudflare Email Service configuration and compares, byte for byte, the files Miniflare's local binding writes; it leaves `test/e2e/reports/attachments.json` to diff.
   queue/workflow payloads carry only `emailId`
 - HTTP idempotency reservations/responses live in `idempotency_keys` (24h TTL)
+- Open tracking (migration `0007_email_open_tracking`): `email_logs.tracking_enabled`, `tracking_token` (unique index, NULL when untracked, not encrypted and not in `ENCRYPTED_COLUMNS`), `tracking_base_url` (the pixel origin, written with the token, not encrypted), `first_opened_at`, `last_opened_at` (ISO text, like `sent_at`), `open_count`; `user.open_tracking_enabled`
 
 ## Deployment
 
@@ -384,7 +413,7 @@ Steps run:
 - **Single SMTP provider**: credentials are stored per user in D1 (encrypted), but there is no multi-provider routing or failover.
 - **Coarse rate limiting**: Better Auth's per-key limit is not a configurable tenant quota.
 - **Bounded retry, not unlimited**: each email gets **1 initial SMTP attempt + 3 retries** 30 seconds apart. Transient failures are retried inside the same workflow instance and dead-lettered when the budget is exhausted; permanent failures (auth, TLS, DNS, config, 5xx) stop immediately with a human-readable reason in D1. A hung attempt is bounded by the SMTP socket timeouts and the 2-minute step timeout.
-- **No bounce / open / click tracking**: only send logs are stored.
+- **No bounce / click tracking**: opens are tracked when the account enables it (see "Open tracking"), and stay approximate by nature.
 - **D1 is a serverless SQLite database**: possible latency, not ideal for very high volumes without caching.
 - **Deliverability**: SPF, DKIM, DMARC and IP reputation are not handled by the code; they depend on the SMTP provider and sender domain.
 

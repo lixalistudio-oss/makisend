@@ -1,4 +1,4 @@
-import { emailLogs, emailHistories, emailContents, emailAttachments } from "@/db/schema";
+import { emailLogs, emailHistories, emailContents, emailAttachments, user } from "@/db/schema";
 import type { Database } from "@/db/connection";
 import type {
   IEmailRepository,
@@ -11,6 +11,15 @@ import { asc, eq } from "drizzle-orm";
 
 export class SendEmailRepository implements IEmailRepository {
   constructor(private readonly db: Database) {}
+
+  async isOpenTrackingEnabled(userId: string): Promise<boolean> {
+    const [row] = await this.db
+      .select({ enabled: user.openTrackingEnabled })
+      .from(user)
+      .where(eq(user.id, userId))
+      .limit(1);
+    return row?.enabled === true;
+  }
 
   async createPendingEmailLog(
     internalId: string,
@@ -28,6 +37,10 @@ export class SendEmailRepository implements IEmailRepository {
       subject,
       source: options.source ?? "api",
       smtpConfigId: options.smtpConfigId ?? null,
+      // The tracking decision is frozen here, at send time: the account setting may change later.
+      trackingEnabled: options.tracking != null,
+      trackingToken: options.tracking?.token ?? null,
+      trackingBaseUrl: options.tracking?.baseUrl ?? null,
       // smtp_id / sent_at remain NULL until completeEmailLog() runs
     });
   }
@@ -95,6 +108,8 @@ export class SendEmailRepository implements IEmailRepository {
         text: emailContents.textBody,
         html: emailContents.htmlBody,
         smtpConfigId: emailContents.smtpConfigId,
+        trackingToken: emailLogs.trackingToken,
+        trackingBaseUrl: emailLogs.trackingBaseUrl,
       })
       .from(emailContents)
       .innerJoin(emailLogs, eq(emailLogs.internalId, emailContents.emailId))

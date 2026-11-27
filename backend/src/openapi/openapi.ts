@@ -85,10 +85,11 @@ function patchProperty(
 
 const createSmtpConfigSchema = inputSchema(
   CreateSmtpConfigDto,
-  "SMTP credentials to create or test. The password is encrypted at rest and never returned.",
+  "SMTP credentials to create or test. The password is encrypted at rest and never returned. A host on `smtp.mx.cloudflare.net` is delivered through the Cloudflare Email Service binding instead of a socket.",
 );
 patchProperty(createSmtpConfigSchema, "smtpHostname", {
-  description: "Provider hostname without a scheme, port, or path.",
+  description:
+    "Provider hostname without a scheme, port, or path. `smtp.mx.cloudflare.net` uses the Cloudflare Email Service binding.",
 });
 patchProperty(createSmtpConfigSchema, "smtpPort", {
   enum: [...SMTP_PORTS],
@@ -141,6 +142,8 @@ export const openApiDocument = {
       "**Authentication.** `POST /send-email` uses a per-tenant API key from the dashboard, sent as `x-api-key` or `Authorization: Bearer <key>`. Dashboard endpoints use the Better Auth session cookie created by `POST /api/auth/sign-in/email`; open the dashboard and sign in before trying those routes here.",
       "",
       "**Delivery is asynchronous.** `POST /send-email` returns `202 Accepted` once the email is persisted and queued. Delivery status is available through `GET /email-logs` and the dashboard endpoints.",
+      "",
+      "**Delivery transports.** A configuration on `smtp.mx.cloudflare.net` is sent through the Cloudflare Email Service binding; every other host uses a raw SMTP connection. `SEND_RATE_LIMIT` optionally caps sends per API key and answers `429` with `Retry-After`.",
     ].join("\n"),
     license: { name: "MIT" },
   },
@@ -152,9 +155,10 @@ export const openApiDocument = {
   ],
   tags: [
     { name: "Emails", description: "Queue transactional emails for delivery." },
-    { name: "SMTP Config", description: "Manage encrypted SMTP credentials." },
+    { name: "SMTP Config", description: "Manage encrypted SMTP or Cloudflare Email Service credentials." },
     { name: "API Keys", description: "Manage per-configuration API keys." },
     { name: "Email Logs", description: "Inspect delivery logs and history." },
+    { name: "Open Tracking", description: "Public tracking pixel that records when an email is opened." },
     { name: "Dashboard", description: "Aggregated delivery metrics." },
     { name: "Templates", description: "Reusable email templates with variables." },
     { name: "Updates", description: "Whether a newer MakiSend release is published." },
@@ -167,7 +171,7 @@ export const openApiDocument = {
         summary: "Queue a transactional email",
         operationId: "sendEmail",
         description:
-          "Accepts either inline content (`subject`, `text`, `html`) or a `templateId` plus `variables`. The two shapes are mutually exclusive. HTML is sanitized before delivery. Send the optional `Idempotency-Key` header to make retries safe.",
+          "Accepts either inline content (`subject`, `text`, `html`) or a `templateId` plus `variables`. The two shapes are mutually exclusive. Both accept optional `attachments`. HTML is sanitized before delivery. Send the optional `Idempotency-Key` header to make retries safe. The optional `trackOpens` boolean controls open tracking for this email. Omitted, the account setting decides. `trackOpens: false` skips tracking even when the account enables it; `trackOpens: true` on an account with tracking disabled is rejected with a 400 and the code `open_tracking_disabled`. Tracking adds an invisible image to the HTML copy that is sent; the stored HTML is unchanged.",
         security: apiKeySecurity,
         parameters: [idempotencyKeyParameter],
         requestBody: {
@@ -186,6 +190,16 @@ export const openApiDocument = {
                 description:
                   "`true` when this response was replayed from a previous request with the same idempotency key.",
                 schema: { type: "string", enum: ["true", "false"] },
+              },
+              "RateLimit-Limit": {
+                description:
+                  "Only when `SEND_RATE_LIMIT` is set: the send quota for this API key.",
+                schema: { type: "integer" },
+              },
+              "RateLimit-Remaining": {
+                description:
+                  "Only when `SEND_RATE_LIMIT` is set: sends left in the current quota window.",
+                schema: { type: "integer" },
               },
             },
             content: {
@@ -218,6 +232,41 @@ export const openApiDocument = {
         },
       },
     },
+    "/t/o/{token}": {
+      get: {
+        tags: ["Open Tracking"],
+        summary: "Record an email open",
+        operationId: "trackEmailOpen",
+        description:
+          "Loaded by the recipient's mail client through the tracking image. Public: no credentials. Records at most one open per email every 30 seconds; requests in between are answered but not counted, and a `HEAD` request is never counted. Always answers with the same 1x1 GIF, whether the token is known or not, and whether the write was throttled or not, so the response reveals nothing about the token.",
+        security: [],
+        parameters: [
+          {
+            name: "token",
+            in: "path",
+            required: true,
+            description: "Random token that identifies one tracked email.",
+            schema: { type: "string" },
+          },
+        ],
+        responses: {
+          200: {
+            description: "1x1 transparent GIF.",
+            headers: {
+              "Cache-Control": {
+                description: "Always `no-store`, so each open reaches the server.",
+                schema: { type: "string" },
+              },
+            },
+            content: {
+              "image/gif": {
+                schema: { type: "string", format: "binary" },
+              },
+            },
+          },
+        },
+      },
+    },
     "/smtp-config": {
       get: {
         tags: ["SMTP Config"],
@@ -234,7 +283,7 @@ export const openApiDocument = {
         summary: "Create an SMTP configuration",
         operationId: "createSmtpConfig",
         description:
-          "Hostname, username, password, and sender address are encrypted at rest. Allowed ports are 465, 587, 2465, 2525, and 2587; port 25 is blocked on Workers. When `smtpSecurity` is omitted it defaults to `tls` on 465/2465 and `starttls` otherwise.",
+          "Hostname, username, password, and sender address are encrypted at rest. Allowed ports are 465, 587, 2465, 2525, and 2587; port 25 is blocked on Workers. When `smtpSecurity` is omitted it defaults to `tls` on 465/2465 and `starttls` otherwise. A host on `smtp.mx.cloudflare.net` uses the Cloudflare Email Service binding instead of SMTP.",
         security: sessionSecurity,
         requestBody: {
           required: true,
@@ -257,7 +306,7 @@ export const openApiDocument = {
         summary: "Check credentials before saving",
         operationId: "checkUnsavedSmtpConfig",
         description:
-          "Opens an SMTP connection with the submitted credentials without persisting them. Works for inactive configurations too.",
+          "Opens an SMTP connection with the submitted credentials without persisting them. Works for inactive configurations too. A host on `smtp.mx.cloudflare.net` is checked through the Cloudflare Email Service binding.",
         security: sessionSecurity,
         requestBody: {
           required: true,
@@ -350,7 +399,7 @@ export const openApiDocument = {
         summary: "Send a test email",
         operationId: "sendSmtpTestEmail",
         description:
-          "Sends a one-off message through the saved configuration. It is recorded in the email logs with `source: \"test\"` and this configuration's id, and never counted in the dashboard totals.",
+          "Sends a one-off message through the saved configuration. It is recorded in the email logs with `source: \"test\"` and this configuration's id, and never counted in the dashboard totals. A host on `smtp.mx.cloudflare.net` is sent through the Cloudflare Email Service binding.",
         security: sessionSecurity,
         parameters: [idParameter],
         requestBody: {
@@ -974,6 +1023,10 @@ export const openApiDocument = {
           "smtpConfigId",
           "createdAt",
           "history",
+          "trackingEnabled",
+          "firstOpenedAt",
+          "lastOpenedAt",
+          "openCount",
         ],
         properties: {
           internalId: { type: "string" },
@@ -995,6 +1048,26 @@ export const openApiDocument = {
           },
           createdAt: { type: "string", format: "date-time" },
           history: { type: "array", items: schemaRef("EmailHistory") },
+          trackingEnabled: {
+            type: "boolean",
+            description: "Whether open tracking was active when this email was sent. Fixed at send time.",
+          },
+          firstOpenedAt: {
+            type: ["string", "null"],
+            format: "date-time",
+            description:
+              "First recorded open. Null when not opened or not tracked. A mail app that preloads images (Apple Mail Privacy Protection) records it on delivery, before anyone reads the email.",
+          },
+          lastOpenedAt: {
+            type: ["string", "null"],
+            format: "date-time",
+            description: "Last recorded open. Null when not opened or not tracked.",
+          },
+          openCount: {
+            type: "integer",
+            description:
+              "Recorded loads of the tracking image, at most one per 30 seconds. An estimate, in both directions: higher than real reads when a mail app preloads images (Apple Mail Privacy Protection) or a scanner fetches them, lower when Gmail serves a cached copy, the app blocks images, or several opens fall within 30 seconds.",
+          },
         },
       },
       EmailLogEnvelope: {
@@ -1080,12 +1153,36 @@ export const openApiDocument = {
       },
       DashboardStats: {
         type: "object",
-        required: ["totalSent", "successCount", "failureCount", "successRate"],
+        required: [
+          "totalSent",
+          "successCount",
+          "failureCount",
+          "successRate",
+          "trackedSentCount",
+          "openedCount",
+          "openRate",
+        ],
         properties: {
           totalSent: { type: "integer" },
           successCount: { type: "integer" },
           failureCount: { type: "integer" },
           successRate: { type: "integer", minimum: 0, maximum: 100 },
+          trackedSentCount: {
+            type: "integer",
+            description:
+              "Emails that carried the open-tracking pixel and were delivered: the open rate's denominator. Untracked and failed emails are left out.",
+          },
+          openedCount: {
+            type: "integer",
+            description: "Among `trackedSentCount`, the emails opened at least once.",
+          },
+          openRate: {
+            type: ["integer", "null"],
+            minimum: 0,
+            maximum: 100,
+            description:
+              "Rounded `openedCount / trackedSentCount` percentage, null when no tracked email was sent in the window. Emails are picked by when they were sent, with all their opens, even later ones. An estimate: see `openCount` on an email log.",
+          },
         },
       },
       UpdateStatus: {

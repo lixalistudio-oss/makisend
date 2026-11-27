@@ -22,6 +22,9 @@ const mockStats: DashboardStats = {
   successCount: 90,
   failureCount: 10,
   successRate: 90,
+  trackedSentCount: 40,
+  openedCount: 18,
+  openRate: 45,
 };
 
 const mockBreakdown: SmtpConfigBreakdown[] = [

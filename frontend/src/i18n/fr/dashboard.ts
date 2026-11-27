@@ -11,6 +11,9 @@ export default {
   "dashboard.cards.rate": "Taux de distribution",
   "dashboard.cards.rateDescription": "Pourcentage de réussite",
   "dashboard.cards.rateValue": "{rate} %",
+  "dashboard.cards.openRate": "Taux d'ouverture",
+  "dashboard.cards.openRateDescription": "{opened} sur {tracked} e-mails suivis ouverts",
+  "dashboard.cards.openRateEmpty": "Aucun e-mail suivi envoyé",
 
   // chart-area-interactive
   "dashboard.chart.title": "E-mails envoyés",

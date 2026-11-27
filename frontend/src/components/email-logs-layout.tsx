@@ -69,6 +69,12 @@ interface EmailLog {
   createdAt: string
   emailProcessingTimeMs: number | null
   history: HistoryEntry[]
+  /** Whether open tracking was on when the email was sent (fixed at send time). */
+  trackingEnabled?: boolean
+  firstOpenedAt?: string | null
+  lastOpenedAt?: string | null
+  /** Recorded opens, at most one every 30 seconds. */
+  openCount?: number
 }
 
 interface SmtpConfig {
@@ -138,6 +144,40 @@ function formatDate(dateStr: string | null | undefined, locale: string) {
     hour: "2-digit",
     minute: "2-digit",
   })
+}
+
+/**
+ * The opens of one email, under its send history in the detail drawer. An email sent while tracking
+ * was off says so, rather than reading as "never opened".
+ */
+function OpenTrackingDetails({ log }: { log: EmailLog }) {
+  const { t, locale } = useTranslation()
+  return (
+    <div className="border-t pt-4">
+      <h4 className="font-medium mb-3">{t("logs.detail.opens")}</h4>
+      {log.trackingEnabled ? (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">{t("logs.detail.firstOpened")}</span>
+            <span>{log.firstOpenedAt ? formatDate(log.firstOpenedAt, locale) : t("logs.detail.notOpened")}</span>
+          </div>
+          {log.lastOpenedAt && (
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">{t("logs.detail.lastOpened")}</span>
+              <span>{formatDate(log.lastOpenedAt, locale)}</span>
+            </div>
+          )}
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">{t("logs.detail.openCount")}</span>
+            <span>{(log.openCount ?? 0).toLocaleString(locale)}</span>
+          </div>
+          <p className="text-xs text-muted-foreground">{t("logs.detail.opensHint")}</p>
+        </div>
+      ) : (
+        <p className="text-muted-foreground">{t("logs.detail.opensNotTracked")}</p>
+      )}
+    </div>
+  )
 }
 
 export function EmailLogsLayout() {
@@ -399,6 +439,7 @@ export function EmailLogsLayout() {
                         ))}
                       </div>
                     </div>
+                    <OpenTrackingDetails log={selectedLog} />
                   </div>
                   <DrawerFooter>
                     <DrawerClose render={<Button variant="outline" />}>{t("common.close")}</DrawerClose>

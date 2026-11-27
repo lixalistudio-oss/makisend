@@ -2,6 +2,7 @@ import type { WorkflowStep } from "cloudflare:workers";
 import { AppError } from "@/core/errors";
 import { pinoLogger } from "@/core/logger";
 import { cleanHtml } from "@/core/html-sanitizer";
+import { appendTrackingPixel, buildPixelUrl } from "@/open-tracking";
 import {
   classifyEmailError,
   friendlyErrorMessage,
@@ -84,6 +85,25 @@ function failureReason(err: unknown): string {
   return err instanceof AppError
     ? err.message
     : friendlyErrorMessage(toClassifiableError(err));
+}
+
+/**
+ * The HTML that goes out: sanitized, then, for an open-tracked email, followed by the pixel. The
+ * pixel is added after `cleanHtml` so the sanitizer can neither strip nor alter it, and the stored
+ * HTML is never modified. The token and its origin are written together when the email is
+ * accepted, so a tracked email always carries them; an origin that cannot be parsed (a damaged
+ * row) still sends the email, without the pixel: tracking must never block delivery.
+ */
+export function htmlToSend(email: EmailToSend, emailId: string): string {
+  const html = cleanHtml(email.html);
+  if (!email.tracking) return html;
+
+  try {
+    return appendTrackingPixel(html, buildPixelUrl(email.tracking.baseUrl, email.tracking.token));
+  } catch (err) {
+    pinoLogger.warn({ err, emailId }, "Invalid tracking base URL; sending without the pixel");
+    return html;
+  }
 }
 
 /**
@@ -192,7 +212,7 @@ export async function runSendEmailFlow(
               to: email.to,
               subject: email.subject,
               text: email.text,
-              html: cleanHtml(email.html),
+              html: htmlToSend(email, emailId),
               ...(email.attachments && email.attachments.length > 0 ? { attachments: email.attachments } : {}),
             });
 
