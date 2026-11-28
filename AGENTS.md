@@ -56,7 +56,8 @@ src/
 │   ├── request-logger.middleware.ts # Request logging
 │   └── session.middleware.ts   # Session/auth middleware
 ├── queue/
-│   └── send-email.consumer.ts  # Cloudflare Queue consumer → SendEmailWorkflow runs
+│   ├── send-email.consumer.ts  # Cloudflare Queue consumer → SendEmailWorkflow runs
+│   └── webhook.consumer.ts     # makisend-webhooks consumer: one { deliveryId } per message
 ├── send-email/                 # Business module (barrel export via index.ts)
 │   ├── index.ts
 │   ├── send-email.controller.ts
@@ -69,6 +70,15 @@ src/
 │   └── send-email.types.ts     # Interfaces / contracts
 ├── idempotency/                # HTTP Idempotency-Key for POST /send-email
 ├── send-rate-limit/            # Optional per-API-key send quota (SEND_RATE_LIMIT)
+├── webhooks/                   # Signed final-status webhooks (built like smtp-config/)
+│   ├── webhook-url.ts          # URL rules (https, no private/reserved IP) + normalization
+│   ├── webhook-signature.ts    # whsec_ secret, Standard Webhooks HMAC-SHA256 (Web Crypto)
+│   ├── webhook-payload.ts      # email.sent / email.failed / webhook.test bodies, reason filter
+│   ├── webhook-delivery.ts     # One signed POST: 10 s timeout, no redirect, response classified
+│   ├── webhook-publisher.ts    # B1: pending row per enabled endpoint, then { deliveryId } queued
+│   ├── webhook-processor.ts    # B2: read row, send, write outcome, then ack / retry
+│   ├── webhook-maintenance.ts  # Daily sweep: pending older than 48 h → failed
+│   └── webhooks.{controller,service,repository,dto,types,constants}.ts
 ├── openapi/                    # OpenAPI 3.1 document (request schemas generated from Zod DTOs)
 ├── smtp-config/                # SMTP configs, TLS/port validation, connection checks
 │   ├── smtp-host.ts            # Hostname/port/security parsing and defaults
@@ -143,6 +153,8 @@ Copy `.env.example` to `.env` and fill in:
 | `BETTER_AUTH_URL` | Backend URL of the Worker (e.g. `http://localhost:8787`) |
 | `FRONTEND_URL` | Frontend origin allowed for CORS / redirects |
 | `SEND_RATE_LIMIT` | Optional per-API-key send quota (`100/min`, `5000/day`). Unset: no quota |
+| `WEBHOOK_ALLOW_INSECURE_URLS` | `true` lets webhook URLs use `http:` and local/private hosts. Local development only (e2e receiver on `http://localhost`) |
+| `WEBHOOK_ALLOWED_HOSTS` | Optional comma-separated allowlist of webhook hostnames |
 
 Not environment variables anymore:
 
@@ -227,10 +239,19 @@ Tests: `test/unit/auth/auth-routes.test.ts` (single account, races, 2FA, passwor
 
 **Never replace the key outright once the database holds data**: SMTP credentials, recipients and bodies become unreadable. Every encrypted column must be listed in `ENCRYPTED_COLUMNS` (`src/key-rotation/key-rotation.repository.ts`). The daily cron (`17 3 * * *`) still runs the SMTP health checks; `scheduled` dispatches on the expression.
 
+### Signed webhooks
+
+Notifies the user's servers of each email's **final** status. Reference: `feat_webhooks_api_design.md` (not tracked); public contract in README "Webhooks" and under `webhooks` in `/openapi.json`. One rule throughout: **D1 is written before acting, and read again before deciding.**
+
+- **A, configuration** (`/webhooks*`, session auth, `PUT` not `PATCH`): up to `MAX_WEBHOOK_ENDPOINTS` = 5 per user (repeated in `frontend/src/components/webhooks-layout.tsx`: keep both equal). The URL is checked by `webhook-url.ts` (https, no credentials, no local name, no private/reserved/metadata IP in any notation; `WEBHOOK_ALLOW_INSECURE_URLS` / `WEBHOOK_ALLOWED_HOSTS`), normalized, then **encrypted** (a URL can be a secret: Slack, Discord, `?token=`), so uniqueness is checked in the service after decrypting. The secret (`whsec_` + 32 random bytes) is encrypted and returned only by create and rotate. Rotation keeps `previous_secret` signing for 24 h (two signatures in the header). Error `code`s: `WEBHOOK_*` in `webhooks.constants.ts`.
+- **B1, publication** (`publishFinalStatus` in `webhook-publisher.ts`): the workflow's `record-delivery` / `record-failure` step also answers whether the owner has an enabled endpoint (a string, steps return primitives), and only then a `publish-webhooks` step runs: `INSERT … ON CONFLICT DO NOTHING` of one `pending` row per enabled endpoint (unique `(email_id, endpoint_id)`), read back the **pending rows of that email**, queue `{ deliveryId }` each. Replaying it is harmless. Hooks: after `record-delivery` (and the final `catch` when the email already left), `declareUndeliverable` (4 failure paths, with `failureKind`), and `send-email.consumer.ts` at `FINAL_ATTEMPT` (workflow never started). A publication failure is logged and never changes the email's outcome. No webhook for `source = "test"` sends, nor for a failure before queueing.
+- **B2, delivery** (`webhook.consumer.ts` → `processDelivery`): the `queue` handler of `index.ts` routes on `batch.queue` (`makisend-webhooks*`). The consumer reads the row and the endpoint again (deleted → ack; disabled → `skipped`), decrypts, rebuilds the payload (never stored), signs, `POST`s (10 s, `redirect: "manual"`), classifies (2xx delivered; 5xx/408/409/425/429/timeout/network retried; other 4xx and 3xx abandoned), **writes D1, then** acks or retries with the delay of `WEBHOOK_RETRY_DELAYS_SECONDS` (8 attempts, ~32 h; `max_retries` = 7 in both wrangler files). 20 abandoned deliveries in a row disable the endpoint (`disabledReason: "auto"`). The receiver's body is never stored or returned.
+- **Guarantee**: at least once; `webhook-id` = `msg_<delivery id>` is stable across attempts for client-side dedup. The daily cron (`runWebhookSweep`) marks deliveries still `pending` after 48 h `failed` (lost message); route 9 queues a failed one again. Test and retry routes share a limit of 5 per minute per endpoint.
+- **Signature**: Web Crypto HMAC-SHA256 in `webhook-signature.ts`, no runtime dependency; `standardwebhooks` is a devDependency used by the tests and the e2e receiver to prove compatibility.
+
 ### Current security limitations
 
 - **Send quota is opt-in (`SEND_RATE_LIMIT`)**: Better Auth's per-key quota stays off (`apiKeyOptions.rateLimit.enabled = false` in `src/lib/auth.ts`, which also overrides the quota stamped on existing keys). The instance owner can set `SEND_RATE_LIMIT=<count>/<s|min|hour|day>`: `src/send-rate-limit/` counts sends per API key in a fixed window (`send_rate_limit` table, one atomic UPSERT per send) and answers `429` + `Retry-After` past it. It runs after API-key auth and **before** idempotency, so a 429 is never stored as a key's replayable response. Unset: no quota and no table write; a malformed value is a 500, never unlimited.
-- **No webhook / signature**: no request origin verification beyond the API key.
 - **No dedicated audit logs**: only Pino application logs are present.
 
 ## Technical notes
@@ -267,6 +288,7 @@ Tests: `test/unit/auth/auth-routes.test.ts` (single account, races, 2FA, passwor
   - API key middleware (401/403 + context wiring, inactive SMTP config refusal)
   - SMTP host/port validation, transport options, error classification
   - SMTP check/test-send endpoints and per-config transport resolution
+  - Signed webhooks (`test/unit/webhooks/`): URL rules and SSRF table, signature checked against `standardwebhooks`, payload and reason filter, delivery classification, service and repository, HTTP routes, publication replays and the full pipeline, wrangler queue declarations; `pnpm test:e2e:webhooks` runs the real Worker against a local receiver (`TMPDIR` must be short, e.g. `TMPDIR=/tmp`)
 - Mocks are reset in `beforeEach`
 - Run `pnpm test:run` before committing
 
@@ -282,6 +304,7 @@ Tests: `test/unit/auth/auth-routes.test.ts` (single account, races, 2FA, passwor
 - **Attachments, end to end**: the same Resend-shaped `attachments` are accepted by `POST /send-email` and by the dashboard's test send (`POST /smtp-config/:id/test-send`, "Attach a file" in `smtp-test-send-dialog.tsx`); both validate through `send-email/attachments.ts` (`AttachmentsDto`) and both senders carry them (SMTP and the Cloudflare `send_email` binding). The frontend repeats the limits in `frontend/src/lib/attachments.ts` (keep them equal). `pnpm test:e2e:attachments` (`test/e2e/run-attachments.sh` + `attachments.ts`) runs the real Worker under `wrangler dev`, sends files through both doors to a Cloudflare Email Service configuration and compares, byte for byte, the files Miniflare's local binding writes; it leaves `test/e2e/reports/attachments.json` to diff.
   queue/workflow payloads carry only `emailId`
 - HTTP idempotency reservations/responses live in `idempotency_keys` (24h TTL)
+- Signed webhooks (migration `0007_webhooks`): `webhook_endpoints` (`url`, `secret`, `previous_secret` encrypted and listed in `ENCRYPTED_COLUMNS`, `previous_secret_expires_at`, `enabled`, `disabled_reason`, `consecutive_failures`) and `webhook_deliveries` (one row per email and endpoint, unique `(email_id, endpoint_id)`, `status`, `attempts`, `failure_kind`, last code/error, cascade-deleted with the endpoint)
 
 ## Deployment
 
@@ -299,7 +322,8 @@ Config: `wrangler.jsonc`
 - Compatibility: `2026-07-10` with `nodejs_compat` flag
 - Observability: logs enabled
 - D1 binding: `makisend_db`
-- Cron: `17 3 * * *` runs the SMTP health check (`src/smtp-config/smtp-health.ts`)
+- Cron: `17 3 * * *` runs the SMTP health check (`src/smtp-config/smtp-health.ts`), the update check and the webhook sweep; `17 * * * *` runs the key rotation
+- Queues: `makisend-send-email` (+ `-dlq`) and `makisend-webhooks` (+ `-dlq`), each with a `-preview` twin under `env.preview`. Declare a queue in **both** `wrangler.jsonc` files and in `env.preview`; `deploy.yml` creates the main queues, Cloudflare creates a DLQ when a consumer references it
 - Static assets: `../frontend/dist` (Astro build output) — the Worker serves the
   frontend and the API on the **same origin**, so there is no Cloudflare Pages
   project and no CORS between UI and API
@@ -385,6 +409,7 @@ Steps run:
 - **Single SMTP provider**: credentials are stored per user in D1 (encrypted), but there is no multi-provider routing or failover.
 - **Coarse rate limiting**: Better Auth's per-key limit is not a configurable tenant quota.
 - **Bounded retry, not unlimited**: each email gets **1 initial SMTP attempt + 3 retries** 30 seconds apart. Transient failures are retried inside the same workflow instance and dead-lettered when the budget is exhausted; permanent failures (auth, TLS, DNS, config, 5xx) stop immediately with a human-readable reason in D1. A hung attempt is bounded by the SMTP socket timeouts and the 2-minute step timeout.
+- **Webhooks report the final status only**: no bounce, open or click event yet; delivery is at least once, so receivers must dedupe on `webhook-id`.
 - **No bounce / open / click tracking**: only send logs are stored.
 - **D1 is a serverless SQLite database**: possible latency, not ideal for very high volumes without caching.
 - **Deliverability**: SPF, DKIM, DMARC and IP reputation are not handled by the code; they depend on the SMTP provider and sender domain.

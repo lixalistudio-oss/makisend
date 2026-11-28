@@ -31,12 +31,14 @@ Use `cf --help` or `cf cli search "<what you want>"` to find a command; never gu
 
 ## 3. Create the resources
 
-Pick names with the user (defaults: Worker `makisend`, D1 `makisend-db`, queues `makisend-send-email` and `makisend-send-email-dlq`, Workflow `makisend-send-email`).
+Pick names with the user (defaults: Worker `makisend`, D1 `makisend-db`, queues `makisend-send-email`, `makisend-send-email-dlq`, `makisend-webhooks` and `makisend-webhooks-dlq`, Workflow `makisend-send-email`).
 
 ```bash
 cf d1 create --name makisend-db --primary-location-hint weur    # ask for the region; keep the returned uuid
 cf queues create --queue-name makisend-send-email
 cf queues create --queue-name makisend-send-email-dlq
+cf queues create --queue-name makisend-webhooks       # signed final-status webhooks
+cf queues create --queue-name makisend-webhooks-dlq
 ```
 
 Then edit `backend/wrangler.jsonc`, top-level (production) section only:
@@ -45,7 +47,7 @@ Then edit `backend/wrangler.jsonc`, top-level (production) section only:
 - `d1_databases[0].database_id` → the uuid above (the one in the file belongs to the upstream instance), `database_name` → the D1 name;
 - queue and workflow names, if the user changed them, in `producers`, `consumers` and `workflows`.
 
-Leave binding names (`makisend_db`, `SEND_EMAIL_QUEUE`, `SEND_EMAIL_DLQ`, `SEND_EMAIL_WORKFLOW`, `EMAIL`, `ASSETS`) as they are: the code depends on them.
+Leave binding names (`makisend_db`, `SEND_EMAIL_QUEUE`, `SEND_EMAIL_DLQ`, `WEBHOOK_QUEUE`, `SEND_EMAIL_WORKFLOW`, `EMAIL`, `ASSETS`) as they are: the code depends on them.
 
 ## 4. Apply the schema
 
@@ -103,7 +105,8 @@ Apply these, tell the user what each protects, and ask before anything that chan
 6. **Sender domain**: SPF, DKIM and DMARC on the domain used as sender; MakiSend does not set them.
 7. **SMTP credentials**: a dedicated SMTP user or app password for MakiSend, not a personal mailbox password.
 8. **Optional, if the dashboard should not be public**: put Cloudflare Access in front of the dashboard paths, and leave `/send-email`, `/openapi.json` and `/docs` reachable for API clients. Ask first: it changes how the user signs in.
-9. **Updates**: pull upstream, rerun step 1, apply new migrations (step 4), redeploy (step 5). Watch `pnpm audit --prod`.
+9. **Webhooks** (Dashboard > Webhooks): each URL's secret is shown once; tell the user to store it on the receiving server only and to verify every request with a Standard Webhooks library (README → "Webhooks"). Never set `WEBHOOK_ALLOW_INSECURE_URLS` on a deployed Worker: it lets webhook URLs reach `http:` and private addresses. A self-host that only talks to known receivers can set `WEBHOOK_ALLOWED_HOSTS`.
+10. **Updates**: pull upstream, rerun step 1, apply new migrations (step 4), redeploy (step 5). Watch `pnpm audit --prod`.
 
 ## Done when
 
