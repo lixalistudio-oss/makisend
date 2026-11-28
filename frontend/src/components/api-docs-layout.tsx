@@ -142,6 +142,22 @@ const ENDPOINT_GROUPS: {
       { method: "GET", path: "/dashboard/errors", descriptionKey: "apiDocs.endpoints.metricsErrors" },
     ],
   },
+  {
+    titleKey: "apiDocs.endpoints.updatesTitle",
+    authKey: "apiDocs.auth.session",
+    descriptionKey: "apiDocs.endpoints.updatesDescription",
+    endpoints: [
+      { method: "GET", path: "/updates/status", descriptionKey: "apiDocs.endpoints.updatesStatus" },
+    ],
+  },
+  {
+    titleKey: "apiDocs.endpoints.metaTitle",
+    authKey: "apiDocs.auth.none",
+    descriptionKey: "apiDocs.endpoints.metaDescription",
+    endpoints: [
+      { method: "GET", path: "/openapi.json", descriptionKey: "apiDocs.endpoints.metaOpenApi" },
+    ],
+  },
 ]
 
 const LIFECYCLE: { status: string; titleKey: UiKey; descriptionKey: UiKey }[] = [
@@ -160,6 +176,7 @@ const ERROR_ROWS: { status: string; meaningKey: UiKey; detailKey: UiKey }[] = [
   { status: "403", meaningKey: "apiDocs.errors.403Meaning", detailKey: "apiDocs.errors.403Detail" },
   { status: "404", meaningKey: "apiDocs.errors.404Meaning", detailKey: "apiDocs.errors.404Detail" },
   { status: "409", meaningKey: "apiDocs.errors.409Meaning", detailKey: "apiDocs.errors.409Detail" },
+  { status: "429", meaningKey: "apiDocs.errors.429Meaning", detailKey: "apiDocs.errors.429Detail" },
   { status: "500", meaningKey: "apiDocs.errors.500Meaning", detailKey: "apiDocs.errors.500Detail" },
 ]
 
@@ -202,7 +219,7 @@ const CODE_PARAMS = {
   apiKeyHeader: "x-api-key",
   authorizationHeader: "Authorization: Bearer <key>",
   prefix: "mk_",
-  secret: "AES_256_KEY",
+  secret: "ENCRYPTION_KEY",
 }
 
 function MethodBadge({ method }: { method: Method }) {
@@ -730,6 +747,7 @@ res.raise_for_status()  # 202 when queued`
                         </CardHeader>
                         <CardContent className="space-y-3 text-sm text-muted-foreground">
                           <p>{t("apiDocs.auth.sessionCookie")}</p>
+                          <p>{t("apiDocs.auth.singleAdmin")}</p>
                           <p>
                             {richText(t("apiDocs.auth.authRoutes"), { path: <InlineCode>/api/auth/*</InlineCode> })}
                           </p>
@@ -918,6 +936,7 @@ res.raise_for_status()  # 202 when queued`
                             })}
                           </p>
                           <p>{t("apiDocs.smtp.certificates")}</p>
+                          <p>{t("apiDocs.smtp.cloudflare")}</p>
                         </CardContent>
                       </Card>
                       <Card>
@@ -1106,7 +1125,7 @@ res.raise_for_status()  # 202 when queued`
                     </div>
 
                     <Callout tone="warning" title={t("apiDocs.security.rotationTitle", CODE_PARAMS)}>
-                      {t("apiDocs.security.rotationBody")}
+                      {t("apiDocs.security.rotationBody", CODE_PARAMS)}
                     </Callout>
                   </DocSection>
                 </div>

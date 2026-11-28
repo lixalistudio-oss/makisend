@@ -18,10 +18,10 @@ Your app sends one authenticated `POST /send-email`. MakiSend encrypts and queue
 - **Inbox, not spam.** In our tests, MakiSend emails land in the inbox once SPF, DKIM and DMARC are set on the sender domain.
 - **Fast enough to feel instant.** 300–400 ms from queue to SMTP provider in the best cases, about 2 s in the worst (see [Delivery speed](#delivery-speed)).
 - **Private by default.** Recipients, bodies, attachments and SMTP credentials are encrypted with AES-256-GCM before they reach D1.
-- **Built for teams of one.** Per-user API keys, optional send quota, idempotency keys, 2FA, and a dashboard with logs, metrics and templates.
+- **Built for teams of one.** Per-user API keys, optional send quota, idempotency keys, 2FA, signed webhooks, and a dashboard with logs, metrics and templates.
 - **Feels like Resend.** Bearer API key, `Idempotency-Key`, and the same `attachments` format, so moving a client over is a matter of a few fields (see [Coming from Resend](#coming-from-resend)).
 
-> **Status: early.** The sending pipeline, dashboard and security basics work end to end. Webhooks, bounce tracking and multi-provider failover are not built yet (see [Known limitations](#known-limitations-and-constraints) and [Roadmap](#roadmap)).
+> **Status: early.** The sending pipeline, dashboard and security basics work end to end. Bounce tracking and multi-provider failover are not built yet (see [Known limitations](#known-limitations-and-constraints) and [Roadmap](#roadmap)).
 
 **Further reading:** [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) (the full system), [`docs/DEVELOPER_GUIDE.md`](./docs/DEVELOPER_GUIDE.md) (run, change, test, debug), [`AGENTS.md`](./AGENTS.md) (conventions), [`DESIGN.md`](./DESIGN.md) (visual system of the dashboard and the website), [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
@@ -49,6 +49,7 @@ Moving a call over:
 | `to` (string or array) | One address per request |
 | `subject`, `html`, `text` | Same names; `text` and `html` are both required |
 | `attachments` (`filename`, `content`, `content_type`) | Same shape; `path` (a URL to fetch) is refused |
+| Webhooks signed with Svix | `email.sent` and `email.failed`, signed with [Standard Webhooks](https://www.standardwebhooks.com/) (the format Svix uses): the final status of each email only, see [Webhooks](#webhooks) |
 | `cc`, `bcc`, `reply_to`, `headers`, `tags`, `scheduled_at` | Not supported yet |
 | `200` with an `id` | `202` with an `emailId`; the outcome shows in the dashboard logs |
 
@@ -155,6 +156,8 @@ Set in `backend/.env` locally, as Worker secrets once deployed:
 | `BETTER_AUTH_SECRET` | Signs sessions and encrypts the TOTP secrets (changing it breaks existing 2FA set-ups) |
 | `BETTER_AUTH_URL`, `FRONTEND_URL` | Worker URL and allowed frontend origin. Optional once deployed: the dashboard and the API share one origin, so the request's origin is used |
 | `SEND_RATE_LIMIT` | Optional per-API-key send quota, e.g. `100/min` or `5000/day` (`s`, `min`, `hour`, `day`). Over it: `429` with `Retry-After`. Unset: no quota |
+| `WEBHOOK_ALLOW_INSECURE_URLS` | Local development only. `true` lets [webhook](#webhooks) URLs use `http:` and local or private hosts. Never set it on a deployed Worker |
+| `WEBHOOK_ALLOWED_HOSTS` | Optional. Comma-separated hostnames: when set, webhook URLs must use one of them |
 | `UPDATE_CHECK` | Optional. `off` stops the daily new-release check (see [Updates](#updates)) |
 | `MAKISEND_REPOSITORY` | Optional. Your copy of the repository (`owner/name`): the dashboard's **Update** button opens its sync workflow. The Deploy button pre-fills `lixalistudio-oss/makisend`, which counts as unset |
 | `UPDATE_SOURCE_REPOSITORY` | Optional. Read releases from another repository. Default `lixalistudio-oss/makisend` |
@@ -216,6 +219,11 @@ The Worker serves its own reference: a guide in the dashboard (`/dashboard/api-d
 | `GET/POST` | `/templates` | Session | Lists / creates a template |
 | `GET/PUT/DELETE` | `/templates/{id}` | Session | Reads / updates / deletes a template |
 | `POST` | `/templates/{id}/preview` | Session | Renders the template with sample variables |
+| `GET/POST` | `/webhooks` | Session | Lists / creates a webhook endpoint (the secret is returned once, on creation) |
+| `GET/PUT/DELETE` | `/webhooks/{id}` | Session | Reads / updates (URL, `enabled`) / deletes an endpoint and its delivery log |
+| `POST` | `/webhooks/{id}/rotate-secret`, `/webhooks/{id}/test` | Session | New secret (the old one signs for 24 h more) / signed test event |
+| `GET` | `/webhooks/{id}/deliveries` | Session | Paginated delivery log (filter `status`) |
+| `POST` | `/webhooks/{id}/deliveries/{deliveryId}/retry` | Session | Queues a failed delivery again |
 | `GET` | `/updates/status` | Session | Installed and latest versions (`?refresh=true` checks now) |
 
 `/api/auth/*` is served by Better Auth (sign-in, session, sign-out, 2FA).
@@ -245,6 +253,51 @@ Send the API key as `x-api-key: <KEY>` or `Authorization: Bearer <KEY>`.
 | `attachments` | Optional. At most 5 files of 512 KB each (decoded). `content` is standard base64 without line breaks; `content_type` defaults to `application/octet-stream`; `filename` is at most 200 characters, without `/`, `\` or control characters. Resend's `path` (a URL to fetch) is refused |
 
 Instead of `subject`/`text`/`html`, send `templateId` and `variables`: the template is rendered before queueing, and a missing variable answers `400` with the missing names. Mixing both shapes, or sending an unknown field, is rejected. Attachments work with both shapes: they are stored encrypted in D1, one row per file, never go through the queue, and are sent by SMTP and by the Cloudflare `send_email` binding alike.
+
+
+### Webhooks
+
+MakiSend can tell your server how each email ended. Add up to 5 URLs in **Dashboard > Webhooks** (or `POST /webhooks`): each gets its own signing secret, `whsec_…`, shown once. When an email reaches its final status, every enabled URL receives one signed `POST`:
+
+| Event | When |
+|---|---|
+| `email.sent` | The SMTP provider accepted the email |
+| `email.failed` | MakiSend gave up: permanent error, retries exhausted, invalid configuration, or the send never started (`failureKind` says which) |
+| `webhook.test` | You clicked **Send a test** (`POST /webhooks/{id}/test`) |
+
+```json
+{
+  "type": "email.sent",
+  "timestamp": "2026-11-11T10:46:21.512Z",
+  "data": {
+    "emailId": "u9yf9iozlukgngtio78do7i0",
+    "status": "sent",
+    "to": "client@example.com",
+    "subject": "Your invoice",
+    "apiKeyId": "gCWSp0CkK2rym9YANnO4lTCUCxNiA3vm",
+    "smtpMessageId": "<38aab58f-174f-08af-e705-0ee2e87520b2@gmail.com>",
+    "attempts": 1,
+    "createdAt": "2026-11-11T10:45:48.534Z",
+    "completedAt": "2026-11-11T10:46:21.198Z",
+    "history": [{ "status": "sent", "attempt": 1, "at": "2026-11-11T10:46:21.198Z", "reason": null }]
+  }
+}
+```
+
+The payload never carries the email body, attachments, SMTP host or credentials, or the raw SMTP error. Test sends from the dashboard trigger no webhook, and neither does a `POST /send-email` that answered an error. The full schemas are under `webhooks` in `/openapi.json`.
+
+**Verify every request** with a [Standard Webhooks](https://www.standardwebhooks.com/) library, on the **raw** body (do not parse and re-serialize it first). It checks the `webhook-signature` header in constant time and rejects timestamps older than 5 minutes:
+
+```ts
+import { Webhook } from "standardwebhooks";
+
+const wh = new Webhook(process.env.MAKISEND_WEBHOOK_SECRET!);
+const event = wh.verify(rawBody, headers); // throws on a bad or stale signature
+```
+
+Delivery is **at least once**: drop duplicates with the `webhook-id` header, which stays the same across retries. Answer `2xx` within 10 seconds and do slow work afterwards. A `5xx`, `408`, `409`, `425`, `429`, timeout or network error is retried, 8 attempts in all over about 32 hours (`Retry-After` honoured up to 12 hours); any other `4xx` or a redirect (never followed) stops it. After 20 abandoned deliveries in a row the URL is turned off; turn it back on from the dashboard. Each URL has a delivery log (status, attempts, last HTTP code), and a failed delivery can be queued again with `POST /webhooks/{id}/deliveries/{deliveryId}/retry`.
+
+**Rotating a secret** (`POST /webhooks/{id}/rotate-secret`) keeps the old one valid for 24 hours: requests carry both signatures meanwhile, so you can deploy the new secret without dropping events. Send `{ "expireCurrentNow": true }` if the old one leaked.
 
 ---
 
@@ -283,11 +336,12 @@ The dashboard shows a banner when a newer release is published, and **Settings �
 - **One account**: the first connection (`/setup`) creates the only account; every later creation is refused (403), atomically, on every creation path. Deleting the account makes the instance configurable again.
 - **Two-factor authentication**: TOTP from Settings, with backup codes and an optional 30-day trusted device. Once it is on, the account can opt in to sign in with email + code only (off by default, one use per code, 10 wrong codes lock the account for 15 minutes).
 - **Inputs and transport**: Zod `.strict()` validation, HTML cleaned with `sanitize-html`, verified TLS (`rejectUnauthorized: true`).
+- **Webhooks**: URLs and secrets are encrypted at rest (a URL can hold a token). URLs must be `https:`, without credentials, local hostnames or private, reserved or metadata IP addresses; the rule is checked again before every send, redirects are never followed, and the receiver's response body is never stored or returned. Test events are limited to 5 per minute per URL.
 
 **Limitations:**
 
 - **Send quota is opt-in.** Sign-in attempts are always rate limited per IP, but without `SEND_RATE_LIMIT` a leaked key can send until it is revoked. Set it on any instance whose API is reachable from the internet: `cf workers secrets update SEND_RATE_LIMIT --worker <worker> --type secret_text --text "100/min"`.
-- No API key scopes or automatic rotation, no password reset by email, no webhook signatures, no audit log beyond the application logs.
+- No API key scopes or automatic rotation, no password reset by email, no audit log beyond the application logs.
 
 ---
 
@@ -304,12 +358,12 @@ Most of that time is the SMTP protocol, not MakiSend. SMTP waits for a reply to 
 
 ## Running on the Workers Free plan
 
-Everything MakiSend uses (Workers, static assets, D1, Queues, Workflows, cron triggers) is part of Cloudflare's **Workers Free** plan, so the Deploy button works on a free account and nothing is billed. What the free plan sets is a daily volume. The tightest quota is Workflows steps: a delivered email runs 3 steps (prepare, send, record), and every SMTP retry adds one.
+Everything MakiSend uses (Workers, static assets, D1, Queues, Workflows, cron triggers) is part of Cloudflare's **Workers Free** plan, so the Deploy button works on a free account and nothing is billed. What the free plan sets is a daily volume. The tightest quota is Workflows steps: a delivered email runs 3 steps (prepare, send, record), every SMTP retry adds one, and one more publishes the webhooks when the account has an enabled webhook URL.
 
 | Free plan quota (per day) | What it means for MakiSend |
 |---|---|
-| Workflows: 3,000 steps | **Hundreds of delivered emails a day**, the binding limit (3 steps per email, one more per SMTP retry) |
-| Queues: 10,000 operations | Not the limit: 3 operations per email (write, read, delete) |
+| Workflows: 3,000 steps | **Hundreds of delivered emails a day**, the binding limit (3 steps per email, one more per SMTP retry, one more with webhooks) |
+| Queues: 10,000 operations | Not the limit: 3 operations per email (write, read, delete), plus about 3 per webhook URL and per attempt |
 | Workers: 100,000 requests, shared with Workflow runs | API calls, dashboard and deliveries together |
 | D1: 100,000 rows written, 5 GB stored | Logs, history and encrypted bodies |
 | Cron triggers: 5 per account | MakiSend uses 2 (health check, key rotation) |
@@ -334,7 +388,7 @@ Two things the free plan does not give you:
 
 ## Roadmap
 
-Available today: everything above (API-key sending, async pipeline with retries and DLQ, per-configuration SMTP, templates with the React Email builder or pasted TSX, encrypted logs, idempotency, health checks, dashboard metrics, OpenAPI docs, CI and deployment).
+Available today: everything above (API-key sending, async pipeline with retries and DLQ, per-configuration SMTP, templates with the React Email builder or pasted TSX, signed final-status webhooks, encrypted logs, idempotency, health checks, dashboard metrics, OpenAPI docs, CI and deployment).
 
 Next:
 

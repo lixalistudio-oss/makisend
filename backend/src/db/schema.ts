@@ -374,6 +374,80 @@ export const updateCheck = sqliteTable("update_check", {
   error: text("error"),
 });
 
+// Signed webhooks (src/webhooks): URLs a user registers to be told the final status of each
+// email. `url` is encrypted because a webhook URL can be a secret on its own (Slack, Discord,
+// n8n, `?token=`); AES-GCM gives a different ciphertext each time, so "one URL per user" is
+// checked in the service, not by an index. `secret` / `previous_secret` are the HMAC keys
+// (`whsec_…`), encrypted too. All three are in ENCRYPTED_COLUMNS.
+export const webhookEndpoints = sqliteTable(
+  "webhook_endpoints",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    url: text("url").notNull(),
+    secret: text("secret").notNull(),
+    // The secret before the last rotation: it keeps signing until previous_secret_expires_at.
+    previousSecret: text("previous_secret"),
+    previousSecretExpiresAt: integer("previous_secret_expires_at", { mode: "timestamp_ms" }),
+    enabled: integer("enabled", { mode: "boolean" }).default(true).notNull(),
+    // "manual": turned off by the user. "auto": turned off after too many consecutive failures.
+    disabledReason: text("disabled_reason", { enum: ["manual", "auto"] }),
+    consecutiveFailures: integer("consecutive_failures").default(0).notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [index("webhookEndpoints_userId_idx").on(table.userId)],
+);
+
+// One row per (email, endpoint): the promise that this endpoint will be told about this email.
+// Written before anything is put in the queue, read again before each attempt. The payload is
+// never stored: it is rebuilt from email_logs / email_histories at each attempt. `id` is also
+// the `webhook-id` header (`msg_<id>`), stable across retries.
+export const webhookDeliveries = sqliteTable(
+  "webhook_deliveries",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    endpointId: text("endpoint_id")
+      .notNull()
+      .references(() => webhookEndpoints.id, { onDelete: "cascade" }),
+    // NULL for a `webhook.test` event. Not a foreign key: an email deleted before the delivery
+    // runs turns it into "skipped" instead of erasing the log line.
+    emailId: text("email_id"),
+    eventType: text("event_type", { enum: ["email.sent", "email.failed", "webhook.test"] }).notNull(),
+    // email.failed only: why MakiSend gave up, decided where the failure happened and stored at
+    // publication, because the payload is rebuilt later from D1.
+    failureKind: text("failure_kind", { enum: ["permanent", "transient_exhausted", "config", "internal"] }),
+    status: text("status", { enum: ["pending", "delivered", "failed", "skipped"] })
+      .default("pending")
+      .notNull(),
+    attempts: integer("attempts").default(0).notNull(),
+    lastStatusCode: integer("last_status_code"),
+    // "timeout", "network error", "HTTP 500"… never the response body.
+    lastError: text("last_error"),
+    lastAttemptAt: integer("last_attempt_at", { mode: "timestamp_ms" }),
+    deliveredAt: integer("delivered_at", { mode: "timestamp_ms" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+  },
+  (table) => [
+    // The guarantee of one notification per email and endpoint, even if publishing is
+    // replayed. SQLite treats NULLs as distinct, so test events (email_id NULL) are not blocked.
+    uniqueIndex("webhookDeliveries_emailId_endpointId_unique").on(table.emailId, table.endpointId),
+    // Paginated log of an endpoint, newest first.
+    index("webhookDeliveries_endpointId_createdAt_idx").on(table.endpointId, table.createdAt),
+    // Sweep of deliveries stuck in "pending".
+    index("webhookDeliveries_status_createdAt_idx").on(table.status, table.createdAt),
+  ],
+);
+
 export const userRelations = relations(user, ({ many }) => ({
   sessions: many(session),
   accounts: many(account),

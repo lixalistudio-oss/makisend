@@ -10,6 +10,7 @@ const DOCUMENT_TITLES: Partial<Record<UiKey, UiKey>> = {
   "nav.apiKeys": "nav.title.apiKeys",
   "nav.emailLogs": "nav.title.emailLogs",
   "nav.templates": "nav.title.templates",
+  "nav.webhooks": "nav.title.webhooks",
   "nav.apiReference": "nav.title.apiDocs",
   "nav.settings": "nav.title.settings",
 }

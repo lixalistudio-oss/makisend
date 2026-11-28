@@ -2,6 +2,13 @@ import { describe, it, expect } from "vitest";
 import { CreateTemplateDto, UpdateTemplateDto } from "@/templates/templates.dto";
 
 const EDITOR_JSON = JSON.stringify({ type: "doc", content: [] });
+const TIPTAP_DOC = {
+  type: "doc",
+  content: [{ type: "paragraph", content: [{ type: "text", text: "Hi {{name}}" }] }],
+};
+/** Exactly what the visual builder saves (frontend `template-editor.tsx`, BuilderDocument). */
+const builderEnvelope = (overrides: Record<string, unknown> = {}) =>
+  JSON.stringify({ version: 2, theme: "basic", content: TIPTAP_DOC, ...overrides });
 const BASE = {
   name: "Welcome",
   subject: "Hi {{name}}",
@@ -26,6 +33,34 @@ describe("template DTOs", () => {
       editorJson: EDITOR_JSON,
     });
     expect(result.success).toBe(true);
+  });
+
+  it("accepts the visual builder's v2 envelope, with either theme", () => {
+    for (const theme of ["basic", "minimal"]) {
+      const result = CreateTemplateDto.safeParse({
+        ...BASE,
+        format: "react-email",
+        editorJson: builderEnvelope({ theme }),
+      });
+      expect(result.success).toBe(true);
+    }
+  });
+
+  it("accepts the v2 envelope when a template is updated", () => {
+    const result = UpdateTemplateDto.safeParse({ format: "react-email", editorJson: builderEnvelope() });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects an envelope with another version, an unknown theme or content that is not a TipTap document", () => {
+    for (const editorJson of [
+      builderEnvelope({ version: 3 }),
+      builderEnvelope({ theme: "neon" }),
+      builderEnvelope({ content: { type: "paragraph" } }),
+      builderEnvelope({ content: "<p>Hi</p>" }),
+    ]) {
+      const result = CreateTemplateDto.safeParse({ ...BASE, format: "react-email", editorJson });
+      expect(result.success).toBe(false);
+    }
   });
 
   it("requires editor content for react-email templates", () => {

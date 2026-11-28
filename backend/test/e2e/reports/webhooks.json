@@ -1,0 +1,74 @@
+{
+  "W1": {
+    "created": 201,
+    "listed": 200
+  },
+  "W2": {
+    "status": 200,
+    "ok": true,
+    "verified": true
+  },
+  "W3": {
+    "received": 1,
+    "type": "email.sent",
+    "verified": true
+  },
+  "W4": {
+    "attempts": [
+      500,
+      200
+    ],
+    "sameWebhookId": true
+  },
+  "W5": {
+    "status": 200,
+    "received": 0
+  },
+  "W6": [
+    "email.sent:delivered:1",
+    "email.sent:delivered:2",
+    "webhook.test:delivered:1"
+  ],
+  "checks": [
+    {
+      "name": "W1 POST /webhooks answers 201 with a whsec_ secret",
+      "ok": true
+    },
+    {
+      "name": "W1 the secret is in no read",
+      "ok": true
+    },
+    {
+      "name": "W2 POST /webhooks/:id/test answers ok",
+      "ok": true
+    },
+    {
+      "name": "W2 the receiver got a webhook.test that verifies",
+      "ok": true
+    },
+    {
+      "name": "W3 /send-email answers 202",
+      "ok": true
+    },
+    {
+      "name": "W3 one email.sent, verified, carrying the email's id and status",
+      "ok": true
+    },
+    {
+      "name": "W3 the payload has the recipient and subject, no body",
+      "ok": true
+    },
+    {
+      "name": "W4 a 500 is retried with the same webhook-id, then delivered",
+      "ok": true
+    },
+    {
+      "name": "W5 a dashboard test send triggers no webhook",
+      "ok": true
+    },
+    {
+      "name": "W6 the log lists the test and the two emails, all delivered",
+      "ok": true
+    }
+  ]
+}

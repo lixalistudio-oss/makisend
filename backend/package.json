@@ -16,7 +16,8 @@
     "user:create": "pnpm tsx src/core/create-user.ts",
     "db:generate": "drizzle-kit generate --config=drizzle.config.ts",
     "test:e2e:attachments": "bash test/e2e/run-attachments.sh",
-    "test:e2e:docker": "bash test/e2e/run-docker.sh"
+    "test:e2e:docker": "bash test/e2e/run-docker.sh",
+    "test:e2e:webhooks": "bash test/e2e/run-webhooks.sh"
   },
   "dependencies": {
     "@better-auth/api-key": "^1.6.25",
@@ -63,6 +64,7 @@
     "pino-tee": "^0.4.0",
     "selfsigned": "^5.5.0",
     "smtp-server": "^3.21.0",
+    "standardwebhooks": "^1.1.1",
     "tsx": "^4.23.1",
     "typescript-eslint": "^8.65.0",
     "vite-tsconfig-paths": "^6.1.1",

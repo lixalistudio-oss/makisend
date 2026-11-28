@@ -461,5 +461,5 @@ describe("e2e — POST /send-email with attachments, through the deployed Worker
       .from(emailHistories)
       .where(eq(emailHistories.emailId, emailId));
     expect(statuses.map((s) => s.status)).toContain("sent");
-  });
+  }, 20_000); // a full key-rotation run on a real D1: see key-rotation.service.test.ts
 });

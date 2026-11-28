@@ -45,6 +45,8 @@
 	// creates a SendEmailWorkflow instance per message (instance id = emailId for
 	// idempotency; only [a-zA-Z0-9-_] allowed). The workflow's steps own the SMTP
 	// delivery attempts, retries and dead-letter publication.
+	// makisend-webhooks: signed final-status webhooks (src/webhooks), one { deliveryId } per receiver.
+	// max_retries = WEBHOOK_MAX_ATTEMPTS - 1 (8 attempts over ~32 h, delays set by the consumer).
 	"queues": {
 		"producers": [
 			{
@@ -54,6 +56,10 @@
 			{
 				"binding": "SEND_EMAIL_DLQ",
 				"queue": "makisend-send-email-dlq"
+			},
+			{
+				"binding": "WEBHOOK_QUEUE",
+				"queue": "makisend-webhooks"
 			}
 		],
 		"consumers": [
@@ -64,6 +70,14 @@
 				"max_retries": 3,
 				"retry_delay": 30,
 				"dead_letter_queue": "makisend-send-email-dlq"
+			},
+			{
+				"queue": "makisend-webhooks",
+				"max_batch_size": 10,
+				"max_batch_timeout": 5,
+				"max_retries": 7,
+				"retry_delay": 60,
+				"dead_letter_queue": "makisend-webhooks-dlq"
 			}
 		]
 	},
@@ -106,6 +120,10 @@
 					{
 						"binding": "SEND_EMAIL_DLQ",
 						"queue": "makisend-send-email-dlq-preview"
+					},
+					{
+						"binding": "WEBHOOK_QUEUE",
+						"queue": "makisend-webhooks-preview"
 					}
 				],
 				"consumers": [
@@ -116,6 +134,14 @@
 						"max_retries": 3,
 						"retry_delay": 30,
 						"dead_letter_queue": "makisend-send-email-dlq-preview"
+					},
+					{
+						"queue": "makisend-webhooks-preview",
+						"max_batch_size": 10,
+						"max_batch_timeout": 5,
+						"max_retries": 7,
+						"retry_delay": 60,
+						"dead_letter_queue": "makisend-webhooks-dlq-preview"
 					}
 				]
 			},

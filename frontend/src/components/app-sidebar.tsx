@@ -3,6 +3,7 @@ import * as React from "react"
 import { NavMain } from "@/components/nav-main"
 import { NavSecondary } from "@/components/nav-secondary"
 import { NavUser } from "@/components/nav-user"
+import { MakiSendWordmark } from "@/components/makisend-wordmark"
 import { MakiSendMark } from "@/components/makisend-mark"
 import { StarOnGitHub } from "@/components/star-on-github"
 import {
@@ -20,6 +21,7 @@ import {
   KeyIcon,
   FileTextIcon,
   LayoutTemplateIcon,
+  WebhookIcon,
   BookOpenIcon,
   Settings2Icon,
 } from "lucide-react"
@@ -52,6 +54,11 @@ const data: Record<"navMain" | "navSecondary", { titleKey: UiKey; url: string; i
       url: "/dashboard/templates",
       icon: <LayoutTemplateIcon />,
     },
+    {
+      titleKey: "nav.webhooks",
+      url: "/dashboard/webhooks",
+      icon: <WebhookIcon />,
+    },
   ],
   navSecondary: [
     {
@@ -74,11 +81,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
-              className="data-[slot=sidebar-menu-button]:p-1.5!"
+              className="gap-1.5 data-[slot=sidebar-menu-button]:p-1.5!"
               render={<a href="/dashboard" />}
             >
               <MakiSendMark className="size-6!" />
-              <span className="font-heading text-base font-medium tracking-tight">MakiSend</span>
+              <MakiSendWordmark className="h-3! w-auto! text-foreground" />
+              <span className="sr-only">MakiSend</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

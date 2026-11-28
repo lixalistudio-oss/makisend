@@ -20,7 +20,7 @@ pnpm exec wrangler d1 migrations apply makisend_db --remote
 # Queue producers must point at existing queues. The button provisions them; on a copy
 # deployed through Workers Builds without the button they may be missing. Already
 # existing is fine.
-for queue in makisend-send-email makisend-send-email-dlq; do
+for queue in makisend-send-email makisend-send-email-dlq makisend-webhooks makisend-webhooks-dlq; do
   pnpm exec wrangler queues create "$queue" >/dev/null 2>&1 || true
 done
 

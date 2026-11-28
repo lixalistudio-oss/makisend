@@ -18,6 +18,36 @@ function buildApp(service: TemplateService) {
   return app;
 }
 
+describe("TemplatesController create", () => {
+  it("saves a visual template sent as the builder's v2 envelope", async () => {
+    // The body the dashboard's visual editor sends (template-editor.tsx): before the fix the DTO
+    // only accepted a raw TipTap document and answered 400 to every visual template.
+    const editorJson = JSON.stringify({
+      version: 2,
+      theme: "basic",
+      content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Hi {{name}}" }] }] },
+    });
+    const create = vi.fn().mockResolvedValue({ id: "tpl-1", name: "Password reset" });
+    const app = buildApp({ create } as unknown as TemplateService);
+
+    const res = await app.request("/templates", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Password reset",
+        subject: "Reset your password, {{name}}",
+        html: "<p>Hi {{name}}</p>",
+        text: "Hi {{name}}",
+        format: "react-email",
+        editorJson,
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(create).toHaveBeenCalledWith(USER_ID, expect.objectContaining({ format: "react-email", editorJson }));
+  });
+});
+
 describe("TemplatesController preview", () => {
   let service: TemplateService;
   let preview: ReturnType<typeof vi.fn>;
