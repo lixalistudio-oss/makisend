@@ -71,7 +71,7 @@ const receiver = createServer(async (req, res) => {
     event = new Webhook(secret).verify(raw, headers) as typeof event;
     verified = true;
   } catch {
-    verified = false;
+    // Bad signature: `verified` stays false and the event stays empty.
   }
   const answered = failNext.shift() ?? 200;
   received.push({ id: headers["webhook-id"], verified, type: event.type ?? null, data: event.data ?? {}, answered });
@@ -157,7 +157,7 @@ async function main(): Promise<void> {
   const send = await call("/send-email", {
     method: "POST",
     headers: { "x-api-key": apiKey, cookie: "" },
-    body: { to: "dest@example.test", subject: "Votre facture", text: "Bonjour.", html: "<p>Bonjour.</p>" },
+    body: { to: "dest@example.test", subject: "Votre facture", text: "Bonjour, voici votre facture.", html: "<p>Bonjour, voici votre facture.</p>" },
   });
   const emailId = (send.json as { emailId?: string; id?: string }).emailId ?? (send.json as { id?: string }).id ?? "";
   check("W3 /send-email answers 202", send.status === 202 && emailId.length > 0, send.text);
@@ -177,7 +177,7 @@ async function main(): Promise<void> {
   const second = await call("/send-email", {
     method: "POST",
     headers: { "x-api-key": apiKey, cookie: "" },
-    body: { to: "dest@example.test", subject: "Retry me", text: "Second.", html: "<p>Second.</p>" },
+    body: { to: "dest@example.test", subject: "Retry me", text: "Second email, retried once.", html: "<p>Second email, retried once.</p>" },
   });
   const secondId = (second.json as { emailId?: string }).emailId ?? "";
   const attempts = await waitFor(() => forEmail(secondId), (v) => v.length >= 2, 120);
