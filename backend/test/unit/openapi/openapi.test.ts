@@ -28,6 +28,12 @@ const EXPECTED_PATHS = [
   "/templates",
   "/templates/{id}",
   "/templates/{id}/preview",
+  "/webhooks",
+  "/webhooks/{id}",
+  "/webhooks/{id}/rotate-secret",
+  "/webhooks/{id}/test",
+  "/webhooks/{id}/deliveries",
+  "/webhooks/{id}/deliveries/{deliveryId}/retry",
   "/updates/status",
   "/openapi.json",
 ];
@@ -104,6 +110,21 @@ describe("OpenAPI document", () => {
   it("never exposes the SMTP password in the response schema", () => {
     expect(openApiDocument.components.schemas.SmtpConfig.properties).not.toHaveProperty("smtpPassword");
     expect(openApiDocument.components.schemas.CreateSmtpConfig.properties).toHaveProperty("smtpPassword");
+  });
+
+  it("documents the outgoing webhook events and keeps the secret out of the endpoint schema", () => {
+    expect(Object.keys(openApiDocument.webhooks).sort()).toEqual(["email.failed", "email.sent", "webhook.test"]);
+    for (const [event, item] of Object.entries(openApiDocument.webhooks)) {
+      const headers = item.post.parameters.map((p) => p.name);
+      expect(headers, event).toEqual(["webhook-id", "webhook-timestamp", "webhook-signature"]);
+    }
+
+    const schemas = openApiDocument.components.schemas;
+    expect(schemas.WebhookEndpoint.properties).not.toHaveProperty("secret");
+    expect(schemas.WebhookEndpointWithSecret.required).toContain("secret");
+    // Generated from the runtime DTO: `.strict()` refuses unknown fields such as `secret`.
+    expect(schemas.UpdateWebhookEndpoint).toMatchObject({ additionalProperties: false });
+    expect(schemas.UpdateWebhookEndpoint.properties).not.toHaveProperty("secret");
   });
 });
 

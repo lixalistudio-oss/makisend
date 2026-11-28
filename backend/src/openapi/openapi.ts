@@ -12,6 +12,24 @@ import {
   PreviewTemplateDto,
   UpdateTemplateDto,
 } from "@/templates/templates.dto";
+import {
+  CreateWebhookEndpointDto,
+  RotateWebhookSecretDto,
+  UpdateWebhookEndpointDto,
+} from "@/webhooks/webhooks.dto";
+import {
+  MAX_WEBHOOK_ENDPOINTS,
+  WEBHOOK_AUTO_DISABLE_THRESHOLD,
+  WEBHOOK_DELIVERIES_DEFAULT_LIMIT,
+  WEBHOOK_DELIVERIES_MAX_LIMIT,
+  WEBHOOK_DELIVERY_STATUSES,
+  WEBHOOK_DISABLED_REASONS,
+  WEBHOOK_EVENT_TYPES,
+  WEBHOOK_FAILURE_KINDS,
+  WEBHOOK_HISTORY_MAX_ENTRIES,
+  WEBHOOK_MAX_ATTEMPTS,
+  WEBHOOK_TEST_RATE_LIMIT,
+} from "@/webhooks/webhooks.constants";
 
 const schemaRef = (name: string) => ({ $ref: `#/components/schemas/${name}` });
 const responseRef = (name: string) => ({ $ref: `#/components/responses/${name}` });
@@ -130,6 +148,99 @@ const sendEmailPayloadSchema = inputSchema(
   "Inline email content, or a template reference. The shapes are mutually exclusive.",
 );
 
+const webhookUrlDescription =
+  "Absolute `https:` URL, at most 2048 characters, without credentials, local hostnames or private, reserved or metadata IP addresses. Stored normalized (lowercase host, no `#fragment`) and encrypted. Refused rules answer `400` with code `WEBHOOK_URL_INVALID`.";
+
+const createWebhookEndpointSchema = inputSchema(CreateWebhookEndpointDto, "Receiver URL to register.");
+patchProperty(createWebhookEndpointSchema, "url", { format: "uri", description: webhookUrlDescription });
+
+const updateWebhookEndpointSchema = inputSchema(
+  UpdateWebhookEndpointDto,
+  "Change the URL, or turn the endpoint off or on. At least one field is required; the secret never changes here.",
+);
+patchProperty(updateWebhookEndpointSchema, "url", {
+  format: "uri",
+  description: `${webhookUrlDescription} The secret stays the same.`,
+});
+patchProperty(updateWebhookEndpointSchema, "enabled", {
+  description:
+    "`false` stops new deliveries (`disabledReason: \"manual\"`); pending ones are skipped. `true` clears `disabledReason` and the failure counter.",
+});
+
+const rotateWebhookSecretSchema = inputSchema(RotateWebhookSecretDto, "Optional rotation options.");
+patchProperty(rotateWebhookSecretSchema, "expireCurrentNow", {
+  default: false,
+  description: "`true` stops the current secret at once (leaked secret). Otherwise it keeps signing for 24 hours.",
+});
+
+const webhookDeliveryIdParameter = {
+  name: "deliveryId",
+  in: "path",
+  required: true,
+  description: "Delivery identifier.",
+  schema: { type: "string", minLength: 1, maxLength: 128 },
+} as const;
+
+const webhookError = (description: string) => jsonResponse(description, "Error");
+
+/** Headers of every outgoing webhook request (Standard Webhooks). */
+const webhookRequestHeaders = [
+  {
+    name: "webhook-id",
+    in: "header",
+    required: true,
+    description: "`msg_<delivery id>`. The same for every attempt of a delivery: use it to drop duplicates.",
+    schema: { type: "string" },
+  },
+  {
+    name: "webhook-timestamp",
+    in: "header",
+    required: true,
+    description: "Unix seconds of this attempt. Reject values older than 5 minutes.",
+    schema: { type: "string" },
+  },
+  {
+    name: "webhook-signature",
+    in: "header",
+    required: true,
+    description:
+      "`v1,<base64 HMAC-SHA256>` over `webhook-id.webhook-timestamp.raw body`, keyed with the base64-decoded secret without `whsec_`. During a rotation: two space-separated signatures, new then previous.",
+    schema: { type: "string" },
+  },
+] as const;
+
+/** How MakiSend reads the receiver's answer (same for every event). */
+const webhookReceiverResponses = {
+  "2XX": { description: "Delivered. Answer within 10 seconds, then do the slow work asynchronously." },
+  "3XX": { description: "Abandoned: redirects are never followed." },
+  "4XX": {
+    description: "Abandoned, except 408, 409, 425 and 429, which are retried (`Retry-After` honoured up to 12 hours).",
+  },
+  "5XX": {
+    description: `Retried, as are timeouts and network errors: ${WEBHOOK_MAX_ATTEMPTS} attempts over about 32 hours (now, +1 min, +5 min, +30 min, +2 h, +6 h, +12 h, +12 h). After ${WEBHOOK_AUTO_DISABLE_THRESHOLD} abandoned deliveries in a row the endpoint is disabled (\`disabledReason: "auto"\`).`,
+  },
+};
+
+const webhookEvent = (
+  operationId: string,
+  summary: string,
+  description: string,
+  schemaName: string,
+) => ({
+  post: {
+    tags: ["Webhooks"],
+    summary,
+    operationId,
+    description,
+    parameters: webhookRequestHeaders,
+    requestBody: {
+      required: true,
+      content: { "application/json": { schema: schemaRef(schemaName) } },
+    },
+    responses: webhookReceiverResponses,
+  },
+});
+
 export const openApiDocument = {
   openapi: "3.1.0",
   info: {
@@ -160,6 +271,11 @@ export const openApiDocument = {
     { name: "Email Logs", description: "Inspect delivery logs and history." },
     { name: "Dashboard", description: "Aggregated delivery metrics." },
     { name: "Templates", description: "Reusable email templates with variables." },
+    {
+      name: "Webhooks",
+      description:
+        "Signed webhooks of each email's final status (`email.sent`, `email.failed`), Standard Webhooks format. The routes manage the receiving endpoints; the requests MakiSend sends are under `webhooks`.",
+    },
     { name: "Updates", description: "Whether a newer MakiSend release is published." },
     { name: "Meta", description: "API documentation and schema discovery." },
   ],
@@ -722,6 +838,193 @@ export const openApiDocument = {
         },
       },
     },
+    "/webhooks": {
+      get: {
+        tags: ["Webhooks"],
+        summary: "List webhook endpoints",
+        operationId: "listWebhookEndpoints",
+        description: `Oldest first, URLs decrypted. At most ${MAX_WEBHOOK_ENDPOINTS} per user, so no pagination.`,
+        security: sessionSecurity,
+        responses: {
+          200: jsonResponse("Endpoints of the session user.", "WebhookEndpointList"),
+          ...sessionErrors,
+        },
+      },
+      post: {
+        tags: ["Webhooks"],
+        summary: "Create a webhook endpoint",
+        operationId: "createWebhookEndpoint",
+        description:
+          "Registers a receiver URL and generates its signing secret (`whsec_` + 32 random bytes in base64). The secret is returned **only** in this response and after a rotation: store it now.",
+        security: sessionSecurity,
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: schemaRef("CreateWebhookEndpoint") } },
+        },
+        responses: {
+          201: jsonResponse("Endpoint created, with its secret.", "WebhookEndpointWithSecret"),
+          400: webhookError("Invalid body, or URL refused (`code: WEBHOOK_URL_INVALID`, `error` says which rule)."),
+          ...sessionErrors,
+          409: webhookError(
+            `\`WEBHOOK_LIMIT_REACHED\` (${MAX_WEBHOOK_ENDPOINTS} endpoints already) or \`WEBHOOK_URL_EXISTS\` (same normalized URL).`,
+          ),
+        },
+      },
+    },
+    "/webhooks/{id}": {
+      get: {
+        tags: ["Webhooks"],
+        summary: "Get a webhook endpoint",
+        operationId: "getWebhookEndpoint",
+        security: sessionSecurity,
+        parameters: [idParameter],
+        responses: {
+          200: jsonResponse("Endpoint.", "WebhookEndpointEnvelope"),
+          ...sessionErrors,
+          404: webhookError("`WEBHOOK_NOT_FOUND`: unknown, or owned by another user."),
+        },
+      },
+      put: {
+        tags: ["Webhooks"],
+        summary: "Update a webhook endpoint",
+        operationId: "updateWebhookEndpoint",
+        description:
+          "Pending deliveries go to the new URL: the endpoint is read again before every attempt. Disabling it skips them.",
+        security: sessionSecurity,
+        parameters: [idParameter],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: schemaRef("UpdateWebhookEndpoint") } },
+        },
+        responses: {
+          200: jsonResponse("Endpoint updated.", "WebhookEndpointEnvelope"),
+          400: webhookError("Invalid or empty body, a `secret` field, or URL refused (`WEBHOOK_URL_INVALID`)."),
+          ...sessionErrors,
+          404: webhookError("`WEBHOOK_NOT_FOUND`."),
+          409: webhookError("`WEBHOOK_URL_EXISTS`."),
+        },
+      },
+      delete: {
+        tags: ["Webhooks"],
+        summary: "Delete a webhook endpoint",
+        operationId: "deleteWebhookEndpoint",
+        description: "Deletes the endpoint and its delivery log. Messages still queued for it are dropped.",
+        security: sessionSecurity,
+        parameters: [idParameter],
+        responses: {
+          204: { description: "Endpoint deleted. No body." },
+          ...sessionErrors,
+          404: webhookError("`WEBHOOK_NOT_FOUND`."),
+        },
+      },
+    },
+    "/webhooks/{id}/rotate-secret": {
+      post: {
+        tags: ["Webhooks"],
+        summary: "Rotate a webhook secret",
+        operationId: "rotateWebhookSecret",
+        description:
+          "Generates a new secret, returned once. The previous one keeps signing for 24 hours (`rotationEndsAt`): requests carry both signatures meanwhile. A second rotation within 24 hours drops the oldest secret. The body is optional.",
+        security: sessionSecurity,
+        parameters: [idParameter],
+        requestBody: {
+          required: false,
+          content: { "application/json": { schema: schemaRef("RotateWebhookSecret") } },
+        },
+        responses: {
+          200: jsonResponse("New secret.", "WebhookEndpointWithSecret"),
+          400: responseRef("ValidationError"),
+          ...sessionErrors,
+          404: webhookError("`WEBHOOK_NOT_FOUND`."),
+        },
+      },
+    },
+    "/webhooks/{id}/test": {
+      post: {
+        tags: ["Webhooks"],
+        summary: "Send a test event",
+        operationId: "testWebhookEndpoint",
+        description: `Sends a \`webhook.test\` event now, signed like a real one, without queue or retry, even to a disabled endpoint. Answers 200 when the receiver fails too: the result is the body. The receiver's body is never returned. Logged as a delivery. At most ${WEBHOOK_TEST_RATE_LIMIT} tests per minute per endpoint.`,
+        security: sessionSecurity,
+        parameters: [idParameter],
+        responses: {
+          200: jsonResponse("Result of the test request.", "WebhookTestResult"),
+          400: webhookError("`WEBHOOK_URL_INVALID`: the stored URL is refused by the current rules."),
+          ...sessionErrors,
+          404: webhookError("`WEBHOOK_NOT_FOUND`."),
+          429: {
+            ...webhookError("`WEBHOOK_TEST_RATE_LIMITED`."),
+            headers: {
+              "Retry-After": { description: "Seconds to wait.", schema: { type: "integer" } },
+            },
+          },
+        },
+      },
+    },
+    "/webhooks/{id}/deliveries": {
+      get: {
+        tags: ["Webhooks"],
+        summary: "List deliveries",
+        operationId: "listWebhookDeliveries",
+        description:
+          "Delivery log of an endpoint, newest first. The webhook body is not stored (it is rebuilt at each attempt); see `GET /email-logs/{id}` for the email.",
+        security: sessionSecurity,
+        parameters: [
+          idParameter,
+          {
+            name: "status",
+            in: "query",
+            description: "Only deliveries in this status.",
+            schema: { type: "string", enum: [...WEBHOOK_DELIVERY_STATUSES] },
+          },
+          {
+            name: "limit",
+            in: "query",
+            description: "Page size.",
+            schema: {
+              type: "integer",
+              minimum: 1,
+              maximum: WEBHOOK_DELIVERIES_MAX_LIMIT,
+              default: WEBHOOK_DELIVERIES_DEFAULT_LIMIT,
+            },
+          },
+          {
+            name: "cursor",
+            in: "query",
+            description: "`nextCursor` of the previous page.",
+            schema: { type: "string", minLength: 1, maxLength: 512 },
+          },
+        ],
+        responses: {
+          200: jsonResponse("One page of deliveries.", "WebhookDeliveryPage"),
+          400: webhookError("Invalid parameter, or `WEBHOOK_CURSOR_INVALID`."),
+          ...sessionErrors,
+          404: webhookError("`WEBHOOK_NOT_FOUND`."),
+        },
+      },
+    },
+    "/webhooks/{id}/deliveries/{deliveryId}/retry": {
+      post: {
+        tags: ["Webhooks"],
+        summary: "Retry a failed delivery",
+        operationId: "retryWebhookDelivery",
+        description: `Sets a \`failed\` delivery back to \`pending\` and queues it again. Shares the limit of the test route (${WEBHOOK_TEST_RATE_LIMIT} per minute per endpoint).`,
+        security: sessionSecurity,
+        parameters: [idParameter, webhookDeliveryIdParameter],
+        responses: {
+          202: jsonResponse("Delivery queued again.", "WebhookDeliveryEnvelope"),
+          ...sessionErrors,
+          404: webhookError("`WEBHOOK_NOT_FOUND` or `WEBHOOK_DELIVERY_NOT_FOUND`."),
+          409: webhookError("`WEBHOOK_DELIVERY_NOT_FAILED`: the delivery is pending or delivered."),
+          429: {
+            ...webhookError("`WEBHOOK_TEST_RATE_LIMITED`."),
+            headers: {
+              "Retry-After": { description: "Seconds to wait.", schema: { type: "integer" } },
+            },
+          },
+        },
+      },
+    },
     "/updates/status": {
       get: {
         tags: ["Updates"],
@@ -763,6 +1066,27 @@ export const openApiDocument = {
         },
       },
     },
+  },
+  // Requests MakiSend sends to the registered endpoints (OpenAPI 3.1 `webhooks`).
+  webhooks: {
+    "email.sent": webhookEvent(
+      "webhookEmailSent",
+      "email.sent",
+      "The SMTP server accepted the email. One per email and per enabled endpoint, at least once: drop duplicates with `webhook-id`. Not sent for dashboard test sends.",
+      "WebhookEmailEvent",
+    ),
+    "email.failed": webhookEvent(
+      "webhookEmailFailed",
+      "email.failed",
+      "MakiSend gave up on the email (permanent error, retries exhausted, invalid configuration, or the send never started). One per email and per enabled endpoint, at least once. Not sent when `POST /send-email` itself answered an error.",
+      "WebhookEmailEvent",
+    ),
+    "webhook.test": webhookEvent(
+      "webhookTest",
+      "webhook.test",
+      "Sent on demand by `POST /webhooks/{id}/test`, signed like the others. No retry.",
+      "WebhookTestEvent",
+    ),
   },
   components: {
     securitySchemes: {
@@ -1246,6 +1570,190 @@ export const openApiDocument = {
         required: ["errors"],
         properties: {
           errors: { type: "array", items: schemaRef("ErrorSummary") },
+        },
+      },
+      CreateWebhookEndpoint: createWebhookEndpointSchema,
+      UpdateWebhookEndpoint: updateWebhookEndpointSchema,
+      RotateWebhookSecret: rotateWebhookSecretSchema,
+      WebhookEndpoint: {
+        type: "object",
+        description: "A receiving endpoint. The secret is never part of it.",
+        required: ["id", "url", "enabled", "disabledReason", "rotationEndsAt", "createdAt", "updatedAt"],
+        properties: {
+          id: { type: "string" },
+          url: { type: "string", format: "uri", description: "Normalized URL, decrypted for display." },
+          enabled: { type: "boolean", description: "`false`: nothing is published or sent to it." },
+          disabledReason: {
+            type: ["string", "null"],
+            enum: [...WEBHOOK_DISABLED_REASONS, null],
+            description: `\`auto\`: disabled after ${WEBHOOK_AUTO_DISABLE_THRESHOLD} abandoned deliveries in a row. Turn it on again with \`PUT\` \`{ "enabled": true }\`.`,
+          },
+          rotationEndsAt: {
+            type: ["string", "null"],
+            format: "date-time",
+            description: "End of the window in which the previous secret still signs; null outside a rotation.",
+          },
+          createdAt: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" },
+        },
+      },
+      WebhookEndpointEnvelope: {
+        type: "object",
+        required: ["endpoint"],
+        properties: { endpoint: schemaRef("WebhookEndpoint") },
+      },
+      WebhookEndpointList: {
+        type: "object",
+        required: ["endpoints"],
+        properties: { endpoints: { type: "array", items: schemaRef("WebhookEndpoint") } },
+      },
+      WebhookEndpointWithSecret: {
+        type: "object",
+        required: ["endpoint", "secret"],
+        properties: {
+          endpoint: schemaRef("WebhookEndpoint"),
+          secret: {
+            type: "string",
+            pattern: "^whsec_",
+            description: "Signing secret. Shown once: it cannot be read again, only rotated.",
+          },
+        },
+      },
+      WebhookTestResult: {
+        type: "object",
+        required: ["ok", "statusCode", "error", "durationMs"],
+        properties: {
+          ok: { type: "boolean", description: "The receiver answered 2xx in time." },
+          statusCode: { type: ["integer", "null"], description: "null when there was no answer." },
+          error: {
+            type: ["string", "null"],
+            description: "`timeout`, `network error`, `HTTP 500`, `url refused`… Never the receiver's body.",
+          },
+          durationMs: { type: "integer" },
+        },
+      },
+      WebhookDelivery: {
+        type: "object",
+        required: [
+          "id",
+          "eventType",
+          "emailId",
+          "status",
+          "attempts",
+          "lastStatusCode",
+          "lastError",
+          "lastAttemptAt",
+          "deliveredAt",
+          "createdAt",
+        ],
+        properties: {
+          id: { type: "string", description: "`webhook-id` of the requests is `msg_<id>`." },
+          eventType: { type: "string", enum: [...WEBHOOK_EVENT_TYPES] },
+          emailId: { type: ["string", "null"], description: "null for a test event." },
+          status: {
+            type: "string",
+            enum: [...WEBHOOK_DELIVERY_STATUSES],
+            description: "`skipped`: the endpoint was disabled or the email deleted before sending.",
+          },
+          attempts: { type: "integer" },
+          lastStatusCode: { type: ["integer", "null"] },
+          lastError: { type: ["string", "null"], description: "Short reason, never the receiver's body." },
+          lastAttemptAt: { type: ["string", "null"], format: "date-time" },
+          deliveredAt: { type: ["string", "null"], format: "date-time" },
+          createdAt: { type: "string", format: "date-time" },
+        },
+      },
+      WebhookDeliveryEnvelope: {
+        type: "object",
+        required: ["delivery"],
+        properties: { delivery: schemaRef("WebhookDelivery") },
+      },
+      WebhookDeliveryPage: {
+        type: "object",
+        required: ["deliveries", "nextCursor"],
+        properties: {
+          deliveries: { type: "array", items: schemaRef("WebhookDelivery") },
+          nextCursor: {
+            type: ["string", "null"],
+            description: "Pass as `cursor` to fetch the next page; null at the end.",
+          },
+        },
+      },
+      WebhookHistoryEntry: {
+        type: "object",
+        required: ["status", "attempt", "at", "reason"],
+        properties: {
+          status: { type: "string", description: "e.g. `attempt_failed`, `sent`, `failed`." },
+          attempt: { type: ["integer", "null"] },
+          at: { type: "string", format: "date-time" },
+          reason: {
+            type: ["string", "null"],
+            description: "Filtered, human-readable reason: never the raw SMTP error, host or address.",
+          },
+        },
+      },
+      WebhookEmailEvent: {
+        type: "object",
+        description:
+          "Body of `email.sent` and `email.failed`. Fields may be added later, never removed or renamed. Never carries the email body, attachments, SMTP host or credentials, or the API key.",
+        required: ["type", "timestamp", "data"],
+        properties: {
+          type: { type: "string", enum: ["email.sent", "email.failed"] },
+          timestamp: { type: "string", format: "date-time" },
+          data: {
+            type: "object",
+            required: [
+              "emailId",
+              "status",
+              "to",
+              "subject",
+              "apiKeyId",
+              "smtpMessageId",
+              "attempts",
+              "createdAt",
+              "completedAt",
+              "history",
+            ],
+            properties: {
+              emailId: { type: "string", description: "The id returned by `POST /send-email`." },
+              status: { type: "string", enum: ["sent", "failed"] },
+              to: { type: "string" },
+              subject: { type: "string" },
+              apiKeyId: { type: ["string", "null"] },
+              smtpMessageId: { type: ["string", "null"], description: "null for `email.failed`." },
+              attempts: { type: "integer", description: "SMTP attempts made." },
+              failureKind: {
+                type: "string",
+                enum: [...WEBHOOK_FAILURE_KINDS],
+                description: "`email.failed` only.",
+              },
+              reason: { type: "string", description: "`email.failed` only. Filtered, human-readable." },
+              createdAt: { type: "string", format: "date-time", description: "When the API accepted the email." },
+              completedAt: { type: "string", format: "date-time", description: "When the final status was written." },
+              history: {
+                type: "array",
+                maxItems: WEBHOOK_HISTORY_MAX_ENTRIES,
+                description: `Status changes, oldest first, the ${WEBHOOK_HISTORY_MAX_ENTRIES} most recent.`,
+                items: schemaRef("WebhookHistoryEntry"),
+              },
+            },
+          },
+        },
+      },
+      WebhookTestEvent: {
+        type: "object",
+        required: ["type", "timestamp", "data"],
+        properties: {
+          type: { type: "string", const: "webhook.test" },
+          timestamp: { type: "string", format: "date-time" },
+          data: {
+            type: "object",
+            required: ["endpointId", "message"],
+            properties: {
+              endpointId: { type: "string" },
+              message: { type: "string" },
+            },
+          },
         },
       },
       SuccessResponse: {
